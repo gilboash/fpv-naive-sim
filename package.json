@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:flight": "node --experimental-strip-types tools/flight-check.ts",
+    "check:browser": "node tools/browser-check.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

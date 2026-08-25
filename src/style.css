@@ -138,3 +138,106 @@ tbody tr:hover { background: var(--panel-2); }
 .hist-row { display: grid; grid-template-columns: 90px 1fr 78px; gap: 8px; align-items: center; font: 11px var(--mono); }
 .hist-row .hbar { height: 10px; background: var(--panel-2); border-radius: 2px; overflow: hidden; }
 .hist-row .hbar span { display: block; height: 100%; background: var(--accent); opacity: 0.7; }
+
+/* ---------------------------------------------------------------- flight */
+
+.fl-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(280px, 1.4fr);
+  gap: 18px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .fl-grid { grid-template-columns: 1fr; }
+}
+
+.fl-col { min-width: 0; }
+
+.fl-horizon {
+  width: 100%;
+  height: auto;
+  max-height: 190px;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  background: #0d1117;
+  display: block;
+}
+
+.fl-sky { fill: #1d3557; }
+.fl-ground { fill: #3d2b1f; }
+.fl-horizon-line { stroke: #cbd5e1; stroke-width: 1.5; }
+.fl-ref { stroke: #f4b400; stroke-width: 2.5; fill: none; }
+
+.fl-nums {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.fl-num {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #11161f;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.fl-num-label { color: #7d8899; }
+.fl-num-val { font-variant-numeric: tabular-nums; color: #dbe3ee; }
+
+.fl-h {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7d8899;
+  margin: 4px 0 8px;
+  font-weight: 600;
+}
+
+.fl-bar, .fl-motor {
+  display: grid;
+  grid-template-columns: 44px 1fr 52px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.fl-bar-name { font-size: 11px; color: #7d8899; }
+
+.fl-bar-val {
+  font-size: 11px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #dbe3ee;
+}
+
+.fl-bar-track {
+  position: relative;
+  height: 12px;
+  background: #11161f;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.fl-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #4a9eff;
+}
+
+.fl-bar-fill.up { background: #35c46b; }
+
+/* Setpoint, drawn over the achieved rate: the gap between them is the tune. */
+.fl-bar-marker {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  margin-left: -1px;
+  background: #f4b400;
+}

@@ -15,6 +15,7 @@ import {
 } from './mapping.ts';
 import { AxisDetector, EndpointCalibrator, GamepadPoller, MAX_BUTTONS } from './gamepad.ts';
 import { JitterRun, type RunResult, type Stats } from './jitter.ts';
+import { FlightPanel } from './flight-panel.ts';
 import TickerWorker from './ticker.worker.ts?worker';
 import {
   CTRL_FUTEX,
@@ -83,9 +84,15 @@ function setTicking(on: boolean): void {
   }
 }
 
+// Declared above onTick rather than with the rest of the wiring at the bottom:
+// ticks only arrive via a message event, so module evaluation has always
+// finished by then, but relying on that would make the ordering a trap for
+// whoever moves this next.
+const flight = new FlightPanel($('flight-panel'));
+
 /**
- * The whole input path, in one place, with nothing awaited. In M1 the physics
- * step goes here, immediately after the poll.
+ * The whole input path, in one place, with nothing awaited. The physics step
+ * is here, immediately after the poll.
  */
 function onTick(fired: number, scheduled: number): void {
   poller.poll(fired);
@@ -107,6 +114,10 @@ function onTick(fired: number, scheduled: number): void {
   }
 
   commands = computeCommands(mapping, poller.axes as unknown as number[]);
+
+  // The physics step, in the tick and immediately after the poll — the position
+  // M0 existed to make safe. It costs a few microseconds of a 1000 us budget.
+  flight.step(commands, poller.connected);
 
   if (run?.running) {
     run.recordTick(fired, scheduled);
@@ -302,6 +313,8 @@ function render(tNow: number): void {
   run?.recordFrame(tNow);
   if (tNow - lastRender < 33) return; // 30 Hz is plenty for text
   lastRender = tNow;
+
+  flight.render();
 
   // pills
   const pills = $('status-pills');
@@ -539,6 +552,13 @@ $('mapping-reset').onclick = () => {
 };
 
 $('jitter-start').onclick = startRun;
+
+// Dev-only handle so the CDP check in tools/browser-check.mjs can drive the
+// model without a radio attached. Stripped from a production build by the
+// import.meta.env.DEV guard, so it cannot become a load-bearing API.
+if (import.meta.env.DEV) {
+  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping };
+}
 
 globalThis.addEventListener('gamepadconnected', refreshDevices);
 globalThis.addEventListener('gamepaddisconnected', refreshDevices);

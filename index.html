@@ -8,7 +8,7 @@
   </head>
   <body>
     <header>
-      <h1>fpvsim <span class="dim">/ M0 input spike</span></h1>
+      <h1>fpvsim <span class="dim">/ M1 flight model</span></h1>
       <div id="status-pills" class="pills"></div>
     </header>
 
@@ -77,6 +77,17 @@
           background tab is throttled and the numbers become meaningless.
         </p>
         <div id="jitter-results"></div>
+      </section>
+
+      <section id="flight">
+        <h2>5 · Flight model</h2>
+        <p class="hint">
+          1 kHz rate-mode flight model: blade-element rotors, brushless motors with
+          battery sag, and a Betaflight-scaled PID loop. The physics step runs inside
+          the same tick as the gamepad poll, not in <code>requestAnimationFrame</code>.
+          Acceptance tests for it run headless — <code>npm run check:flight</code>.
+        </p>
+        <div id="flight-panel"></div>
       </section>
     </main>
 

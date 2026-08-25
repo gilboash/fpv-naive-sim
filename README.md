@@ -4,17 +4,22 @@ Browser-based FPV drone simulator for skill training, flown with a real RC
 transmitter over USB. See the project brief for the full scope; first target is
 a single 5" racing quad and a few simple maps with basic track obstacles.
 
-**Current phase: M0 — input spike.** Gamepad plumbing, channel mapping, and an
-honest measurement of loop timing. No physics, no 3D scene. That is deliberate:
-per the brief, M1 (flight model) is where the project lives or dies, and it
-cannot be evaluated on top of an input path whose timing nobody measured.
+**Current phase: M1 — flight model.** M0 (input spike) is signed off: the tick
+source holds 1 kHz on real hardware and the radio was measured at 201.8 Hz. M1
+adds the flight model itself — blade-element rotors, brushless motors, battery
+sag, and a Betaflight-scaled PID loop, stepping at 1 kHz inside the input tick.
+Still no 3D scene, deliberately: per the brief the feel has to be right before
+any art exists, and the instrument panel is how you judge it in the meantime.
 
 ## Run it
 
 ```
 npm install
-npm run dev      # http://localhost:5180 (or whatever Vite prints)
-npm run build    # typecheck + production build
+npm run dev            # http://localhost:5180 (or whatever Vite prints)
+npm run build          # typecheck + production build
+
+npm run check:flight   # physical acceptance tests for the model, headless
+npm run check:browser  # drives the real page over CDP (needs `npm run dev`)
 ```
 
 Put the radio in USB Joystick mode, plug it in, then **move a stick** — browsers
@@ -116,6 +121,100 @@ rendering was not stealing from the input path.
 
 That covers loop pacing only. It is **not** end-to-end input→photon latency,
 which per the brief still needs a photodiode or high-speed-camera rig.
+
+## M1 — the flight model
+
+Everything under `src/flight/` is plain TypeScript with no browser dependency,
+so it runs under `node --experimental-strip-types` with no build step. That is
+what makes `npm run check:flight` possible, and it is worth the one constraint
+it imposes: no parameter properties, no enums, no namespaces anywhere in that
+directory, because strip-only mode cannot compile them.
+
+| file | what it is |
+|---|---|
+| `math.ts` | vectors, quaternions, exponential-map integration |
+| `filter.ts` | PT1 and biquad, the filters a flight controller actually runs |
+| `rates.ts` | Betaflight Actual and Betaflight rate curves, ported not approximated |
+| `pid.ts` | the rate controller, in Betaflight's own gain units |
+| `mixer.ts` | quad X mix derived from geometry, with airmode |
+| `motor.ts` | brushless motor as an electrical model, plus battery sag |
+| `rotor.ts` | blade-element rotor with momentum-theory inflow |
+| `airframe.ts` | mass, inertia, geometry — the 5" 6S racer |
+| `sim.ts` | the 6-DOF body that ties it together |
+
+### Frames
+
+Body is FRD (x forward, y right, z down), world is NED. Gravity is +z. This is
+the aerospace convention rather than the graphics one, chosen so gyro and PID
+signs match Betaflight directly and a real tune transfers without translation.
+The renderer will convert to Y-up at its own boundary; the physics never does.
+
+### Why blade-element
+
+A thrust constant would fly, but it cannot produce the moments a pilot trains
+against: thrust falling away in a fast descent, translational lift as the quad
+accelerates out of its own downwash, or the drag the discs contribute at speed.
+Each of those is asserted by a test rather than claimed here.
+
+The same argument drives the motor model. It is electrical, not a first-order
+lag on thrust, because the lag is not symmetric — an ESC can apply full pack
+voltage to spin up, but nothing brakes a coasting prop on the way down. The
+measured asymmetry in this model is 154 ms up against 2640 ms down, and that
+difference is most of why a quad drops when you chop throttle.
+
+### Numbers it produces
+
+| | value |
+|---|---|
+| static thrust-to-weight | 12.2:1 at full throttle |
+| hover throttle | 15.8% |
+| hover / full-throttle RPM | 8 730 / 30 280 |
+| hover / full-throttle current | 14.8 A / 177 A |
+| roll step, rise to 90% | 32 ms, 6.8% overshoot |
+| step cost | 3.5 us, or 0.35% of the 1 ms tick |
+
+Hover throttle really is that low; a 6S racer at 12:1 hovers around 15% stick,
+and a pilot coming off a 4S freestyle build finds it alarming. Reproducing that
+rather than smoothing it out is the point.
+
+### Verification
+
+`npm run check:flight` runs 39 physical acceptance tests — thrust scaling with
+rotor speed, hover trim, per-axis control signs, rate tracking and overshoot,
+airmode's effect on the mixer, motor asymmetry, battery sag, determinism, and a
+20-second full-deflection abuse run. They assert things that must be true of a
+5" quad, not things that must be true of this code, which is the only kind of
+check that catches a mixer sign error or a rotor making thrust out of nothing.
+
+`npm run check:browser` then drives the real page over CDP and reads state back
+out of it: cross-origin isolation, the atomics ticker, physics advancing at
+1 kHz inside the tick, arming, climbing, roll tracking, and failsafe.
+
+Three findings came out of writing those tests rather than out of reading the
+code: the effective motor resistance was low enough to draw 290 A at full
+throttle, the roll inertia was below every published figure for this class, and
+there was no gyro clipping at all — the model had perfect knowledge of its own
+rotation in exactly the tumble where a real quad has none.
+
+### Known gaps, stated rather than omitted
+
+- **Not validated against a real Blackbox log.** The model is physically
+  principled and internally consistent, but nobody has yet put a log from a real
+  5" quad beside it. That comparison is the M1 sign-off, and it is the same
+  shape of gap the published jitter number was in M0.
+- No azimuthal integration in the rotor, so no blade flapping and no roll-off in
+  fast forward flight. In-plane flow is a Glauert factor and an H-force.
+- Vortex ring state is not modelled; the model is optimistic in a steep powered
+  descent.
+- No anti-gravity, dynamic idle, or D_MIN. Each is a real part of modern feel.
+- No rotor-to-rotor interaction, so no prop wash.
+- The ground is a plane with friction, not a contact model. No prop strikes and
+  no tumbling on impact — crashes are a later milestone.
+- Rate mode only. No angle or horizon mode, which is what the brief is about.
+- Under 20 s of sustained full-deflection stick reversal the model tumbles past
+  4 000 deg/s. The gyro clips at 2 000 deg/s exactly as real hardware does, and
+  it recovers when the sticks centre, but the peak is higher than a real quad
+  reaches and is worth revisiting once there is a log to compare against.
 
 ## Related work on this machine
 
