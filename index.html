@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%9A%81%3C/text%3E%3C/svg%3E" />
+    <title>fpvsim — M0 input spike</title>
+  </head>
+  <body>
+    <header>
+      <h1>fpvsim <span class="dim">/ M0 input spike</span></h1>
+      <div id="status-pills" class="pills"></div>
+    </header>
+
+    <main>
+      <section id="device">
+        <h2>1 · Device</h2>
+        <div class="row">
+          <select id="device-select"><option value="-1">— no device —</option></select>
+          <button id="device-refresh" type="button">Rescan</button>
+        </div>
+        <p class="hint" id="device-hint">
+          Put the radio in USB Joystick mode, plug it in, then <strong>move a stick or press a
+          button</strong> — browsers hide gamepads until they see activity.
+        </p>
+      </section>
+
+      <section id="raw">
+        <h2>2 · Raw input</h2>
+        <div class="grid-2">
+          <div>
+            <h3>Axes</h3>
+            <div id="axes-list" class="axes"></div>
+          </div>
+          <div>
+            <h3>Buttons</h3>
+            <div id="buttons-list" class="buttons"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="mapping">
+        <h2>3 · Channel mapping</h2>
+        <div class="row">
+          <label>Stick mode
+            <select id="mode-select">
+              <option value="1">Mode 1</option>
+              <option value="2" selected>Mode 2</option>
+              <option value="3">Mode 3</option>
+              <option value="4">Mode 4</option>
+            </select>
+          </label>
+          <button id="calib-toggle" type="button">Calibrate endpoints</button>
+          <button id="center-capture" type="button">Capture centre</button>
+          <button id="mapping-reset" type="button" class="danger">Reset mapping</button>
+          <span id="save-state" class="dim"></span>
+        </div>
+        <p class="hint" id="mapping-hint">
+          Mode presets assume raw stick axes. EdgeTX in USB Joystick mode usually applies the mode
+          in the radio and emits AETR, so the preset may be a no-op — use <em>Detect</em> per
+          channel if the presets do not match your radio.
+        </p>
+        <div id="channel-rows" class="channels"></div>
+      </section>
+
+      <section id="jitter">
+        <h2>4 · Polling jitter</h2>
+        <div class="row">
+          <label>Duration <input id="jitter-duration" type="number" min="5" max="600" step="5" value="60" /> s</label>
+          <label>Target <input id="jitter-hz" type="number" min="100" max="2000" step="100" value="1000" /> Hz</label>
+          <button id="jitter-start" type="button">Run test</button>
+          <span id="jitter-progress" class="dim"></span>
+        </div>
+        <p class="hint">
+          Measures the interval between physics-loop ticks on the main thread, how late each tick
+          fired, and how often the radio actually reports new data. Keep this tab focused — a
+          background tab is throttled and the numbers become meaningless.
+        </p>
+        <div id="jitter-results"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

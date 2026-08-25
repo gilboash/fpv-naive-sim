@@ -8,3 +8,6 @@ node_modules/
 dist/
 build/
 *.log
+
+# screen(1) capture, not project content
+/screenlog.0
