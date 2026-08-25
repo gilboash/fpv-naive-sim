@@ -72,9 +72,10 @@ become meaningless.
 | Run | Backend | Effective | sd | p99 | p99.9 | max | stalls >8 ms |
 |---|---|---|---|---|---|---|---|
 | headless Chrome, no GPU, **60 s**, no radio | atomics | 1000.0 Hz | 0.080 ms | 1.340 ms | 1.475 ms | 7.44 ms | 0 (60,034 ticks) |
-| **Chrome 147, focused window, 60 s, TX16S attached** | atomics | 1000.0 Hz | **0.062 ms** | **1.175 ms** | 1.255 ms | 3.91 ms | 0 (60,112 ticks) |
+| Chrome 147, focused window, 60 s, TX16S attached | atomics | 1000.0 Hz | 0.062 ms | 1.175 ms | 1.255 ms | 3.91 ms | 0 (60,112 ticks) |
+| **same, repeat run 10 h later** | atomics | 1000.0 Hz | **0.038 ms** | **1.110 ms** | 1.245 ms | 3.55 ms | 0 (60,065 ticks) |
 
-Raw results are in `measurements/`.
+Raw results for both runs are in `measurements/`.
 
 The real run is *better* than the headless floor on every tick statistic — sd
 0.062 vs 0.080 ms, p99 1.175 vs 1.340 ms, max 3.91 vs 7.44 ms. Headless Chrome
@@ -87,14 +88,19 @@ exceeded 8 ms, and 57,823 of 60,112 landed in the 0.9–1.1 ms bucket.
 
 ### The radio reports at 200 Hz, not 1 kHz
 
-This is what M0 was built to find out, and it is the number that shapes M1:
+This is what M0 was built to find out, and it is the number that shapes M1.
+Two independent 60 s runs, ten hours apart:
 
-| | value |
-|---|---|
-| device | Radiomaster TX16S Joystick (`1209:4f54`), 8 axes |
-| report rate | **201.8 Hz** — mean 4.95 ms, p50 4.99 ms |
-| tail | p90 5.99 ms, p99 9.13 ms, p99.9 20.0 ms, max **134.97 ms** |
-| fresh samples | 12,132 new reports across 60,113 polls |
+| | run 1 | run 2 |
+|---|---|---|
+| device | Radiomaster TX16S (`1209:4f54`), 8 axes | same |
+| report rate | 201.8 Hz | 200.4 Hz |
+| mean / p50 | 4.96 / 4.99 ms | 4.99 / 5.00 ms |
+| p90 | 5.99 ms | 6.00 ms |
+| p99 | 9.13 ms | 10.00 ms |
+| p99.9 | 20.0 ms | 15.0 ms |
+| max | **135.0 ms** | **34.0 ms** |
+| fresh samples | 12,131 | 12,036 |
 
 So roughly **one poll in five sees new data**. Polling at 1 kHz is still the
 right thing to do — it costs nothing, it keeps the physics step on a fixed
@@ -102,19 +108,32 @@ clock, and it means the sim reacts within 1 ms of a report arriving rather than
 waiting for the next frame — but the stick signal itself is a zero-order hold
 that only changes every ~5 ms.
 
-Two consequences for M1:
+Note that p50 5 ms and p90 6 ms are partly an artefact of measuring a 200 Hz
+signal on a 1 kHz polling grid: the observation quantises to whole
+milliseconds. The mean, 4.99 ms, is the honest figure for the period.
+
+Three consequences for M1:
 
 1. **~2.5 ms of mean quantisation latency is already spent** before the flight
    model does anything, and up to 5 ms worst case. That is a floor on
    stick-to-state response no amount of physics work can recover.
-2. **The tail is not clean.** p99 of 9.13 ms is a dropped report (two periods),
-   and the 135 ms maximum is roughly 27 consecutive missed reports — a real
-   dropout, once in 60 s. M1 must not assume a fresh sample every step; hold
-   the last value and keep integrating.
+2. **Reports are dropped at a steady ~2 per second.** p99 sits at almost exactly
+   two report periods in both runs, which means the worst 1% of gaps each
+   swallowed a report: 121 and 120 occurrences in 60 s respectively. This is the
+   most reproducible thing in either dataset and it is not an outlier — it is
+   how the link behaves.
+3. **The extreme tail varies and does not repeat.** The 135 ms gap in run 1 —
+   about 27 consecutive missed reports — did not recur; run 2's worst was 34 ms.
+   So a gap of tens of milliseconds should be expected roughly once a minute,
+   with a worst case that is not predictable from a single run.
 
-Whether the 135 ms gap is the radio, the USB stack, or macOS HID scheduling is
-not yet known, and one occurrence is not a pattern. Worth a repeat run before
-drawing conclusions.
+M1 therefore holds the last stick value and keeps integrating, never assuming a
+fresh sample per step, and the flight panel disarms on link loss. Both of those
+are consequences of this table rather than of good intentions.
+
+What causes the drops — radio, USB stack, or macOS HID scheduling — is still
+unknown. Two runs establish the rate but not the mechanism, and nothing in the
+browser can see far enough down to tell.
 
 Reference: `requestAnimationFrame` held 60.0 Hz (sd 0.38 ms) throughout, so
 rendering was not stealing from the input path.

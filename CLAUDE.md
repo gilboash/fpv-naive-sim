@@ -42,13 +42,31 @@ Chrome 147 window with a Radiomaster TX16S: tick source holds 1 kHz, sd 0.062 ms
 p99 1.175 ms, zero stalls over 8 ms, and it beat the headless floor on every
 statistic. Raw results in `measurements/`, writeup in the README.
 
-**The M0 finding that shaped M1:** the TX16S reports at **201.8 Hz, not 1 kHz**.
+**The M0 finding that shaped M1:** the TX16S reports at **~200 Hz, not 1 kHz**.
 One poll in five sees new data, so the stick signal is a zero-order hold updated
-every ~5 ms and ~2.5 ms of mean latency is spent before the model runs. The tail
-is not clean either — p99 9.13 ms is a dropped report, and one 135 ms gap
-appeared in the minute. The model holds the last stick value and keeps
-integrating; it never assumes a fresh sample per step. That 135 ms gap is also
-why the panel has a failsafe.
+every ~5 ms and ~2.5 ms of mean latency is spent before the model runs.
+
+Two 60 s runs ten hours apart (both in `measurements/`) settle what is
+reproducible and what is not:
+
+- **Dropped reports are steady at ~2 per second.** p99 is almost exactly two
+  report periods in both runs — 121 and 120 gaps in 60 s. This is the link's
+  normal behaviour, not an outlier.
+- **The extreme tail does not repeat.** Run 1's 135 ms gap (~27 consecutive
+  missed reports) did not recur; run 2's worst was 34 ms. Expect tens of
+  milliseconds roughly once a minute, worst case unpredictable from one run.
+- The cause is still unknown — radio, USB stack, or macOS HID scheduling. Two
+  runs give the rate, not the mechanism, and nothing reachable from the browser
+  can see deep enough to tell. Treat this as closed for planning purposes and
+  open for curiosity.
+
+The model holds the last stick value and keeps integrating, never assuming a
+fresh sample per step, and the panel disarms on link loss. Both follow from the
+table above rather than from good intentions.
+
+Incidentally, run 2 is also the first independent confirmation of the histogram
+label fix — its buckets read 0.9-1.1 / 1.1-1.5 / 1.5-2 rather than the collapsed
+"0.9-1 / 1-2 / 2-2 ms" of run 1.
 
 **M1 built and verified (2026-08-25), not yet signed off.** Blade-element
 rotors, electrical brushless motors with battery sag, Betaflight-scaled PID with
@@ -77,10 +95,9 @@ number was in M0, and it wants the same treatment — a real log, from the real
 radio, flown by the person who knows what it should feel like. Until then no
 claim about "feel" is supported by anything but the physics.
 
-Also open: the 135 ms report gap from M0 is still unexplained (radio, USB stack,
-or macOS HID scheduling — one occurrence is not a pattern, repeat the run), and
-end-to-end input-to-photon latency is still unmeasured and needs a photodiode or
-high-speed-camera rig.
+Also open: end-to-end input-to-photon latency is still unmeasured and needs a
+photodiode or high-speed-camera rig. The report-gap question from M0 is now
+answered as far as it usefully can be — see the two-run comparison above.
 
 **Next after sign-off:** M2, the scene. Not before the feel is right.
 
