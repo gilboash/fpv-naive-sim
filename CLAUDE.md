@@ -4,6 +4,8 @@
 Browser FPV simulator for skill training; brief accepted 2026-08-23. First
 target: one 5" racing quad, a few simple maps with basic obstacles.
 
+Remote: https://github.com/gilboash/fpv-naive-sim (pushed 2026-08-25).
+
 **Phase M0 (input spike) built and verified.** Vite + TypeScript, no framework.
 Next is M1: the 1 kHz flight model. Per the brief, do not move to art before
 the feel is right.
