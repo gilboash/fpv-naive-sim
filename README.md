@@ -67,16 +67,55 @@ become meaningless.
 | Run | Backend | Effective | sd | p99 | p99.9 | max | stalls >8 ms |
 |---|---|---|---|---|---|---|---|
 | headless Chrome, no GPU, **60 s**, no radio | atomics | 1000.0 Hz | 0.080 ms | 1.340 ms | 1.475 ms | 7.44 ms | 0 (60,034 ticks) |
+| **Chrome 147, focused window, 60 s, TX16S attached** | atomics | 1000.0 Hz | **0.062 ms** | **1.175 ms** | 1.255 ms | 3.91 ms | 0 (60,112 ticks) |
 
-Tick lateness over the same run: mean 0.337 ms, p99 0.455 ms, max 6.45 ms. One
-sub-8 ms excursion in 60 s; everything below p99.9 sits inside 1.5 ms.
+Raw results are in `measurements/`.
 
-That is a floor, not the answer: headless has no compositor, no window, and no
-device attached. **The number to publish is a 60 s run in a real focused window
-with a radio plugged in**, which needs hardware this environment does not have.
-Note also that this measures loop pacing only — it is not end-to-end
-input→photon latency, which per the brief still needs a photodiode or
-high-speed-camera rig.
+The real run is *better* than the headless floor on every tick statistic — sd
+0.062 vs 0.080 ms, p99 1.175 vs 1.340 ms, max 3.91 vs 7.44 ms. Headless Chrome
+has no compositor to schedule against but also no display to pace to; the
+windowed run gets a steady 60 Hz vsync and a warm scheduler. Tick lateness:
+mean 0.209 ms, p99 0.255 ms, max 3.14 ms. 23 intervals exceeded 2 ms, none
+exceeded 8 ms, and 57,823 of 60,112 landed in the 0.9–1.1 ms bucket.
+
+**The tick source is not the problem.** 1 kHz on the main thread is real.
+
+### The radio reports at 200 Hz, not 1 kHz
+
+This is what M0 was built to find out, and it is the number that shapes M1:
+
+| | value |
+|---|---|
+| device | Radiomaster TX16S Joystick (`1209:4f54`), 8 axes |
+| report rate | **201.8 Hz** — mean 4.95 ms, p50 4.99 ms |
+| tail | p90 5.99 ms, p99 9.13 ms, p99.9 20.0 ms, max **134.97 ms** |
+| fresh samples | 12,132 new reports across 60,113 polls |
+
+So roughly **one poll in five sees new data**. Polling at 1 kHz is still the
+right thing to do — it costs nothing, it keeps the physics step on a fixed
+clock, and it means the sim reacts within 1 ms of a report arriving rather than
+waiting for the next frame — but the stick signal itself is a zero-order hold
+that only changes every ~5 ms.
+
+Two consequences for M1:
+
+1. **~2.5 ms of mean quantisation latency is already spent** before the flight
+   model does anything, and up to 5 ms worst case. That is a floor on
+   stick-to-state response no amount of physics work can recover.
+2. **The tail is not clean.** p99 of 9.13 ms is a dropped report (two periods),
+   and the 135 ms maximum is roughly 27 consecutive missed reports — a real
+   dropout, once in 60 s. M1 must not assume a fresh sample every step; hold
+   the last value and keep integrating.
+
+Whether the 135 ms gap is the radio, the USB stack, or macOS HID scheduling is
+not yet known, and one occurrence is not a pattern. Worth a repeat run before
+drawing conclusions.
+
+Reference: `requestAnimationFrame` held 60.0 Hz (sd 0.38 ms) throughout, so
+rendering was not stealing from the input path.
+
+That covers loop pacing only. It is **not** end-to-end input→photon latency,
+which per the brief still needs a photodiode or high-speed-camera rig.
 
 ## Related work on this machine
 

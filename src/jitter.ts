@@ -103,7 +103,10 @@ export class Series {
         const x = v[i] ?? 0;
         if (x >= prev && x < e) c++;
       }
-      out.push({ label: `${prev.toFixed(prev < 1 ? 1 : 0)}–${e.toFixed(e < 1 ? 1 : 0)} ms`, count: c });
+      // String(), not toFixed(): the edges include 1.1 and 1.5, and rounding
+      // them to 0 decimals collapsed three buckets into labels reading
+      // "0.9–1", "1–2" and "2–2 ms".
+      out.push({ label: `${prev}–${e} ms`, count: c });
       prev = e;
     }
     let c = 0;
