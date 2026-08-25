@@ -234,6 +234,27 @@ throttle, the roll inertia was below every published figure for this class, and
 there was no gyro clipping at all — the model had perfect knowledge of its own
 rotation in exactly the tumble where a real quad has none.
 
+### What the first recorded flight found
+
+A 20 s flight flown on the real TX16S is archived in `measurements/`. It caught
+two things 39 acceptance tests did not, which is roughly the point of recording
+flights:
+
+- **92 A per motor on a transient.** Full throttle applied to a slow-turning
+  motor meets almost no back-EMF, and nothing in the model said no. Real ESCs
+  limit current, so `MotorSpec.maxCurrent` now does too — 55 A, which binds only
+  on transients since steady full throttle settles near 44 A.
+- **Airborne overshoot of ~17% on full-stick flicks**, with 23% of commanded
+  samples exceeding setpoint by more than 50 deg/s. The step-response test
+  measures 6.8% because it uses a 234 deg/s step; at 800 deg/s the mixer
+  saturates and the character changes. Whether a real quad on a stock tune
+  overshoots this much is exactly what the Blackbox comparison is for.
+
+Two things it did *not* find, having looked: the 67% of samples with a motor at
+zero output is airmode working as designed at low throttle, not clipping. And
+the single worst number in the log — 1233 deg/s of pitch against a 792 setpoint
+— happened at 0.1 m altitude and is the ground model, not the flight model.
+
 ### Known gaps, stated rather than omitted
 
 - **Not validated against a real Blackbox log.** The model is physically
@@ -247,7 +268,10 @@ rotation in exactly the tumble where a real quad has none.
 - No anti-gravity, dynamic idle, or D_MIN. Each is a real part of modern feel.
 - No rotor-to-rotor interaction, so no prop wash.
 - The ground is a plane with friction, not a contact model. No prop strikes and
-  no tumbling on impact — crashes are a later milestone.
+  no tumbling on impact — crashes are a later milestone. The first recorded
+  flight hit the ground at 27 m/s and simply carried on flying, so this is now
+  a demonstrated gap rather than an anticipated one, and half that flight was
+  spent within 0.5 m of the ground.
 - Rate mode only. No angle or horizon mode, which is what the brief is about.
 - Under 20 s of sustained full-deflection stick reversal the model tumbles past
   4 000 deg/s. The gyro clips at 2 000 deg/s exactly as real hardware does, and

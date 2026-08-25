@@ -26,6 +26,17 @@ export interface MotorSpec {
   friction: number;
   /** Minimum commanded output while armed, 0..1. Betaflight's motor_idle. */
   idle: number;
+  /**
+   * Peak phase current the ESC will pass, A.
+   *
+   * Not cosmetic. Without it, a full-throttle command to a slow-turning motor
+   * sees almost no back-EMF and the model asks for whatever current the
+   * resistance allows — a recorded flight peaked at 92 A per motor, which no
+   * 2207 or its ESC would survive, let alone deliver. Real ESCs limit, so this
+   * one does too, and the limit binds only on transients: steady full throttle
+   * settles around 44 A.
+   */
+  maxCurrent: number;
 }
 
 export function defaultMotor(): MotorSpec {
@@ -38,6 +49,7 @@ export function defaultMotor(): MotorSpec {
     inertia: 8e-6,
     friction: 2e-7,
     idle: 0.055,
+    maxCurrent: 55,
   };
 }
 
@@ -158,6 +170,8 @@ export class Motor {
     // prop electrically on every throttle cut, which is the symmetric-lag error
     // this whole file exists to avoid.
     if (this.current < 0) this.current = 0;
+    // ...nor can it pass unlimited current into a stalled motor.
+    if (this.current > s.maxCurrent) this.current = s.maxCurrent;
 
     const motorTorque = this.ke * this.current;
     const drag = s.friction * this.omega;

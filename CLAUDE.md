@@ -102,6 +102,20 @@ Also open: end-to-end input-to-photon latency is still unmeasured and needs a
 photodiode or high-speed-camera rig. The report-gap question from M0 is now
 answered as far as it usefully can be — see the two-run comparison above.
 
+**First recorded flight (2026-08-25, in `measurements/`, gzipped)** found two
+things the 41 acceptance tests did not: a 92 A per-motor transient, now capped
+by `MotorSpec.maxCurrent` at 55 A; and ~17% airborne overshoot on full-stick
+flicks, against the 6.8% the step test measures on a gentler 234 deg/s step.
+The second is unresolved and is a question for the Blackbox comparison, not a
+bug to chase blind. Two things that looked wrong and were not: motors at zero
+output 67% of the time is airmode working, and the worst single number in the
+log came from the ground model at 0.1 m altitude.
+
+That flight also spent half its time within 0.5 m of the ground and hit it at
+27 m/s without consequence, so the missing crash model is now demonstrated
+rather than theoretical. Still a later milestone, but it is the gap most likely
+to be felt next.
+
 **Next, and the reason the recorder exists:** a comparison harness that reads a
 Betaflight Blackbox log and a sim recording through one path, drives the model
 with the logged `rcCommand` at 1 kHz, and plots achieved against logged gyro per

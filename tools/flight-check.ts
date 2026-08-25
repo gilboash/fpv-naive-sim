@@ -316,6 +316,38 @@ section('Motors: the asymmetry that makes a quad feel like a quad');
   );
 }
 
+// ------------------------------------------------------------- current limit
+
+section('Motors: the ESC will not pass unlimited current');
+{
+  // Worst case for current is full throttle applied to a motor that is barely
+  // turning: no back-EMF opposes it. This is the transient a recorded flight
+  // caught at 92 A per motor.
+  const sim = new FlightSim();
+  airborne(sim, 500);
+  let peak = 0;
+  for (let i = 0; i < 2000; i++) {
+    sim.step(sticks({ throttle: 1 }));
+    sim.vel.x = sim.vel.y = sim.vel.z = 0;
+    for (const m of sim.motors) peak = Math.max(peak, m.current);
+  }
+  const limit = racer5().motor.maxCurrent;
+  ok(
+    'per-motor current never exceeds the ESC limit',
+    peak <= limit + 1e-6,
+    `peak ${peak.toFixed(1)} A against a ${limit} A limit`,
+  );
+
+  // The limit must bind on transients only. If it were clipping steady state
+  // the quad would quietly lose top-end thrust.
+  const settled = sim.motors[0]!.current;
+  ok(
+    'steady full throttle sits below the limit',
+    settled < limit * 0.95,
+    `${settled.toFixed(1)} A settled — the limit is a transient guard, not a power cap`,
+  );
+}
+
 // ------------------------------------------------------------------ battery
 
 section('Battery: sag under load');
