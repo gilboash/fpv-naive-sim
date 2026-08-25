@@ -72,7 +72,7 @@ export function defaultPids(): PidProfile {
   };
 }
 
-interface AxisState {
+export interface AxisState {
   integral: number;
   prevGyro: number;
   prevSetpoint: number;

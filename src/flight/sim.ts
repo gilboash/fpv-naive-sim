@@ -72,6 +72,11 @@ export interface SimOptions {
 
 /** Everything the renderer or a telemetry panel needs, updated in place. */
 export interface Telemetry {
+  /** The stick input this step ran on, held between radio reports. */
+  rcThrottle: number;
+  rcRoll: number;
+  rcPitch: number;
+  rcYaw: number;
   /** deg/s, body axes. */
   gyro: Vec3;
   /** deg/s, what the PID was asked for. */
@@ -162,6 +167,10 @@ export class FlightSim {
     ];
 
     this.telemetry = {
+      rcThrottle: 0,
+      rcRoll: 0,
+      rcPitch: 0,
+      rcYaw: 0,
       gyro: vec3(),
       setpoint: vec3(),
       attitude: { roll: 0, pitch: 0, yaw: 0 },
@@ -362,7 +371,7 @@ export class FlightSim {
     this.groundContact();
 
     this.time += dt;
-    this.updateTelemetry(mix.outputs, mix.saturated, totalThrust);
+    this.updateTelemetry(mix.outputs, mix.saturated, totalThrust, input);
   }
 
   /**
@@ -392,8 +401,17 @@ export class FlightSim {
     this.omega.z *= 0.6;
   }
 
-  private updateTelemetry(outputs: number[], saturated: boolean, totalThrust: number): void {
+  private updateTelemetry(
+    outputs: number[],
+    saturated: boolean,
+    totalThrust: number,
+    input: StickInput,
+  ): void {
     const t = this.telemetry;
+    t.rcThrottle = input.throttle;
+    t.rcRoll = input.roll;
+    t.rcPitch = input.pitch;
+    t.rcYaw = input.yaw;
     t.gyro.x = this.gyroDeg.x;
     t.gyro.y = this.gyroDeg.y;
     t.gyro.z = this.gyroDeg.z;

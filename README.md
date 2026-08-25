@@ -196,6 +196,25 @@ Hover throttle really is that low; a 6S racer at 12:1 hovers around 15% stick,
 and a pilot coming off a 4S freestyle build finds it alarming. Reproducing that
 rather than smoothing it out is the point.
 
+### Exporting a flight
+
+Section 5 of the page has a recorder: pick a duration and a rate, press
+**Record flight**, fly, and it writes out **Download CSV** and **Download
+JSON** when it finishes. It samples inside the 1 kHz tick, so 1 kHz means every
+step; the export itself happens off the tick, because touching layout from in
+there would show up as a stall in the very measurement M0 established.
+
+The field names mirror Betaflight's Blackbox — `gyroADC[0..2]`, `setpoint[]`,
+`motor[]`, `axisP/I/D/F[]`, `vbat`, `amperage` — so a sim flight and a real log
+can be laid side by side. The extras are things only a simulator can know
+(per-rotor thrust, world velocity, altitude, specific force) and are what make
+a disagreement diagnosable rather than merely visible.
+
+Units are the model's own, declared in the JSON metadata rather than left to be
+guessed: deg/s, newtons, metres, volts, amps. Blackbox's raw units get
+converted when a real log is read, so the native side of the comparison never
+has to be un-mangled.
+
 ### Verification
 
 `npm run check:flight` runs 39 physical acceptance tests — thrust scaling with

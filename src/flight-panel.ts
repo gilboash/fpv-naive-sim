@@ -11,6 +11,7 @@
 
 import type { Commands } from './mapping.ts';
 import { FlightSim } from './flight/sim.ts';
+import { FlightRecorder } from './flight/recorder.ts';
 import { maxRate } from './flight/rates.ts';
 import { AXIS_ROLL } from './flight/rates.ts';
 
@@ -56,6 +57,8 @@ function motorBar(name: string): Bar {
 
 export class FlightPanel {
   readonly sim = new FlightSim();
+  /** 60 s at 1 kHz is the largest recording the UI offers; about 11 MB held. */
+  readonly recorder = new FlightRecorder(60_000);
   /** Wall-clock microseconds spent in the last batch of physics steps. */
   stepCostUs = 0;
 
@@ -67,6 +70,11 @@ export class FlightPanel {
   private horizonRoll: SVGGElement;
   private statusEl: HTMLElement;
   private costEma = 0;
+  private recBtn: HTMLButtonElement;
+  private recProgress: HTMLElement;
+  private recLinks: HTMLElement;
+  private recDuration: HTMLInputElement;
+  private recRate: HTMLSelectElement;
 
   constructor(root: HTMLElement) {
     const grid = el('div', 'fl-grid');
@@ -195,12 +203,51 @@ export class FlightPanel {
     bar.appendChild(this.statusEl);
     root.appendChild(bar);
 
+    // ---- recorder
+    const recRow = el('div', 'row');
+    const durLabel = el('label', undefined, 'Record ');
+    this.recDuration = el<HTMLInputElement>('input');
+    this.recDuration.type = 'number';
+    this.recDuration.min = '5';
+    this.recDuration.max = '60';
+    this.recDuration.step = '5';
+    this.recDuration.value = '20';
+    durLabel.appendChild(this.recDuration);
+    durLabel.appendChild(document.createTextNode(' s at '));
+    this.recRate = el<HTMLSelectElement>('select');
+    for (const [v, t] of [
+      ['1', '1 kHz'],
+      ['2', '500 Hz'],
+      ['4', '250 Hz'],
+    ] as const) {
+      const o = el<HTMLOptionElement>('option');
+      o.value = v;
+      o.textContent = t;
+      this.recRate.appendChild(o);
+    }
+    durLabel.appendChild(this.recRate);
+    recRow.appendChild(durLabel);
+
+    this.recBtn = el<HTMLButtonElement>('button');
+    this.recBtn.type = 'button';
+    this.recBtn.textContent = 'Record flight';
+    this.recBtn.onclick = () => this.toggleRecord();
+    recRow.appendChild(this.recBtn);
+    this.recProgress = el('span', 'dim', '');
+    recRow.appendChild(this.recProgress);
+    root.appendChild(recRow);
+
+    this.recLinks = el('div', 'row');
+    root.appendChild(this.recLinks);
+
     const hint = el(
       'p',
       'hint',
       'Arming refuses above 5% throttle, as a real flight controller does. ' +
         'Keys: A arm, D disarm, R reset. Rate mode only — there is no self-levelling, ' +
-        'which is the mode the brief is about.',
+        'which is the mode the brief is about. Recording captures the same fields ' +
+        'Betaflight Blackbox logs, so a sim flight and a real log can be compared ' +
+        'side by side.',
     );
     root.appendChild(hint);
 
@@ -240,6 +287,61 @@ export class FlightPanel {
 
   private lastInput = { throttle: 0, roll: 0, pitch: 0, yaw: 0 };
 
+  private toggleRecord(): void {
+    if (this.recorder.recording) {
+      this.recorder.stop();
+      this.finishRecording();
+      return;
+    }
+    const dec = Number(this.recRate.value) || 1;
+    const seconds = Math.max(5, Math.min(60, Number(this.recDuration.value) || 20));
+    this.recTargetSamples = Math.round((seconds * 1000) / dec);
+    this.recLinks.replaceChildren();
+    this.recorder.start(dec);
+    this.recBtn.textContent = 'Stop';
+  }
+
+  private recTargetSamples = 0;
+
+  private finishRecording(): void {
+    this.recBtn.textContent = 'Record flight';
+    const n = this.recorder.sampleCount;
+    if (n === 0) {
+      this.recProgress.textContent = 'nothing recorded';
+      return;
+    }
+    const meta = this.recorder.meta(this.sim);
+    this.recProgress.textContent = `${n.toLocaleString()} samples, ${meta.durationS.toFixed(1)} s`;
+
+    const stamp = (this.recorder.startedAt || new Date().toISOString()).replace(/[:.]/g, '-');
+    const add = (label: string, filename: string, build: () => string, type: string): void => {
+      const b = el<HTMLButtonElement>('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.onclick = () => {
+        const blob = new Blob([build()], { type });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      this.recLinks.appendChild(b);
+    };
+    add(
+      'Download CSV',
+      `fpvsim-m1-flight-${stamp}.csv`,
+      () => this.recorder.toCSV(),
+      'text/csv',
+    );
+    add(
+      'Download JSON',
+      `fpvsim-m1-flight-${stamp}.json`,
+      () => this.recorder.toJSON(this.sim),
+      'application/json',
+    );
+  }
+
   /**
    * Advance the model. Called from the 1 kHz tick, immediately after the
    * gamepad poll, which is the position M0 was built to make safe.
@@ -262,6 +364,20 @@ export class FlightPanel {
 
     const t0 = performance.now();
     this.sim.step(this.lastInput);
+    this.recorder.sample(this.sim);
+    // A target of 0 means "until stopped, or until the buffer fills". Without
+    // this guard, starting the recorder directly rather than through the button
+    // stopped it after a single sample.
+    if (
+      this.recorder.recording &&
+      this.recTargetSamples > 0 &&
+      this.recorder.sampleCount >= this.recTargetSamples
+    ) {
+      this.recorder.stop();
+      // The DOM work has to leave the tick. Anything that touches layout from
+      // in here shows up as a stall in the very measurement M0 established.
+      queueMicrotask(() => this.finishRecording());
+    }
     const us = (performance.now() - t0) * 1000;
     // Exponential average: the per-step figure is far below timer resolution,
     // so any single reading is noise.
@@ -272,6 +388,12 @@ export class FlightPanel {
   /** Called from the 30 Hz render loop. Never from the tick. */
   render(): void {
     const t = this.sim.telemetry;
+
+    if (this.recorder.recording) {
+      const pct = (this.recorder.sampleCount / Math.max(1, this.recTargetSamples)) * 100;
+      this.recProgress.textContent =
+        `recording ${Math.min(100, pct).toFixed(0)}% — ${this.recorder.sampleCount.toLocaleString()} samples`;
+    }
 
     this.horizonRoll.setAttribute('transform', `rotate(${-t.attitude.roll})`);
     this.horizon.setAttribute('transform', `translate(0 ${t.attitude.pitch * 1.6})`);

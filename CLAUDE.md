@@ -29,6 +29,9 @@ before the feel is right.
   strip-only mode cannot compile them. Learned by writing them first.
 - `src/flight-panel.ts` — instrumentation, not a scene. Owns its own DOM so
   `main.ts` needed only two lines: step in the tick, render at 30 Hz.
+- `src/flight/recorder.ts` — flight recorder in Blackbox's field layout, so a
+  sim flight and a real `.bbl` can be compared through one code path. Samples
+  in the tick, exports off it.
 - `tools/flight-check.ts` — 39 physical acceptance tests, `npm run check:flight`.
 - `tools/browser-check.mjs` — CDP verification of the real page,
   `npm run check:browser`. Needs `npm run dev` running.
@@ -99,7 +102,16 @@ Also open: end-to-end input-to-photon latency is still unmeasured and needs a
 photodiode or high-speed-camera rig. The report-gap question from M0 is now
 answered as far as it usefully can be — see the two-run comparison above.
 
-**Next after sign-off:** M2, the scene. Not before the feel is right.
+**Next, and the reason the recorder exists:** a comparison harness that reads a
+Betaflight Blackbox log and a sim recording through one path, drives the model
+with the logged `rcCommand` at 1 kHz, and plots achieved against logged gyro per
+axis. Gilboa has been asked for: the `.bbl`, a `diff all`, and the physical
+measurements (all-up weight with battery, prop, motor KV, cells, pack capacity,
+motor-to-motor diagonal). Bidirectional DShot matters more than any debug flag —
+it puts per-motor RPM in the log, which is what separates the motor model from
+the rotor model from the PID.
+
+**After sign-off:** M2, the scene. Not before the feel is right.
 
 **How to verify a browser change without a human:** `npm run check:browser`,
 which is the M0 technique packaged — headless Chrome with

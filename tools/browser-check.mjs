@@ -215,6 +215,95 @@ const main = async () => {
     `armed ${failsafe.armedBefore} -> ${failsafe.armedAfter} after a step with no link`,
   );
 
+  // The recorder, driven by the real 1 kHz tick rather than a loop.
+  const rec = await evaluate(`(async () => {
+    const { flight } = globalThis.__fpvsim;
+    flight.sim.reset();
+    flight.sim.arm({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
+    flight.recorder.start(1);
+    await new Promise((r) => setTimeout(r, 1500));
+    flight.recorder.stop();
+    const csv = flight.recorder.toCSV();
+    const lines = csv.split(String.fromCharCode(10));
+    const head = lines[0].split(',');
+    const body = lines.slice(1);
+    const numeric = body.slice(0, 500).every((l) => {
+      const cells = l.split(',');
+      return cells.length === head.length && cells.every((v) => Number.isFinite(Number(v)));
+    });
+    const json = JSON.parse(flight.recorder.toJSON(flight.sim));
+    return {
+      samples: flight.recorder.sampleCount,
+      csvRows: body.length,
+      cols: head.length,
+      numeric,
+      jsonRows: json.rows.length,
+      jsonCols: json.meta.columns.length,
+      hasTime: head[0] === 'time',
+      hasGyro: head.includes('gyroADC[0]'),
+      hasMotor: head.includes('motor[0]'),
+      sampleHz: json.meta.sampleHz,
+    };
+  })()`);
+
+  check(
+    'recorder samples at the tick rate',
+    rec.samples > 1300 && rec.samples < 1700,
+    `${rec.samples} samples in 1.5 s (meta says ${rec.sampleHz} Hz)`,
+  );
+  check('CSV row count matches sample count', rec.csvRows === rec.samples, `${rec.csvRows} rows`);
+  check(
+    'CSV is rectangular and numeric',
+    rec.numeric === true,
+    `${rec.cols} columns, first 500 rows all finite`,
+  );
+  check(
+    'Blackbox-shaped field names present',
+    rec.hasTime && rec.hasGyro && rec.hasMotor,
+    'time, gyroADC[0], motor[0]',
+  );
+  check(
+    'JSON export agrees with CSV',
+    rec.jsonRows === rec.samples && rec.jsonCols === rec.cols,
+    `${rec.jsonRows} rows x ${rec.jsonCols} columns`,
+  );
+
+  // The button path: duration, auto-stop, and the download links appearing.
+  const uiRec = await evaluate(`(async () => {
+    const { flight } = globalThis.__fpvsim;
+    const panel = document.querySelector('#flight-panel');
+    const dur = panel.querySelector('input[type=number]');
+    const btn = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Record flight');
+    dur.value = '5';
+    btn.click();
+    const startedLabel = btn.textContent;
+    await new Promise((r) => setTimeout(r, 6000));
+    const links = [...panel.querySelectorAll('button')].map((b) => b.textContent);
+    return {
+      startedLabel,
+      stoppedLabel: btn.textContent,
+      samples: flight.recorder.sampleCount,
+      recording: flight.recorder.recording,
+      links: links.filter((t) => t.startsWith('Download')),
+    };
+  })()`);
+
+  check(
+    'record button starts and auto-stops at the set duration',
+    uiRec.startedLabel === 'Stop' && uiRec.stoppedLabel === 'Record flight' && !uiRec.recording,
+    `label ${uiRec.startedLabel} -> ${uiRec.stoppedLabel}, ${uiRec.samples} samples for a 5 s run`,
+  );
+  check(
+    'auto-stopped at the right length',
+    uiRec.samples >= 4900 && uiRec.samples <= 5100,
+    `${uiRec.samples} samples (expected ~5000)`,
+  );
+  check(
+    'download links appear when recording finishes',
+    uiRec.links.length === 2,
+    uiRec.links.join(', ') || 'none',
+  );
+
   // Let it run a while longer to catch anything that only shows up over time.
   await sleep(2000);
 
