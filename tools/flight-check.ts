@@ -426,6 +426,49 @@ section('Robustness: it must not be possible to make it produce nonsense');
   ok('disarmed quad stays on the ground', idle.onGround, `altitude ${idle.telemetry.altitude.toFixed(4)} m`);
 }
 
+// -------------------------------------------------- mid-flight state seeding
+
+section('Replay: a model can be restarted from a logged state');
+{
+  // The replay harness depends on this and nothing else tested it. Fly one sim,
+  // copy its state into a second, and the second must continue the flight
+  // rather than lurch. Getting this wrong is invisible in the model and shows
+  // up only as a comparison that says the model is wrong when it is not.
+  const a = new FlightSim();
+  airborne(a, 100);
+  const input = sticks({ throttle: 0.4, roll: 0.6, pitch: -0.3, yaw: 0.2 });
+  run(a, input, 1.5);
+
+  const b = new FlightSim();
+  b.reset();
+  b.armed = true;
+  b.pos.z = a.pos.z;
+  b.onGround = false;
+  b.vel.x = a.vel.x;
+  b.vel.y = a.vel.y;
+  b.vel.z = a.vel.z;
+  b.omega.x = a.omega.x;
+  b.omega.y = a.omega.y;
+  b.omega.z = a.omega.z;
+  b.q.w = a.q.w;
+  b.q.x = a.q.x;
+  b.q.y = a.q.y;
+  b.q.z = a.q.z;
+  for (let i = 0; i < a.motors.length; i++) b.motors[i]!.omega = a.motors[i]!.omega;
+  for (let ax = 0; ax < 3; ax++) b.controller.axes[ax]!.integral = a.controller.axes[ax]!.integral;
+  b.battery.voltage = a.battery.voltage;
+  b.primeControlState(a.telemetry.gyro, a.telemetry.setpoint);
+
+  // One step each. With the state copied and the filters primed they should
+  // agree closely; without primeControlState the D-term alone throws it out.
+  a.step(input);
+  b.step(input);
+  const dGyro = Math.abs(a.telemetry.gyro.x - b.telemetry.gyro.x);
+  const dMotor = Math.abs((a.telemetry.motorOutputs[0] ?? 0) - (b.telemetry.motorOutputs[0] ?? 0));
+  ok('seeded model matches on the next gyro sample', dGyro < 0.5, `${dGyro.toFixed(4)} deg/s apart`);
+  ok('seeded model commands the same motor output', dMotor < 0.05, `${dMotor.toFixed(4)} apart on motor 1`);
+}
+
 // ----------------------------------------------------------- determinism
 
 section('Determinism: the same inputs must give the same flight');

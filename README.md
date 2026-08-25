@@ -255,6 +255,56 @@ zero output is airmode working as designed at low throttle, not clipping. And
 the single worst number in the log — 1233 deg/s of pitch against a 792 setpoint
 — happened at 0.1 m altitude and is the ground model, not the flight model.
 
+### Comparing against a real log
+
+```
+npm run replay -- <log> [--mode windows|full|rates] [--window 0.25] [--out report.html]
+```
+
+Reads one of our own recordings or a CSV from `blackbox_decode`, replays it
+through the model, and reports where the two disagree. Betaflight's binary
+`.bbl` is not parsed — decode to CSV first; reimplementing the reference
+decoder's frame predictors would be a large pile of new places to be quietly
+wrong.
+
+**Whole-flight replay cannot validate anything, and that is measured rather
+than assumed.** Replaying this model's own recording reproduces it exactly
+while disarmed and then diverges within ten milliseconds of arming. It is not a
+harness bug: feeding the same flight stick values quantised to one part in ten
+thousand — finer than any radio resolves — moves the roll rate by 1 deg/s
+within 33 ms and by hundreds within seconds. An aggressively flown quad is
+chaotic, and mixer saturation makes it worse by being a real discontinuity
+rather than a steep curve.
+
+So the default mode is `windows`: cut the flight into short segments, seed each
+from the state the log records at that instant, replay a few hundred
+milliseconds, and aggregate. Seeding runs in from 50 ms earlier with body rates
+and rotor speeds pinned to the log, so every filter the controller owns charges
+on real history — a single-sample seed leaves the D-term filter at zero and is
+already 13% out on motor output at the first step.
+
+Against our own 20 s recording, the floor the method reaches is:
+
+| into the window | 10 ms | 25 ms | 50 ms | 100 ms | 200 ms |
+|---|---|---|---|---|---|
+| roll | 3.4 | 9.6 | 12.3 | 23.4 | 19.8 |
+| pitch | 2.4 | 8.3 | 7.1 | 13.5 | 18.6 |
+| yaw | 0.3 | 0.9 | 2.8 | 6.7 | 7.4 |
+
+(median |error|, deg/s, ground-contact windows excluded — the reference's
+ground model multiplies body rates by 0.6 every step and the replay cannot
+reproduce that from altitude, nor should it try.)
+
+That table is the noise floor. On a real log, anything close to it means
+agreement and anything well above it is a modelling difference. **The useful
+horizon is 25–50 ms**; past 100 ms the floor is 20 deg/s and climbing.
+
+`--scale-inertia` and `--scale-mass` deliberately break the model to ask how
+wrong a parameter must be before the comparison notices. Doubling roll inertia
+roughly triples the 200 ms error and multiplies the yaw error by four, so the
+method resolves gross errors confidently and a 10% one not at all. Yaw
+discriminates best, being the axis least disturbed by saturation.
+
 ### Known gaps, stated rather than omitted
 
 - **Not validated against a real Blackbox log.** The model is physically

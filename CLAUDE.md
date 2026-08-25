@@ -116,10 +116,30 @@ That flight also spent half its time within 0.5 m of the ground and hit it at
 rather than theoretical. Still a later milestone, but it is the gap most likely
 to be felt next.
 
-**Next, and the reason the recorder exists:** a comparison harness that reads a
-Betaflight Blackbox log and a sim recording through one path, drives the model
-with the logged `rcCommand` at 1 kHz, and plots achieved against logged gyro per
-axis. Gilboa has been asked for: the `.bbl`, a `diff all`, and the physical
+**Comparison harness built (`tools/replay.ts`, `npm run replay`).** Reads our
+recordings and `blackbox_decode` CSV through one path, with every unit
+assumption printed rather than buried. Building it before the log arrived paid
+for itself immediately:
+
+- **Whole-flight replay validates nothing.** The model reproduces its own
+  recording exactly while disarmed and diverges within 10 ms of arming. Stick
+  quantisation of 1e-4 — finer than any radio — gives 1 deg/s in 33 ms. The
+  system is chaotic and mixer saturation is a real discontinuity. Had this been
+  discovered while staring at a real log, the obvious conclusion would have been
+  "the model is wrong", and it would have been false.
+- **So: windowed comparison**, 250 ms segments seeded from logged state, with a
+  50 ms run-in during which rates and rotor speeds are pinned to the log so the
+  controller's filters charge on real history. A single-sample seed was 13% out
+  on motor output at the first step, because the D-term filter started at zero.
+- **Ground windows must be excluded.** Half the first flight was within 0.5 m of
+  the ground, where the reference's contact damping scales body rates by 0.6 per
+  step. Including them was drowning the airborne signal entirely.
+- **The floor is ~3 deg/s at 10 ms, ~10 at 25 ms, ~20 at 100 ms.** Useful
+  horizon is 25-50 ms. `--scale-inertia` says doubling roll inertia roughly
+  triples the 200 ms error, so the method catches gross errors and not 10% ones.
+  Yaw discriminates best, being least disturbed by saturation.
+
+What remains when the log lands: Gilboa has been asked for: the `.bbl`, a `diff all`, and the physical
 measurements (all-up weight with battery, prop, motor KV, cells, pack capacity,
 motor-to-motor diagonal). Bidirectional DShot matters more than any debug flag —
 it puts per-motor RPM in the log, which is what separates the motor model from

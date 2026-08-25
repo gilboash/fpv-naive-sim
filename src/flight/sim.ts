@@ -212,6 +212,36 @@ export class FlightSim {
     setV(this.lastAccelBody, 0, 0, 0);
   }
 
+  /**
+   * Prime the filters and controller history so the model can be started
+   * mid-flight from a logged state.
+   *
+   * Without this a replay that seeds body rates and motor speeds still lurches
+   * on its first step: the gyro lowpass starts at zero and has to charge up to
+   * the real rate, the D-term sees the whole rate as one step of derivative,
+   * and feedforward sees the whole setpoint as one step of stick movement.
+   * Measured on a window seeded from this model's own recording, leaving these
+   * unset cost about 47 deg/s of error 10 ms in — an order of magnitude more
+   * than everything else in the seeding put together.
+   *
+   * All arguments are deg/s.
+   */
+  primeControlState(gyro: Vec3, setpoint: Vec3): void {
+    const g = [gyro.x, gyro.y, gyro.z];
+    const sp = [setpoint.x, setpoint.y, setpoint.z];
+    for (let ax = 0; ax < 3; ax++) {
+      this.gyroFilter[ax]!.reset(g[ax]!);
+      const st = this.controller.axes[ax]!;
+      st.prevGyro = g[ax]!;
+      st.prevSetpoint = sp[ax]!;
+      st.dLowpass.reset(0);
+      st.relaxLowpass.reset(sp[ax]!);
+    }
+    this.gyroDeg.x = gyro.x;
+    this.gyroDeg.y = gyro.y;
+    this.gyroDeg.z = gyro.z;
+  }
+
   /** Arming refuses at anything but idle throttle, exactly as a real FC does. */
   arm(input: StickInput): boolean {
     if (input.throttle > 0.05) return false;

@@ -66,6 +66,13 @@ export const COLUMNS = [
   'accel[0]',
   'accel[1]',
   'accel[2]',
+  // Flags, 0 or 1. `armed` is here because a replay cannot reproduce a flight
+  // without it and the first recording had to have it inferred from whether the
+  // motors were turning. Betaflight carries the same information as flight-mode
+  // flags rather than a column, and the reader converts.
+  'armed',
+  'onGround',
+  'saturated',
 ] as const;
 
 export const UNITS: Record<string, string> = {
@@ -86,6 +93,7 @@ export const UNITS: Record<string, string> = {
   'velN velE velD': 'm/s, world NED',
   altitude: 'm above ground',
   'accel[]': 'g, body frame, specific force as an accelerometer reads it',
+  'armed onGround saturated': '0 or 1',
 };
 
 const NCOL = COLUMNS.length;
@@ -188,6 +196,9 @@ export class FlightRecorder {
     d[k++] = t.accel.x;
     d[k++] = t.accel.y;
     d[k++] = t.accel.z;
+    d[k++] = t.armed ? 1 : 0;
+    d[k++] = t.onGround ? 1 : 0;
+    d[k++] = t.mixerSaturated ? 1 : 0;
 
     this.n++;
   }
