@@ -324,6 +324,62 @@ roughly triples the 200 ms error and multiplies the yaw error by four, so the
 method resolves gross errors confidently and a 10% one not at all. Yaw
 discriminates best, being the axis least disturbed by saturation.
 
+### Reading a real Blackbox log
+
+`npm run replay -- <log>.BBL --session <n>` reads the binary directly. There is
+also `npm run identify -- <log>.BBL --session <n>`, which measures airframe
+parameters from the flight instead of taking them on trust.
+
+**Betaflight logs pitch positive nose-down.** This model uses nose-up
+throughout, so the reader negates pitch on the way in. Betaflight's own QUADX
+mixer gives the *rear* motors a pitch coefficient of +1, which is the giveaway,
+but it was established from the data rather than the source — and the way it was
+established matters, because the obvious test gives the wrong answer.
+Correlating the motor *command* differential against pitch acceleration says
+front-up produces nose-up. Correlating the eRPM-derived *thrust* differential
+says the opposite, at r = -0.50, at zero lag, on the same flight where roll
+gives +0.49. The command has a PID in the loop and is not a witness to
+causation; rotor speed to thrust to torque has nothing in it but physics.
+Applying the flip dropped pitch error 20-32% and left roll and yaw untouched,
+which is what a real sign fix looks like.
+
+### What the logs measured
+
+Given the all-up mass, a log with bidirectional DShot pins down two things no
+datasheet will:
+
+| | measured | previously assumed | |
+|---|---|---|---|
+| rotor thrust coefficient | 1.148e-6 N/(rad/s)² | 1.64e-6 | model was 43% high |
+| roll inertia | 1.759e-3 kg·m² | 1.8e-3 | 2% |
+| pitch inertia | 8.4e-4 kg·m² | 2.0e-3 | 139% |
+| hover rotor speed | 9 568 rpm | — | matches the log's throttle/RPM curve |
+
+The thrust result is the interesting one: the blade-element model's error was a
+flat **14% across 6 000 to 26 000 rpm**, so it had the omega-squared law right
+and only the aerodynamic scale wrong. A lift-curve slope of 5.7/rad is
+thin-aerofoil theory, which a prop section at Reynolds ~40 000 does not achieve.
+Calibrating to 3.7/rad with cd0 0.035 closes it.
+
+The pitch inertia fitting at half of roll is not what a symmetric X frame should
+give. It uses half as many samples and much smaller thrust differentials, so it
+is the weaker of the two fits and is flagged as such in `airframe.ts`.
+
+### What the comparison cannot yet see
+
+Swapping the generic 5" racer for the measured Kronos airframe **barely moves
+the result** — better on one session, worse on another. That is consistent with
+the sensitivity analysis: windowed replay seeds rotor speeds and the I-term from
+the log, and over 250 ms a rate-mode PID compensates for a good deal of airframe
+error. So the residual 20 / 13 / 7 deg/s is not mostly airframe parameters.
+
+The likelier candidates are all things this model does not have: `d_min` is
+active on the real quad (21/30/0 against d_max 37), so is anti-gravity (gain
+80), the gyro runs a dynamic lowpass rather than the static one modelled here,
+and RC smoothing shapes the setpoint before the PID sees it. Each is a
+concrete next step with a measurable outcome, which is a better position than
+the model was in yesterday.
+
 ### Known gaps, stated rather than omitted
 
 - **Not validated against a real Blackbox log.** The model is physically

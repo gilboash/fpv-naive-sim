@@ -33,6 +33,8 @@ before the feel is right.
   sim flight and a real `.bbl` can be compared through one code path. Samples
   in the tick, exports off it.
 - `tools/flight-check.ts` — 39 physical acceptance tests, `npm run check:flight`.
+- `src/flight/blackbox.ts` — Betaflight binary decoder, `tools/identify.ts` —
+  airframe parameter fitting from a log, `npm run identify`.
 - `tools/browser-check.mjs` — CDP verification of the real page,
   `npm run check:browser`. Needs `npm run dev` running.
 
@@ -168,11 +170,38 @@ model*. The floor is a property of how hard the reference was flown, not of the
 method, so it is now measured per log by re-flying each window with the sticks
 nudged one quantum. Any floor quoted from a different flight is meaningless.
 
-**The comparison is not yet meaningful in detail**, because the model is still
-a generic 5" 6S racer while these are Gilboa's actual quads. Asked for: all-up
-weight with battery, prop, motor size and KV, cell count, pack capacity, and
-motor-to-motor diagonal, for NACRONOS at minimum. Until those land, the 20x-600x
-gap is expected and says little.
+**NACRONOS specs received and modelled (`kronos()` in airframe.ts):** Kronos
+Legacy frame, 250 g dry + 220 g pack = 470 g AUW, 6S 1480 mAh 160C, Gemfan
+51377, 2107 motors at 2080 KV.
+
+**Betaflight logs pitch positive nose-down.** The reader negates it. Established
+from data, not source, and the method matters: the motor *command* differential
+correlates +0.41 with pitch acceleration and the eRPM-derived *thrust*
+differential correlates -0.50, at zero lag, on the same flight where roll gives
++0.49 both ways. The command has a PID in the loop; thrust does not. Applying
+the flip cut pitch error 20-32% and left roll and yaw alone.
+
+**`tools/identify.ts` measures airframe parameters from a log** (needs
+bidirectional DShot). Results on NACRONOS: thrust coefficient 1.148e-6
+N/(rad/s)^2 against a modelled 1.64e-6 — the blade-element model was 43% high,
+but flatly so across 6 000-26 000 rpm, meaning the omega-squared law was right
+and only the aerodynamic scale was wrong. clAlpha 5.7 (thin-aerofoil theory) is
+not achievable at prop Reynolds numbers; 3.7 with cd0 0.035 matches. Roll
+inertia fitted 1.759e-3 against a 1.8e-3 estimate; pitch fitted 8.4e-4, half of
+roll, which is suspicious for a symmetric frame and is the weaker fit.
+
+Two filter traps in that tool, both now commented: a quad on the ground is
+level, still, and reads exactly 1 g, so hover detection needs a throttle gate;
+and a racing quad never actually hovers, so the thrust fit runs over the whole
+flight using the fact that body-z specific force *is* rotor thrust over mass.
+
+**The comparison is not yet sensitive to airframe parameters.** Swapping the
+generic racer for the measured Kronos barely moves the result. Windowed replay
+seeds rotor speed and I-term from the log, and a rate-mode PID compensates for
+airframe error over 250 ms. So the residual 20/13/7 deg/s is elsewhere, and the
+candidates are all unmodelled Betaflight features: d_min (active, 21/30/0
+against d_max 37), anti-gravity (gain 80), the dynamic gyro lowpass, and RC
+smoothing shaping the setpoint. Those are the next things to try.
 
 What remains when the specs land: Gilboa has been asked for: the `.bbl`, a `diff all`, and the physical
 measurements (all-up weight with battery, prop, motor KV, cells, pack capacity,

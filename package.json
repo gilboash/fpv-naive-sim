@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "check:flight": "node --experimental-strip-types tools/flight-check.ts",
     "check:browser": "node tools/browser-check.mjs",
-    "replay": "node --experimental-strip-types tools/replay.ts"
+    "replay": "node --experimental-strip-types tools/replay.ts",
+    "identify": "node --experimental-strip-types tools/identify.ts"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

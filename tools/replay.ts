@@ -52,7 +52,7 @@ import { basename } from 'node:path';
 import { parseLog, parseBlackboxBinary, type FlightLog } from '../src/flight/logio.ts';
 import { FlightSim, type StickInput } from '../src/flight/sim.ts';
 import { fromEuler, DEG } from '../src/flight/math.ts';
-import { racer5 } from '../src/flight/airframe.ts';
+import { kronos, racer5 } from '../src/flight/airframe.ts';
 import type { PidProfile } from '../src/flight/pid.ts';
 import type { RateProfile } from '../src/flight/rates.ts';
 
@@ -387,7 +387,9 @@ function sampleAt(series: Float64Array, t: number): number {
 // method is blunt.
 const scaleInertia = Number(flag('scale-inertia') ?? 1);
 const scaleMass = Number(flag('scale-mass') ?? 1);
-const airframe = racer5();
+// The Kronos is the airframe these logs came from; the generic racer stays
+// available with --airframe racer5 for comparison.
+const airframe = flag('airframe') === 'racer5' ? racer5() : kronos();
 airframe.inertia.x *= scaleInertia;
 airframe.inertia.y *= scaleInertia;
 airframe.inertia.z *= scaleInertia;

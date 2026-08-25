@@ -387,22 +387,41 @@ export function parseBlackboxBinary(
 
   // Gyro is already deg/s in the frame data: on these logs the peak gyro tracks
   // the peak setpoint, which it could not do in any other unit.
+  //
+  // Pitch is negated. Betaflight's QUADX mixer gives the REAR motors a pitch
+  // coefficient of +1, so a positive pitch command raises the rear and drops the
+  // nose: Betaflight's pitch is positive nose-DOWN, where this model's is
+  // positive nose-up throughout.
+  //
+  // Confirmed from the logs rather than from the source, because a PID in the
+  // loop makes the motor *commands* an unreliable witness: correlating the
+  // command differential against pitch acceleration says one thing and the
+  // eRPM-derived thrust differential says the opposite. Rotor speed to thrust to
+  // torque has no controller in it, so it is the chain to trust, and it gives
+  // r = -0.50 against Betaflight's pitch — a clean inversion, at zero lag,
+  // while roll on the same flight gives +0.49.
+  const PITCH_IS_NOSE_DOWN = -1;
   for (let ax = 0; ax < 3; ax++) {
+    const flip = ax === 1 ? PITCH_IS_NOSE_DOWN : 1;
     const g = raw(`gyroADC[${ax}]`);
-    if (g) series.set(`gyroADC[${ax}]`, g);
+    if (g) series.set(`gyroADC[${ax}]`, flip === 1 ? g : map(g, (v) => v * flip));
     const sp = raw(`setpoint[${ax}]`);
-    if (sp) series.set(`setpoint[${ax}]`, sp);
+    if (sp) series.set(`setpoint[${ax}]`, flip === 1 ? sp : map(sp, (v) => v * flip));
     for (const term of ['P', 'I', 'D', 'F']) {
       const v = raw(`axis${term}[${ax}]`);
       if (v) series.set(`axis${term}[${ax}]`, v);
     }
   }
   assumptions.push('gyroADC and setpoint taken as deg/s (peak gyro tracks peak setpoint, confirming it)');
+  assumptions.push('pitch negated: Betaflight logs pitch positive nose-down, this model uses nose-up');
 
   const rcNames = ['rcRoll', 'rcPitch', 'rcYaw'];
   for (let ax = 0; ax < 3; ax++) {
     const r = raw(`rcCommand[${ax}]`);
-    if (r) series.set(rcNames[ax]!, map(r, (v) => Math.max(-1, Math.min(1, v / 500))));
+    // Pitch stick negated for the same reason as the gyro above, so that
+    // replaying the logged stick produces the logged rotation.
+    const flip = ax === 1 ? PITCH_IS_NOSE_DOWN : 1;
+    if (r) series.set(rcNames[ax]!, map(r, (v) => Math.max(-1, Math.min(1, (v * flip) / 500))));
   }
   const thr = raw('rcCommand[3]');
   if (thr) {
