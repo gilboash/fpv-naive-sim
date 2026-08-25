@@ -139,7 +139,42 @@ for itself immediately:
   triples the 200 ms error, so the method catches gross errors and not 10% ones.
   Yaw discriminates best, being least disturbed by saturation.
 
-What remains when the log lands: Gilboa has been asked for: the `.bbl`, a `diff all`, and the physical
+**Blackbox decoder written (`src/flight/blackbox.ts`).** `blackbox_decode` is
+not installable here and Homebrew does not carry it, and a pipeline with a
+mandatory GUI export in the middle fails this project's own convention. Decodes
+all four of Gilboa's logs with zero desyncs. Two bugs worth remembering: after an
+I frame both history slots must hold it (otherwise the first straight-line
+prediction is garbage and the rest of the file byte-scans), and TAG8_4S16's
+16-bit values are big-endian while the rest of the format is little-endian.
+
+Also: I broke the no-parameter-properties rule from the Layout section above
+while writing it, within a day of writing the rule down. It is a real constraint,
+not a style note.
+
+**First real comparison run (2026-08-26).** Six flights across two quads,
+NACRONOS (MAMBAF722, 6S, 2 kHz logging, eRPM present) being the best — a 117 s
+flight. The tune is read straight out of the header, so the model runs on their
+gains. `rates_type:2` is KISS, which is algebraically identical to the
+Betaflight curve for ordinary expo; verified against the logged setpoint, which
+the Actual curve misses by 372 deg/s.
+
+**Result: the model measurably differs from the real quads.** Median per-window
+RMS 11-32 deg/s in roll, 10-21 pitch, 7-9 yaw, against a per-flight chaos floor
+of 0.0-0.8. So 20x to 600x the floor: real signal, not noise.
+
+This nearly went the other way. Compared against the floor from the aggressive
+sim flight (roll 31.6), five of six real logs looked *better than a perfect
+model*. The floor is a property of how hard the reference was flown, not of the
+method, so it is now measured per log by re-flying each window with the sticks
+nudged one quantum. Any floor quoted from a different flight is meaningless.
+
+**The comparison is not yet meaningful in detail**, because the model is still
+a generic 5" 6S racer while these are Gilboa's actual quads. Asked for: all-up
+weight with battery, prop, motor size and KV, cell count, pack capacity, and
+motor-to-motor diagonal, for NACRONOS at minimum. Until those land, the 20x-600x
+gap is expected and says little.
+
+What remains when the specs land: Gilboa has been asked for: the `.bbl`, a `diff all`, and the physical
 measurements (all-up weight with battery, prop, motor KV, cells, pack capacity,
 motor-to-motor diagonal). Bidirectional DShot matters more than any debug flag —
 it puts per-motor RPM in the log, which is what separates the motor model from

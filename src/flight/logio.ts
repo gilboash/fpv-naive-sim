@@ -1,3 +1,5 @@
+import { decodeBlackbox } from './blackbox.ts';
+
 /**
  * Reading flight logs, ours and Betaflight's, into one shape.
  *
@@ -8,10 +10,10 @@
  * and it reports every assumption it made, so a comparison that comes out wrong
  * can be diagnosed instead of merely disbelieved.
  *
- * Betaflight's binary .bbl is not parsed here. `blackbox_decode` is the
- * reference decoder, everyone already has it, and reimplementing its frame
- * predictors would be a large pile of new places to be quietly wrong. Decode
- * to CSV first.
+ * Both the binary .BBL and a `blackbox_decode` CSV are accepted. The binary
+ * path is preferred: the header travels with it, so motor range, vbat scale
+ * and motor poles are read rather than guessed, and the tune comes along for
+ * free.
  */
 
 export interface LogMeta {
@@ -343,6 +345,160 @@ export function parseBlackboxCSV(
       sampleHz: hz,
       durationS: time.length ? time[time.length - 1]! : 0,
       assumptions,
+    },
+    series,
+  );
+}
+
+// ------------------------------------------------------- Betaflight binary
+
+/**
+ * Read a .BBL directly, no external decoder.
+ *
+ * Scaling here is taken from the log's own header wherever the header knows
+ * it — motor range, vbat scale, motor poles — rather than inferred from the
+ * numbers, which is the one advantage the binary format has over a decoded CSV.
+ * Where the header does not say, the assumption is recorded as usual.
+ */
+export function parseBlackboxBinary(
+  buf: Uint8Array,
+  source: string,
+  session: number,
+  opts: BlackboxOptions = {},
+): FlightLog {
+  const dec = decodeBlackbox(buf, session);
+  const H = dec.header.raw;
+  const assumptions: string[] = [];
+  const series = new Map<string, Float64Array>();
+  const raw = (n: string): Float64Array | undefined => {
+    const i = dec.fieldNames.indexOf(n);
+    return i >= 0 ? dec.columns[i] : undefined;
+  };
+  const map = (from: Float64Array, f: (v: number) => number): Float64Array => {
+    const out = new Float64Array(from.length);
+    for (let i = 0; i < from.length; i++) out[i] = f(from[i]!);
+    return out;
+  };
+
+  const time = raw('time');
+  if (!time) throw new Error('decoded log has no time field');
+  const t0 = time[0]!;
+  series.set('time', map(time, (v) => (v - t0) / 1e6));
+
+  // Gyro is already deg/s in the frame data: on these logs the peak gyro tracks
+  // the peak setpoint, which it could not do in any other unit.
+  for (let ax = 0; ax < 3; ax++) {
+    const g = raw(`gyroADC[${ax}]`);
+    if (g) series.set(`gyroADC[${ax}]`, g);
+    const sp = raw(`setpoint[${ax}]`);
+    if (sp) series.set(`setpoint[${ax}]`, sp);
+    for (const term of ['P', 'I', 'D', 'F']) {
+      const v = raw(`axis${term}[${ax}]`);
+      if (v) series.set(`axis${term}[${ax}]`, v);
+    }
+  }
+  assumptions.push('gyroADC and setpoint taken as deg/s (peak gyro tracks peak setpoint, confirming it)');
+
+  const rcNames = ['rcRoll', 'rcPitch', 'rcYaw'];
+  for (let ax = 0; ax < 3; ax++) {
+    const r = raw(`rcCommand[${ax}]`);
+    if (r) series.set(rcNames[ax]!, map(r, (v) => Math.max(-1, Math.min(1, v / 500))));
+  }
+  const thr = raw('rcCommand[3]');
+  if (thr) {
+    series.set('rcThrottle', map(thr, (v) => Math.max(0, Math.min(1, (v - 1000) / 1000))));
+    assumptions.push('throttle mapped from rcCommand[3] over 1000..2000');
+  }
+
+  // Motor range comes from the header rather than from the observed values.
+  const motorOutput = (H.get('motorOutput') ?? '0,2047').split(',').map(Number);
+  const mLo = motorOutput[0] ?? 0;
+  const mHi = motorOutput[1] ?? 2047;
+  let anyMotor = false;
+  for (let m = 0; m < 4; m++) {
+    const v = raw(`motor[${m}]`);
+    if (!v) continue;
+    anyMotor = true;
+    series.set(`motor[${m}]`, map(v, (x) => Math.max(0, Math.min(1, (x - mLo) / (mHi - mLo)))));
+  }
+  if (anyMotor) assumptions.push(`motor outputs normalised over the header's range ${mLo}..${mHi}`);
+
+  const poles = opts.motorPoles ?? Number(H.get('motor_poles') ?? 14);
+  let anyRpm = false;
+  for (let m = 0; m < 4; m++) {
+    const v = raw(`eRPM[${m}]`);
+    if (!v) continue;
+    anyRpm = true;
+    series.set(`rpm[${m}]`, map(v, (x) => (x * 100) / (poles / 2)));
+  }
+  assumptions.push(
+    anyRpm
+      ? `eRPM converted with ${poles} motor poles, from the header`
+      : 'no eRPM in this log — the motor and rotor models cannot be separated',
+  );
+
+  const vb = raw('vbatLatest');
+  if (vb) {
+    series.set('vbat', map(vb, (v) => v * 0.01));
+    assumptions.push('vbatLatest scaled by 0.01 to volts');
+  }
+  const amp = raw('amperageLatest');
+  if (amp) {
+    series.set('amperage', map(amp, (v) => v * 0.01));
+    assumptions.push('amperageLatest scaled by 0.01 to amps — verify against a known hover draw');
+  }
+
+  if (dec.desyncs > 0) assumptions.push(`decoder lost sync ${dec.desyncs} times`);
+
+  const timeS = series.get('time')!;
+  const duration = timeS.length ? timeS[timeS.length - 1]! : 0;
+
+  // The tune travels with the log, so the model can be run on the real gains
+  // rather than on defaults.
+  const list = (k: string): number[] => (H.get(k) ?? '').split(',').map(Number);
+  const rc = list('rc_rates');
+  const rt = list('rates');
+  const ex = list('rc_expo');
+  const rollPID = list('rollPID');
+  const pitchPID = list('pitchPID');
+  const yawPID = list('yawPID');
+
+  return makeLog(
+    {
+      source: `${source} [session ${session}, ${dec.craftName}]`,
+      format: 'blackbox-csv',
+      samples: timeS.length,
+      sampleHz: timeS.length > 1 ? (timeS.length - 1) / duration : 1000,
+      durationS: duration,
+      assumptions,
+      rates:
+        rc.length === 3
+          ? {
+              // rates_type 2 is KISS, which is algebraically the same curve as
+              // Betaflight's for ordinary expo values — checked against the
+              // logged setpoint, which the Actual curve misses by 372 deg/s.
+              type: 'betaflight',
+              rcRate: [rc[0]!, rc[1]!, rc[2]!],
+              rate: [rt[0]!, rt[1]!, rt[2]!],
+              expo: [ex[0]!, ex[1]!, ex[2]!],
+            }
+          : undefined,
+      pids:
+        rollPID.length === 3
+          ? {
+              roll: { p: rollPID[0]!, i: rollPID[1]!, d: rollPID[2]!, f: 0 },
+              pitch: { p: pitchPID[0]!, i: pitchPID[1]!, d: pitchPID[2]!, f: 0 },
+              yaw: { p: yawPID[0]!, i: yawPID[1]!, d: yawPID[2]!, f: 0 },
+              gyroLowpassHz: Number(H.get('gyro_lpf1_static_hz') ?? 250) || 250,
+              dtermLowpassHz: Number(H.get('dterm_lpf1_static_hz') ?? 117) || 117,
+              itermRelaxHz: 15,
+              itermLimit: 400,
+              pidSumLimit: 500,
+              pidSumLimitYaw: 400,
+              tpaBreakpoint: (Number(H.get('tpa_breakpoint') ?? 1350) - 1000) / 1000,
+              tpaRate: Number(H.get('tpa_rate') ?? 65) / 100,
+            }
+          : undefined,
     },
     series,
   );

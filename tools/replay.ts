@@ -42,13 +42,14 @@
  *   --mode windows|full|rates   default: windows
  *   --window <seconds>          window length, default 0.25
  *   --out <file.html>           write a report with plots
- *   --motor-poles <n>           for eRPM conversion (default 14)
+ *   --session <n>               which flight in a multi-session .BBL (default 0)
+ *   --motor-poles <n>           for eRPM conversion (default from the header)
  *   --gyro-unit degps|raw       override the reader's inference
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { parseLog, type FlightLog } from '../src/flight/logio.ts';
+import { parseLog, parseBlackboxBinary, type FlightLog } from '../src/flight/logio.ts';
 import { FlightSim, type StickInput } from '../src/flight/sim.ts';
 import { fromEuler, DEG } from '../src/flight/math.ts';
 import { racer5 } from '../src/flight/airframe.ts';
@@ -70,11 +71,19 @@ if (!logPath) {
   process.exit(2);
 }
 
-const text = readFileSync(logPath, 'utf8');
-const log = parseLog(text, basename(logPath), {
+const opts = {
   motorPoles: flag('motor-poles') ? Number(flag('motor-poles')) : undefined,
   gyroUnit: flag('gyro-unit') as 'degps' | 'raw' | undefined,
-});
+};
+const isBinary = /\.bbl$/i.test(logPath) || /\.bfl$/i.test(logPath);
+const log = isBinary
+  ? parseBlackboxBinary(
+      new Uint8Array(readFileSync(logPath)),
+      basename(logPath),
+      Number(flag('session') ?? 0),
+      opts,
+    )
+  : parseLog(readFileSync(logPath, 'utf8'), basename(logPath), opts);
 
 const mode = (flag('mode') ?? 'windows') as 'full' | 'rates' | 'windows';
 const windowS = Number(flag('window') ?? 0.25);
@@ -217,6 +226,8 @@ const GROUND_CLEARANCE = 0.5;
 interface WindowStats {
   /** Per-axis RMS error, one entry per window. */
   rms: number[][];
+  /** Per-axis model-against-itself RMS under one quantum of stick nudge. */
+  floor: number[][];
   /** Median |error| against milliseconds into the window, per axis. */
   growth: Float64Array[];
   windows: number;
@@ -238,6 +249,23 @@ function runWindows(): WindowStats {
 
   const warmupSteps = Math.max(0, Math.round(Number(flag('warmup') ?? 0.05) / sim.dt));
   const rms: number[][] = [[], [], []];
+  // Per-flight chaos floor. Every window is flown twice, the second time with
+  // the sticks nudged by one quantum of the log's own resolution, and the two
+  // model runs are compared to each other. That difference is what this method
+  // cannot see past on THIS flight.
+  //
+  // It has to be per-flight because the floor is not a property of the method:
+  // it is a property of how hard the reference was flown. Measured on an
+  // aggressive 20 s sim flight the roll floor is 31.6 deg/s; on these gentler
+  // real flights it is far lower, and comparing one against the other made five
+  // of six real logs look better than a perfect model, which is nonsense.
+  const floor: number[][] = [[], [], []];
+  const quantum = log.meta.format === 'blackbox-csv' ? 1 / 500 : 1e-4;
+  const modelTrace = [
+    new Float64Array(perWindow),
+    new Float64Array(perWindow),
+    new Float64Array(perWindow),
+  ];
   // Kept per-window so the summary can be a median. A mean here is set by
   // whichever few windows went worst, which is not what "how long does a window
   // stay comparable" is asking.
@@ -285,6 +313,7 @@ function runWindows(): WindowStats {
 
       const model = [sim.telemetry.gyro.x, sim.telemetry.gyro.y, sim.telemetry.gyro.z];
       for (let ax = 0; ax < 3; ax++) {
+        modelTrace[ax]![k] = model[ax]!;
         const series = gyroRef[ax];
         if (!series) continue;
         const refAt = sampleAt(series, t);
@@ -295,6 +324,25 @@ function runWindows(): WindowStats {
     }
 
     for (let ax = 0; ax < 3; ax++) rms[ax]!.push(Math.sqrt(acc[ax]! / perWindow));
+
+    // Same window again, sticks nudged by one quantum: model against itself.
+    seedWithWarmup(sim, start, warmupSteps);
+    const facc = [0, 0, 0];
+    for (let k = 0; k < perWindow; k++) {
+      const t = tStart + k * sim.dt;
+      input.throttle = stickThrottle(t);
+      input.roll = Math.max(-1, Math.min(1, stickRoll(t) + quantum));
+      input.pitch = stickPitch(t);
+      input.yaw = stickYaw(t);
+      sim.step(input);
+      const m = [sim.telemetry.gyro.x, sim.telemetry.gyro.y, sim.telemetry.gyro.z];
+      for (let ax = 0; ax < 3; ax++) {
+        const d = m[ax]! - modelTrace[ax]![k]!;
+        facc[ax] += d * d;
+      }
+    }
+    for (let ax = 0; ax < 3; ax++) floor[ax]!.push(Math.sqrt(facc[ax]! / perWindow));
+
     windows++;
   }
 
@@ -314,6 +362,7 @@ function runWindows(): WindowStats {
 
   return {
     rms,
+    floor,
     growth,
     windows,
     skippedGround,
@@ -414,16 +463,26 @@ if (mode === 'windows') {
     return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))]!;
   };
 
-  console.log(`\n  ${bold0('Per-window RMS gyro error, deg/s')}`);
-  console.log(`    ${'axis'.padEnd(8)}${'median'.padStart(9)}${'p90'.padStart(9)}${'worst'.padStart(9)}`);
+  console.log(`\n  ${bold0('Per-window RMS gyro error against this flight\'s own chaos floor')}`);
+  console.log(
+    `    ${'axis'.padEnd(8)}${'median'.padStart(9)}${'p90'.padStart(9)}${'floor'.padStart(9)}${'ratio'.padStart(9)}`,
+  );
   const names = ['roll', 'pitch', 'yaw'];
   for (let ax = 0; ax < 3; ax++) {
     const a = w.rms[ax]!;
+    const f = w.floor[ax]!;
     if (a.length === 0) continue;
+    const med = pct(a, 0.5);
+    const fl = pct(f, 0.5);
     console.log(
-      `    ${names[ax]!.padEnd(8)}${pct(a, 0.5).toFixed(1).padStart(9)}${pct(a, 0.9).toFixed(1).padStart(9)}${Math.max(...a).toFixed(1).padStart(9)}`,
+      `    ${names[ax]!.padEnd(8)}${med.toFixed(1).padStart(9)}${pct(a, 0.9).toFixed(1).padStart(9)}` +
+        `${fl.toFixed(1).padStart(9)}${(fl > 0 ? (med / fl).toFixed(1) + 'x' : '-').padStart(9)}`,
     );
   }
+  console.log(
+    `    floor = the same windows re-flown with the sticks nudged one quantum, model against itself.`,
+  );
+  console.log(`    ratio near 1 means the model is as close to the reference as this method can see.`);
 
   console.log(`\n  ${bold0('How fast a window stops being comparable')}`);
   console.log(`    median |error| in deg/s at each point into the window:`);

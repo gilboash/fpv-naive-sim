@@ -261,11 +261,17 @@ the single worst number in the log — 1233 deg/s of pitch against a 792 setpoin
 npm run replay -- <log> [--mode windows|full|rates] [--window 0.25] [--out report.html]
 ```
 
-Reads one of our own recordings or a CSV from `blackbox_decode`, replays it
-through the model, and reports where the two disagree. Betaflight's binary
-`.bbl` is not parsed — decode to CSV first; reimplementing the reference
-decoder's frame predictors would be a large pile of new places to be quietly
-wrong.
+Reads a Betaflight `.BBL` **directly** — no `blackbox_decode`, no GUI export —
+or one of our own recordings, or a decoded CSV. `--session <n>` picks the flight
+in a multi-session file. The binary path is preferred: the header travels with
+it, so motor range, vbat scale and motor poles are read rather than guessed, and
+the quad's own PIDs and rates come along and are used to run the model.
+
+Two things the decoder learned the hard way, both commented at the fix sites:
+after an I frame *both* history slots must hold it, or the first straight-line
+prediction is nonsense and every frame after it byte-scans looking for sync;
+and `TAG8_4S16`'s 16-bit values are big-endian while everything else in the
+format is little-endian.
 
 **Whole-flight replay cannot validate anything, and that is measured rather
 than assumed.** Replaying this model's own recording reproduces it exactly
@@ -283,7 +289,20 @@ and rotor speeds pinned to the log, so every filter the controller owns charges
 on real history — a single-sample seed leaves the D-term filter at zero and is
 already 13% out on motor output at the first step.
 
-Against our own 20 s recording, the floor the method reaches is:
+**The floor is a property of the flight, not the method.** It has to be measured
+per log, and `replay` does that: every window is flown twice, the second time
+with the sticks nudged by one quantum of the log's own resolution, and the two
+model runs are compared to each other. Skipping this step is actively
+misleading — measured against a floor borrowed from an aggressive sim flight,
+five of six real logs looked *better than a perfect model*, which is nonsense.
+On the real flights, which are gentler, the true floor is 0.0–0.8 deg/s and the
+measured errors are 20x to 600x it.
+
+The practical consequence is the one already in the manoeuvre advice above:
+gentle, separated, deliberate inputs are what make a log worth fitting. Hard
+freestyle raises the floor until nothing can be seen through it.
+
+Against our own aggressive 20 s recording, the floor the method reaches is:
 
 | into the window | 10 ms | 25 ms | 50 ms | 100 ms | 200 ms |
 |---|---|---|---|---|---|
