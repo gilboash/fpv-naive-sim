@@ -475,12 +475,25 @@ export function parseBlackboxBinary(
   // The tune travels with the log, so the model can be run on the real gains
   // rather than on defaults.
   const list = (k: string): number[] => (H.get(k) ?? '').split(',').map(Number);
+  /**
+   * Betaflight's filter cutoffs come in pairs: a static value, and a dynamic
+   * range used when the static one is zero. Midpoint of the range is the
+   * honest single number to give a model that has no dynamic filter.
+   */
+  const dynOrStatic = (prefix: string, fallback: number): number => {
+    const stat = Number(H.get(`${prefix}_static_hz`) ?? 0);
+    if (stat > 0) return stat;
+    const dyn = list(`${prefix}_dyn_hz`);
+    if (dyn.length === 2 && dyn[0]! > 0) return (dyn[0]! + dyn[1]!) / 2;
+    return fallback;
+  };
   const rc = list('rc_rates');
   const rt = list('rates');
   const ex = list('rc_expo');
   const rollPID = list('rollPID');
   const pitchPID = list('pitchPID');
   const yawPID = list('yawPID');
+  const ff = list('ff_weight');
 
   return makeLog(
     {
@@ -505,17 +518,39 @@ export function parseBlackboxBinary(
       pids:
         rollPID.length === 3
           ? {
-              roll: { p: rollPID[0]!, i: rollPID[1]!, d: rollPID[2]!, f: 0 },
-              pitch: { p: pitchPID[0]!, i: pitchPID[1]!, d: pitchPID[2]!, f: 0 },
-              yaw: { p: yawPID[0]!, i: yawPID[1]!, d: yawPID[2]!, f: 0 },
-              gyroLowpassHz: Number(H.get('gyro_lpf1_static_hz') ?? 250) || 250,
-              dtermLowpassHz: Number(H.get('dterm_lpf1_static_hz') ?? 117) || 117,
-              itermRelaxHz: 15,
+              // Feedforward comes from ff_weight, which is a separate header
+              // line rather than a fourth element of rollPID. Reading it as
+              // zero left the model waiting for error to build before it did
+              // anything, which showed up in the comparison as a response that
+              // was both too soft and about 13 ms too late — on every axis, on
+              // every flight.
+              roll: { p: rollPID[0]!, i: rollPID[1]!, d: rollPID[2]!, f: ff[0] ?? 0 },
+              pitch: { p: pitchPID[0]!, i: pitchPID[1]!, d: pitchPID[2]!, f: ff[1] ?? 0 },
+              yaw: { p: yawPID[0]!, i: yawPID[1]!, d: yawPID[2]!, f: ff[2] ?? 0 },
+              // A static cutoff of 0 does not mean "no filter", it means the
+              // dynamic one is in charge; the real cutoff then lives in the
+              // `_dyn_hz` pair and slides between them with throttle. Reading
+              // the static field alone and falling back to a default had this
+              // model filtering the gyro at 250 Hz while the aircraft was
+              // running 500-1000 Hz — two to four times the phase lag, on the
+              // signal the D-term differentiates.
+              gyroLowpassHz: dynOrStatic('gyro_lpf1', 250),
+              dtermLowpassHz: dynOrStatic('dterm_lpf1', 117),
+              dtermLowpass2Hz: Number(H.get('dterm_lpf2_static_hz') ?? 0) || 0,
+              itermRelaxHz: Number(H.get('iterm_relax_cutoff') ?? 15) || 15,
+              feedforwardSmoothHz:
+                list('rc_smoothing_active_cutoffs_ff_sp_thr')[0] || 125,
               itermLimit: 400,
-              pidSumLimit: 500,
-              pidSumLimitYaw: 400,
+              pidSumLimit: Number(H.get('pidsum_limit') ?? 500) || 500,
+              pidSumLimitYaw: Number(H.get('pidsum_limit_yaw') ?? 400) || 400,
               tpaBreakpoint: (Number(H.get('tpa_breakpoint') ?? 1350) - 1000) / 1000,
               tpaRate: Number(H.get('tpa_rate') ?? 65) / 100,
+              dMin: [list('d_min')[0] ?? 0, list('d_min')[1] ?? 0, list('d_min')[2] ?? 0],
+              dMaxGain: Number(H.get('d_max_gain') ?? 37),
+              dMaxAdvance: Number(H.get('d_max_advance') ?? 20),
+              antiGravityGain: Number(H.get('anti_gravity_gain') ?? 0),
+              antiGravityCutoffHz: Number(H.get('anti_gravity_cutoff_hz') ?? 5),
+              antiGravityPGain: Number(H.get('anti_gravity_p_gain') ?? 100),
             }
           : undefined,
     },

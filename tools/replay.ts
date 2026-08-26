@@ -41,6 +41,8 @@
  * Options:
  *   --mode windows|full|rates   default: windows
  *   --window <seconds>          window length, default 0.25
+ *   --use-logged-setpoint       drive the PID from the log's setpoint, skipping
+ *                               the rate curves and RC smoothing
  *   --out <file.html>           write a report with plots
  *   --session <n>               which flight in a multi-session .BBL (default 0)
  *   --motor-poles <n>           for eRPM conversion (default from the header)
@@ -228,6 +230,14 @@ interface WindowStats {
   rms: number[][];
   /** Per-axis model-against-itself RMS under one quantum of stick nudge. */
   floor: number[][];
+  /** Mean model minus mean reference, per window. */
+  bias: number[][];
+  /** Least-squares slope of model against reference: >1 responds too hard. */
+  gain: number[][];
+  /** Milliseconds the model has to be shifted to line up best. */
+  lag: number[][];
+  /** Correlation at that best lag: how much of the shape is right at all. */
+  shape: number[][];
   /** Median |error| against milliseconds into the window, per axis. */
   growth: Float64Array[];
   windows: number;
@@ -260,6 +270,10 @@ function runWindows(): WindowStats {
   // real flights it is far lower, and comparing one against the other made five
   // of six real logs look better than a perfect model, which is nonsense.
   const floor: number[][] = [[], [], []];
+  const bias: number[][] = [[], [], []];
+  const gain: number[][] = [[], [], []];
+  const lag: number[][] = [[], [], []];
+  const shape: number[][] = [[], [], []];
   const quantum = log.meta.format === 'blackbox-csv' ? 1 / 500 : 1e-4;
   const modelTrace = [
     new Float64Array(perWindow),
@@ -309,6 +323,7 @@ function runWindows(): WindowStats {
       input.roll = stickRoll(t);
       input.pitch = stickPitch(t);
       input.yaw = stickYaw(t);
+      applySetpointOverride(t);
       sim.step(input);
 
       const model = [sim.telemetry.gyro.x, sim.telemetry.gyro.y, sim.telemetry.gyro.z];
@@ -325,6 +340,58 @@ function runWindows(): WindowStats {
 
     for (let ax = 0; ax < 3; ax++) rms[ax]!.push(Math.sqrt(acc[ax]! / perWindow));
 
+    // Decompose the error rather than only measuring it. RMS says how wrong,
+    // these say in what way: a bias means the model sits offset from the
+    // reference, a gain far from 1 means it responds too hard or too softly,
+    // and a lag means it responds at the wrong moment. Those three point at
+    // completely different parts of the model.
+    for (let ax = 0; ax < 3; ax++) {
+      const series = gyroRef[ax];
+      if (!series) continue;
+      let mRef = 0;
+      let mMod = 0;
+      for (let k = 0; k < perWindow; k++) {
+        mRef += sampleAt(series, tStart + k * sim.dt);
+        mMod += modelTrace[ax]![k]!;
+      }
+      mRef /= perWindow;
+      mMod /= perWindow;
+      bias[ax]!.push(mMod - mRef);
+
+      let num = 0;
+      let den = 0;
+      for (let k = 0; k < perWindow; k++) {
+        const r = sampleAt(series, tStart + k * sim.dt) - mRef;
+        num += (modelTrace[ax]![k]! - mMod) * r;
+        den += r * r;
+      }
+      if (den > 1e-6) gain[ax]!.push(num / den);
+
+      // Lag that best lines the two up, searched over +-30 ms.
+      let bestR = -Infinity;
+      let bestLag = 0;
+      const maxLag = Math.min(30, Math.floor(perWindow / 4));
+      for (let L = -maxLag; L <= maxLag; L++) {
+        let sxy = 0;
+        let sxx = 0;
+        let syy = 0;
+        for (let k = maxLag; k < perWindow - maxLag; k++) {
+          const a = modelTrace[ax]![k + L]! - mMod;
+          const b = sampleAt(series, tStart + k * sim.dt) - mRef;
+          sxy += a * b;
+          sxx += a * a;
+          syy += b * b;
+        }
+        const r = sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : -Infinity;
+        if (r > bestR) {
+          bestR = r;
+          bestLag = L;
+        }
+      }
+      lag[ax]!.push(bestLag * sim.dt * 1000);
+      shape[ax]!.push(bestR);
+    }
+
     // Same window again, sticks nudged by one quantum: model against itself.
     seedWithWarmup(sim, start, warmupSteps);
     const facc = [0, 0, 0];
@@ -334,6 +401,7 @@ function runWindows(): WindowStats {
       input.roll = Math.max(-1, Math.min(1, stickRoll(t) + quantum));
       input.pitch = stickPitch(t);
       input.yaw = stickYaw(t);
+      applySetpointOverride(t);
       sim.step(input);
       const m = [sim.telemetry.gyro.x, sim.telemetry.gyro.y, sim.telemetry.gyro.z];
       for (let ax = 0; ax < 3; ax++) {
@@ -363,6 +431,10 @@ function runWindows(): WindowStats {
   return {
     rms,
     floor,
+    bias,
+    gain,
+    lag,
+    shape,
     growth,
     windows,
     skippedGround,
@@ -370,6 +442,28 @@ function runWindows(): WindowStats {
     seededITerm: log.has('axisI[0]'),
     seededVel: log.has('velD'),
   };
+}
+
+/**
+ * With --use-logged-setpoint, drive the controller from the setpoint the flight
+ * controller actually used rather than recomputing it from the stick. That
+ * removes the rate curves, RC smoothing and feedforward smoothing from the
+ * comparison in one step, which is the only way to tell whether a disagreement
+ * lives in the input path or in the controller and airframe behind it.
+ */
+const useLoggedSetpoint = args.includes('--use-logged-setpoint');
+const spSeriesAll = [
+  log.get('setpoint[0]'),
+  log.get('setpoint[1]'),
+  log.get('setpoint[2]'),
+];
+const spOverride = { x: 0, y: 0, z: 0 };
+function applySetpointOverride(t: number): void {
+  if (!useLoggedSetpoint || !spSeriesAll[0]) return;
+  spOverride.x = sampleAt(spSeriesAll[0]!, t);
+  spOverride.y = spSeriesAll[1] ? sampleAt(spSeriesAll[1]!, t) : 0;
+  spOverride.z = spSeriesAll[2] ? sampleAt(spSeriesAll[2]!, t) : 0;
+  sim.setpointOverride = spOverride;
 }
 
 /** Value of a series at an arbitrary time, independent of the walking samplers. */
@@ -485,6 +579,20 @@ if (mode === 'windows') {
     `    floor = the same windows re-flown with the sticks nudged one quantum, model against itself.`,
   );
   console.log(`    ratio near 1 means the model is as close to the reference as this method can see.`);
+
+  console.log(`\n  ${bold0('What kind of error it is')}`);
+  console.log(
+    `    ${'axis'.padEnd(8)}${'bias'.padStart(9)}${'gain'.padStart(9)}${'lag ms'.padStart(9)}${'shape r'.padStart(9)}`,
+  );
+  for (let ax = 0; ax < 3; ax++) {
+    if (w.rms[ax]!.length === 0) continue;
+    console.log(
+      `    ${names[ax]!.padEnd(8)}${pct(w.bias[ax]!, 0.5).toFixed(1).padStart(9)}` +
+        `${pct(w.gain[ax]!, 0.5).toFixed(3).padStart(9)}${pct(w.lag[ax]!, 0.5).toFixed(1).padStart(9)}` +
+        `${pct(w.shape[ax]!, 0.5).toFixed(3).padStart(9)}`,
+    );
+  }
+  console.log(`    bias deg/s; gain >1 responds too hard; lag >0 means the model is late.`);
 
   console.log(`\n  ${bold0('How fast a window stops being comparable')}`);
   console.log(`    median |error| in deg/s at each point into the window:`);

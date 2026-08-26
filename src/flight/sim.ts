@@ -125,11 +125,33 @@ export class FlightSim {
   /** Seconds of simulated time since reset. */
   time = 0;
 
+  /**
+   * When set, the rate setpoint is taken from here instead of from the stick
+   * and the rate curves. Exists for replay: a Blackbox log carries the
+   * setpoint the flight controller actually used, already shaped by RC
+   * smoothing and feedforward smoothing that this model does not implement, so
+   * driving from it isolates the controller and airframe from the input path.
+   * Null in normal flight.
+   */
+  setpointOverride: Vec3 | null = null;
+
   readonly telemetry: Telemetry;
 
   private rho: number;
   private standHeight: number;
   private gyroFilter: [PT1, PT1, PT1];
+  /**
+   * RC smoothing, as Betaflight runs it.
+   *
+   * The stick only updates when a radio frame arrives — every ~5 ms on the
+   * transmitter M0 measured — while the loop runs every 1 ms, so the raw
+   * setpoint is a staircase. Feeding that to a controller that differentiates
+   * its setpoint puts one spike per radio frame into the motors and nothing in
+   * between. Betaflight filters the setpoint before the PID sees it; without
+   * this, the model's feedforward was responding several times harder than the
+   * aircraft's on the same log.
+   */
+  private setpointFilter: [PT1, PT1, PT1];
 
   // Scratch, reused every step. See the file header on allocation.
   private fBody = vec3();
@@ -164,6 +186,12 @@ export class FlightSim {
       new PT1(pids.gyroLowpassHz, this.dt),
       new PT1(pids.gyroLowpassHz, this.dt),
       new PT1(pids.gyroLowpassHz, this.dt),
+    ];
+    const rcHz = pids.feedforwardSmoothHz ?? 125;
+    this.setpointFilter = [
+      new PT1(rcHz, this.dt),
+      new PT1(rcHz, this.dt),
+      new PT1(rcHz, this.dt),
     ];
 
     this.telemetry = {
@@ -209,6 +237,7 @@ export class FlightSim {
     this.controller.reset();
     for (const m of this.motors) m.reset();
     for (const f of this.gyroFilter) f.reset(0);
+    for (const f of this.setpointFilter) f.reset(0);
     setV(this.lastAccelBody, 0, 0, 0);
   }
 
@@ -231,6 +260,7 @@ export class FlightSim {
     const sp = [setpoint.x, setpoint.y, setpoint.z];
     for (let ax = 0; ax < 3; ax++) {
       this.gyroFilter[ax]!.reset(g[ax]!);
+      this.setpointFilter[ax]!.reset(sp[ax]!);
       const st = this.controller.axes[ax]!;
       st.prevGyro = g[ax]!;
       st.prevSetpoint = sp[ax]!;
@@ -275,9 +305,15 @@ export class FlightSim {
 
     // ---- rate setpoints
     const sp = this.setpointDeg;
-    sp.x = applyRates(this.rates, AXIS_ROLL, input.roll);
-    sp.y = applyRates(this.rates, AXIS_PITCH, input.pitch);
-    sp.z = applyRates(this.rates, AXIS_YAW, input.yaw);
+    if (this.setpointOverride) {
+      sp.x = this.setpointOverride.x;
+      sp.y = this.setpointOverride.y;
+      sp.z = this.setpointOverride.z;
+    } else {
+      sp.x = this.setpointFilter[0].apply(applyRates(this.rates, AXIS_ROLL, input.roll));
+      sp.y = this.setpointFilter[1].apply(applyRates(this.rates, AXIS_PITCH, input.pitch));
+      sp.z = this.setpointFilter[2].apply(applyRates(this.rates, AXIS_YAW, input.yaw));
+    }
 
     const thr = clamp(input.throttle, 0, 1);
 
@@ -322,7 +358,13 @@ export class FlightSim {
 
       const r = rotor.solve(motor.omega, vAxial, vInPlane);
       motor.update(mix.outputs[i]!, vBatt, r.torque, dt, this.armed);
-      totalCurrent += motor.current;
+      // An ESC is a switching converter, not a resistor: it chops the pack
+      // voltage at the commanded duty, so the pack supplies duty x the motor
+      // current, not the motor current itself. Charging the battery the full
+      // motor current overstated the draw several-fold at part throttle — which
+      // is what an inflated winding resistance had been quietly compensating
+      // for, at the cost of a motor four times too slow.
+      totalCurrent += motor.current * motor.command;
       totalThrust += r.thrust;
 
       this.telemetry.motorThrust[i] = r.thrust;

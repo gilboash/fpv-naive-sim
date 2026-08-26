@@ -77,10 +77,18 @@ export function kronos(): Airframe {
     motor: {
       ...defaultMotor(),
       kv: 2080,
-      // A 2107 has a shorter stator and thinner wire than the 2207 below, so
-      // more resistance. Lumped, as there: winding plus commutation and ESC.
-      resistance: 0.16,
-      inertia: 6.5e-6,
+      // Set from the measured rotor response, not guessed. The mechanical time
+      // constant of this motor model is J*R/ke^2, and the logs put the real one
+      // at 11.5 ms (p10-p90 8-28). An estimated 0.16 ohm with 6.5e-6 kg*m^2
+      // gave 49 ms — four times too slow, which is most of why the model
+      // responded too softly and about 10 ms late on every axis.
+      //
+      // The high resistance had been standing in for current limiting. Now that
+      // maxCurrent does that job explicitly, and does it the way an ESC does,
+      // the resistance can be what a 2107 winding actually is.
+      resistance: 0.045,
+      inertia: 5.5e-6,
+      maxCurrent: 50,
     },
     prop: {
       ...defaultProp(),

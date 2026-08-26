@@ -234,6 +234,64 @@ function fitAxis(axis: 0 | 1, label: string): void {
 fitAxis(0, 'Roll');
 fitAxis(1, 'Pitch');
 
+// ------------------------------------------------------------ motor response
+
+/**
+ * How fast the rotors actually accelerate.
+ *
+ * The model's motor is an electrical one whose winding resistance and rotor
+ * inertia were both estimated, and a motor that spins up too slowly makes the
+ * whole aircraft respond too softly and too late — which is exactly the residual
+ * the replay comparison is left with. This measures it: find where the ESC
+ * command steps up and hold, then see how long the rotor takes to cover 63% of
+ * its eventual change.
+ */
+{
+  const motor = [0, 1, 2, 3].map((m) => col(`motor[${m}]`));
+  const dtS = (time[1]! - time[0]!) / 1e6;
+  const settleSteps = Math.round(0.03 / dtS);
+  const taus: number[] = [];
+
+  for (let m = 0; m < 4; m++) {
+    const cmd = motor[m];
+    const w = rpm[m]!;
+    if (!cmd) continue;
+    for (let i = settleSteps; i < N - settleSteps * 2; i++) {
+      const jump = cmd[i + 2]! - cmd[i]!;
+      if (jump < 120) continue; // a real step, in DShot units
+      // Command must then hold roughly where it went.
+      let held = true;
+      for (let k = 2; k < settleSteps; k++) {
+        if (cmd[i + k]! < cmd[i + 2]! - 250) {
+          held = false;
+          break;
+        }
+      }
+      if (!held) continue;
+
+      const w0 = w[i]!;
+      const wEnd = w[i + settleSteps]!;
+      if (wEnd - w0 < 800) continue; // needs a real rotor speed change
+      const target = w0 + 0.632 * (wEnd - w0);
+      let k = 0;
+      while (k < settleSteps && w[i + k]! < target) k++;
+      taus.push(k * dtS * 1000);
+      i += settleSteps; // do not double-count the same step
+    }
+  }
+
+  if (taus.length < 20) {
+    console.log(`\n  \x1b[1mMotor response\x1b[0m: only ${taus.length} clean command steps — not fitting.`);
+  } else {
+    taus.sort((a, b) => a - b);
+    const med = taus[Math.floor(taus.length / 2)]!;
+    console.log(`\n  \x1b[1mMotor response\x1b[0m  (${taus.length} clean command steps)`);
+    console.log(`    measured time constant  ${med.toFixed(1)} ms  (63% of the rotor speed change)`);
+    console.log(`    p10 / p90               ${taus[Math.floor(taus.length * 0.1)]!.toFixed(1)} / ${taus[Math.floor(taus.length * 0.9)]!.toFixed(1)} ms`);
+    console.log(`    model motor: R ${af.motor.resistance} ohm, rotor+prop inertia ${af.motor.inertia.toExponential(2)} kg*m^2`);
+  }
+}
+
 console.log(
   `\n  Caveats: the inertia fit uses the measured thrust coefficient, so it does not\n` +
     `  inherit the rotor model's error — but it does assume thrust is still k*omega^2\n` +

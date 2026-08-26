@@ -26,6 +26,14 @@ export const PID_MIXER_SCALING = 1000;
 /** deg/s of setpoint movement above which I-term accumulation is fully cut. */
 const ITERM_RELAX_THRESHOLD = 40;
 
+// D_MIN (called d_max in Betaflight 4.5) scales D between a floor and the
+// configured value according to how hard the quad is being asked to work. A
+// model that sits at the configured D the whole time is over-damped in smooth
+// flight, which reads as a response that is both too soft and slightly late.
+const D_MIN_GAIN_FACTOR = 0.00008;
+const D_MIN_SETPOINT_GAIN_FACTOR = 0.00008;
+const D_MIN_LOWPASS_HZ = 35;
+
 export interface AxisGains {
   p: number;
   i: number;
@@ -53,6 +61,21 @@ export interface PidProfile {
   tpaBreakpoint: number;
   /** Fraction of P/D removed at full throttle. */
   tpaRate: number;
+  /** Second D-term lowpass, Hz. 0 disables. Betaflight runs two. */
+  dtermLowpass2Hz?: number;
+  /** Per-axis D floor. D rises from here toward the configured D. */
+  dMin?: [number, number, number];
+  /** How hard demand drives D up from dMin. */
+  dMaxGain?: number;
+  /** How much setpoint change leads the D boost. */
+  dMaxAdvance?: number;
+  /** I-term boost during fast throttle changes. 0 disables. */
+  antiGravityGain?: number;
+  antiGravityCutoffHz?: number;
+  /** Percentage of the I boost also applied to P. */
+  antiGravityPGain?: number;
+  /** Lowpass on the feedforward term, Hz. Betaflight's RC smoothing cutoff. */
+  feedforwardSmoothHz?: number;
 }
 
 /** Betaflight 4.5 defaults for a 5" quad. */
@@ -69,6 +92,14 @@ export function defaultPids(): PidProfile {
     pidSumLimitYaw: 400,
     tpaBreakpoint: 0.35,
     tpaRate: 0.65,
+    dtermLowpass2Hz: 150,
+    dMin: [30, 34, 0],
+    dMaxGain: 37,
+    dMaxAdvance: 20,
+    antiGravityGain: 80,
+    antiGravityCutoffHz: 5,
+    antiGravityPGain: 100,
+    feedforwardSmoothHz: 125,
   };
 }
 
@@ -78,6 +109,12 @@ export interface AxisState {
   prevSetpoint: number;
   dLowpass: PT1;
   relaxLowpass: PT1;
+  ffLowpass: PT1;
+  dMinLowpass: PT1;
+  /** Steps since the setpoint last changed, for the feedforward slope. */
+  ffHeldSteps: number;
+  /** Last computed setpoint slope, held between RC updates. */
+  ffSlope: number;
   /** Last computed components, for telemetry. */
   pOut: number;
   iOut: number;
@@ -93,6 +130,12 @@ function newAxisState(profile: PidProfile, dt: number): AxisState {
     prevSetpoint: 0,
     dLowpass: new PT1(profile.dtermLowpassHz, dt),
     relaxLowpass: new PT1(profile.itermRelaxHz, dt),
+    ffLowpass: new PT1(profile.feedforwardSmoothHz ?? 125, dt),
+    // Betaflight uses a PT2 here; a PT1 at the same cutoff is a shade less
+    // smooth and one fewer thing to get wrong.
+    dMinLowpass: new PT1(D_MIN_LOWPASS_HZ, dt),
+    ffHeldSteps: 0,
+    ffSlope: 0,
     pOut: 0,
     iOut: 0,
     dOut: 0,
@@ -124,6 +167,10 @@ export class RateController {
       a.prevSetpoint = 0;
       a.dLowpass.reset(0);
       a.relaxLowpass.reset(0);
+      a.ffLowpass.reset(0);
+      a.dMinLowpass.reset(1);
+      a.ffHeldSteps = 0;
+      a.ffSlope = 0;
       a.pOut = a.iOut = a.dOut = a.fOut = a.sum = 0;
     }
   }
@@ -182,11 +229,46 @@ export class RateController {
     const dGyro = (gyro - st.prevGyro) / dt;
     st.prevGyro = gyro;
     const dFiltered = st.dLowpass.apply(dGyro);
-    st.dOut = -DTERM_SCALE * g.d * dFiltered * tpa;
 
+    // D_MIN: scale D between its floor and the configured value by how much
+    // demand there is, measured from both the gyro's derivative and the
+    // setpoint's.
+    let dScale = 1;
+    const dMinArr = this.profile.dMin;
+    const dMin = dMinArr ? dMinArr[axis] : undefined;
+    if (dMin !== undefined && dMin > 0 && g.d > 0 && dMin < g.d) {
+      const floorPct = dMin / g.d;
+      const maxGain = this.profile.dMaxGain ?? 37;
+      const advance = (this.profile.dMaxAdvance ?? 20) / 100;
+      const gyroGain = (maxGain * D_MIN_GAIN_FACTOR) / D_MIN_LOWPASS_HZ;
+      const spGain = (maxGain * D_MIN_SETPOINT_GAIN_FACTOR * advance) / D_MIN_LOWPASS_HZ;
+      const demand = Math.max(
+        Math.abs(dFiltered) * gyroGain,
+        Math.abs((setpoint - st.prevSetpoint) / dt) * spGain,
+      );
+      dScale = Math.min(1, st.dMinLowpass.apply(floorPct + (1 - floorPct) * demand));
+    }
+
+    st.dOut = -DTERM_SCALE * g.d * dScale * dFiltered * tpa;
+
+    // Feedforward is the setpoint's slope, filtered.
+    //
+    // Differentiating per loop step is correct *provided the setpoint is
+    // smooth*, which is the job of RC smoothing upstream in sim.ts. An earlier
+    // attempt fixed the staircase here instead, by holding the slope across the
+    // RC interval, and drove the response to five times the aircraft's: the
+    // impulse belongs where Betaflight puts it, and the staircase belongs to
+    // the input path, not to this filter.
     const dSetpoint = (setpoint - st.prevSetpoint) / dt;
     st.prevSetpoint = setpoint;
-    st.fOut = FEEDFORWARD_SCALE * g.f * dSetpoint;
+    // Betaflight divides F by 100 before scaling it, where P, I and D use their
+    // configured value directly:
+    //   Kf = FEEDFORWARD_SCALE * (pid[axis].F / 100.0f)
+    // Missing that made this model's feedforward a hundred times too strong. It
+    // hid behind the pidSum clamp in synthetic tests — the term saturated and
+    // the step response still looked plausible — and only showed up against a
+    // real log, as a response two to five times the aircraft's.
+    st.fOut = FEEDFORWARD_SCALE * (g.f / 100) * st.ffLowpass.apply(dSetpoint);
 
     const limit = axis === 2 ? this.profile.pidSumLimitYaw : this.profile.pidSumLimit;
     st.sum = clamp(st.pOut + st.iOut + st.dOut + st.fOut, -limit, limit);

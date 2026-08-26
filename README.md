@@ -380,6 +380,61 @@ and RC smoothing shapes the setpoint before the PID sees it. Each is a
 concrete next step with a measurable outcome, which is a better position than
 the model was in yesterday.
 
+### Working the residual down
+
+The comparison said the model was **too soft and too late** — gain 0.44-0.86,
+lag 6-18 ms, consistently on every axis of every flight. That decomposition is
+worth more than the RMS it came from: "wrong by 20 deg/s" points nowhere, while
+"responds at 60% amplitude, 13 ms late" points at a short list.
+
+Working down that list, in order, measuring after each:
+
+| change | effect |
+|---|---|
+| filter cutoffs read properly from the header | ~1% — ruled out |
+| driving from the logged setpoint instead of the sticks | 2-12% |
+| **feedforward: 100x scaling bug** | large |
+| RC smoothing on the setpoint | required for the above to be right |
+| D_MIN | gain 0.79 → 0.81, pitch lag 4 → 2 ms |
+| **motor time constant, measured** | large |
+| **pack current vs motor current** | large |
+
+Net: roll error down 20-28%, yaw down 27-29%, and lag essentially eliminated on
+roll and pitch (18 → 6 ms, 13 → 1 ms).
+
+Three of those were real defects in the model rather than missing features:
+
+- **Feedforward was 100x too strong.** Betaflight computes
+  `Kf = FEEDFORWARD_SCALE * (F / 100)` where P, I and D use their configured
+  value directly. This hid behind the pidSum clamp in synthetic tests — the term
+  saturated and the step response still looked plausible — and only became
+  visible against a real aircraft.
+- **The motor was four times too slow.** Its mechanical time constant is
+  `J*R/ke^2`; an estimated 0.16 ohm and 6.5e-6 kg·m² gave 49 ms where the logs
+  measure **11.5 ms** from ESC command steps against eRPM.
+- **The battery was charged motor current instead of pack current.** An ESC is a
+  switching converter: the pack supplies `duty x motor current`. At part
+  throttle that overstated the draw several-fold — and an inflated winding
+  resistance had been quietly compensating for it, which is what made the motor
+  four times too slow in the first place. One error had been hiding the other.
+
+### What is still wrong
+
+Gain is still 0.48-0.83: the model responds at roughly half to four-fifths of
+the aircraft's amplitude, worst in pitch. The prop's **torque coefficient is
+~1.7x low** against the same logs (3.0e-8 measured, duty-corrected, against
+1.45e-8 modelled), which also puts hover current at the bottom of the measured
+range and lets the model overspeed at full throttle — 38 000 rpm against a
+logged 28 300.
+
+Matching it by raising `cd0` alone would need 0.19, four times any real
+aerofoil, so that would be curve-fitting rather than modelling. Some of the
+measured torque is motor and ESC loss being misattributed to the prop. Left
+open deliberately.
+
+Anti-gravity is also still unimplemented, and yaw retains 9-18 ms of lag that
+roll and pitch no longer have.
+
 ### Known gaps, stated rather than omitted
 
 - **Not validated against a real Blackbox log.** The model is physically

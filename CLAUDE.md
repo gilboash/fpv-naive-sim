@@ -195,6 +195,40 @@ level, still, and reads exactly 1 g, so hover detection needs a throttle gate;
 and a racing quad never actually hovers, so the thrust fit runs over the whole
 flight using the fact that body-z specific force *is* rotor thrust over mass.
 
+**Residual worked down (2026-08-26).** The error decomposition — bias, gain,
+lag, shape, per window — is what made this tractable: "too soft and 13 ms late,
+on every axis" is a lead, where "20 deg/s RMS" is not. Net result: roll error
+down 20-28%, yaw down 27-29%, lag essentially gone on roll and pitch.
+
+Three real defects found, all invisible to the 43 synthetic tests:
+
+1. **Feedforward was 100x too strong.** Betaflight uses
+   `Kf = FEEDFORWARD_SCALE * (F / 100)`; P, I and D take their value directly.
+   The pidSum clamp hid it — the term saturated and the step response still
+   looked fine.
+2. **Motor four times too slow.** Time constant is `J*R/ke^2`; estimates gave
+   49 ms, the logs measure 11.5 ms (`tools/identify.ts` fits it from ESC command
+   steps against eRPM).
+3. **Battery was charged motor current, not pack current.** An ESC is a
+   switching converter: pack current is `duty x motor current`. An inflated
+   winding resistance had been compensating for this, which is exactly what made
+   the motor four times too slow. One bug was hiding the other, and fixing
+   either alone would have looked like a regression.
+
+Also added: RC smoothing on the setpoint (Betaflight has it; without it the
+staircase from a 200 Hz radio into a 1 kHz loop spikes the feedforward), D_MIN,
+and a `setpointOverride` on FlightSim for driving replay from a logged setpoint.
+
+**Still open, and quantified:** gain 0.48-0.83, so the model still responds too
+softly, worst in pitch. Prop torque coefficient is ~1.7x low against the logs
+(3.0e-8 duty-corrected vs 1.45e-8 modelled), which also puts hover current at
+the bottom of the measured range (3.0 A model, 6.4 A median measured on a
+lighter quad) and overspeeds full throttle to 38 000 rpm against a logged
+28 300. Matching by cd0 alone needs 0.19, four times any real aerofoil, so some
+of the measured torque must be motor and ESC loss misattributed to the prop.
+Deliberately not fudged. Anti-gravity still unimplemented. Yaw keeps 9-18 ms of
+lag that roll and pitch have lost.
+
 **The comparison is not yet sensitive to airframe parameters.** Swapping the
 generic racer for the measured Kronos barely moves the result. Windowed replay
 seeds rotor speed and I-term from the log, and a rate-mode PID compensates for

@@ -126,7 +126,9 @@ section('Airframe: thrust, hover, and endurance');
   }
   const twr = sim.telemetry.totalThrustN / weight;
   inRange('static thrust-to-weight at full throttle', twr, 8, 15, ':1');
-  inRange('full-throttle current draw', sim.telemetry.batteryA, 80, 220, ' A');
+  // Pack current, not motor current: the ESC is a switching converter. Peak
+  // pack draw in the real log is 278 A on a lighter quad.
+  inRange('full-throttle current draw', sim.telemetry.batteryA, 60, 300, ' A');
   inRange('full-throttle RPM', sim.telemetry.motorRpm[0]!, 24000, 34000, ' rpm');
 
   // Hover throttle: bisect on the throttle that holds altitude.
@@ -151,7 +153,12 @@ section('Airframe: thrust, hover, and endurance');
   airborne(hs, 100);
   run(hs, sticks({ throttle: hoverThrottle }), 3);
   inRange('hover RPM', hs.telemetry.motorRpm[0]!, 8000, 22000, ' rpm');
-  inRange('hover current', hs.telemetry.batteryA, 8, 60, ' A');
+  // Bounded by measurement, not by taste. A real 470 g 6S quad draws a median
+  // 6.4 A at hover (p10 3.0, p90 10.5) in NACRONOS session 14; this airframe is
+  // 650 g, so roughly 10 A. The model sits near the bottom of that range
+  // because its prop torque coefficient is about 1.7x low against the same log
+  // — a known open gap, listed in the README, not a licence to widen this.
+  inRange('hover current', hs.telemetry.batteryA, 2, 20, ' A');
   ok(
     'hover holds altitude',
     Math.abs(hs.vel.z) < 0.35,
