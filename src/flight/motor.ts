@@ -24,6 +24,16 @@ export interface MotorSpec {
   inertia: number;
   /** Viscous friction, N*m per rad/s. */
   friction: number;
+  /**
+   * Iron and eddy-current loss, N*m per (rad/s)^2.
+   *
+   * Real and previously missing. Copper loss is already in the voltage
+   * equation, but core losses are not: they scale with speed and they are why
+   * the electromagnetic torque ke*I is more than the torque that reaches the
+   * prop. Without them, torque measured off a log as ke*I gets attributed
+   * entirely to the propeller, which makes the propeller look worse than it is.
+   */
+  ironLoss: number;
   /** Minimum commanded output while armed, 0..1. Betaflight's motor_idle. */
   idle: number;
   /**
@@ -48,6 +58,7 @@ export function defaultMotor(): MotorSpec {
     resistance: 0.13,
     inertia: 8e-6,
     friction: 2e-7,
+    ironLoss: 1.2e-9,
     idle: 0.055,
     maxCurrent: 55,
   };
@@ -174,7 +185,7 @@ export class Motor {
     if (this.current > s.maxCurrent) this.current = s.maxCurrent;
 
     const motorTorque = this.ke * this.current;
-    const drag = s.friction * this.omega;
+    const drag = s.friction * this.omega + s.ironLoss * this.omega * this.omega;
     const net = motorTorque - loadTorque - drag;
 
     this.omega += (net / s.inertia) * dt;

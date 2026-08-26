@@ -42,6 +42,22 @@ export interface PropSpec {
   elements: number;
   /** In-plane drag coefficient of the spinning disc. */
   hForce: number;
+  /**
+   * Multiplier on shaft torque, covering losses this model does not resolve.
+   *
+   * A ten-element blade-element model with a Prandtl tip loss gets thrust right
+   * and torque optimistic: it has no hub blockage, no blade-to-blade
+   * interference (these are three blades on a 130 mm disc), no surface
+   * roughness, and only a first-order account of the tip vortex. Measured
+   * against real flight this model's figure of merit came out at 0.47 where the
+   * aircraft's is nearer 0.3.
+   *
+   * The honest alternatives were to raise the section drag to cd0 0.19, four
+   * times any real aerofoil, or to name the gap. This names it. It is the one
+   * fitted constant in the aerodynamics and it should shrink as the model gains
+   * the mechanisms it stands for.
+   */
+  profileLoss: number;
 }
 
 /** A 5.1x4.3 three-blade, the standard 5" racing prop. */
@@ -58,6 +74,7 @@ export function defaultProp(): PropSpec {
     stallAngle: 0.24,
     elements: 10,
     hForce: 0.008,
+    profileLoss: 1.0,
   };
 }
 
@@ -184,6 +201,8 @@ export class Rotor {
       out.thrust += s.blades * (dL * cosPhi - dD * sinPhi);
       out.torque += s.blades * (dL * sinPhi + dD * cosPhi) * el.r;
     }
+
+    out.torque *= s.profileLoss;
 
     // Torque is what the shaft must supply. It can only be positive: a prop that
     // would drive its motor is a windmill, and these never are.

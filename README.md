@@ -4,7 +4,7 @@ Browser-based FPV drone simulator for skill training, flown with a real RC
 transmitter over USB. See the project brief for the full scope; first target is
 a single 5" racing quad and a few simple maps with basic track obstacles.
 
-**Current phase: M1 — flight model.** M0 (input spike) is signed off: the tick
+**Current phase: M1 signed off, M2 next.** M0 (input spike) is signed off: the tick
 source holds 1 kHz on real hardware and the radio was measured at 201.8 Hz. M1
 adds the flight model itself — blade-element rotors, brushless motors, battery
 sag, and a Betaflight-scaled PID loop, stepping at 1 kHz inside the input tick.
@@ -418,7 +418,51 @@ Three of those were real defects in the model rather than missing features:
   resistance had been quietly compensating for it, which is what made the motor
   four times too slow in the first place. One error had been hiding the other.
 
+### M1 sign-off
+
+Signed off 2026-08-26, against NACRONOS: Kronos Legacy, 470 g all-up on 6S,
+Gemfan 51377, 2107 at 2080 KV, 205 mm motor-to-motor.
+
+Four independent quantities measured from the flight, reproduced by the model
+with **one fitted aerodynamic constant** between them:
+
+| | aircraft | model |
+|---|---|---|
+| hover rotor speed | 9 568 rpm | 9 428 |
+| hover pack current | 6.4 A | 6.2 |
+| full-throttle rotor speed | 28 286 rpm | 28 046 |
+| peak pack current | 278 A | 280 |
+
+Rate response against three real flights, windowed:
+
+| | roll | pitch | yaw |
+|---|---|---|---|
+| RMS error, deg/s | 13.9-21.0 | 8.8-11.7 | 3.9-8.2 |
+| gain | 0.74-0.86 | 0.44-0.54 | 0.62-0.86 |
+| lag, ms | 1-5 | 0-3 | 3-11 |
+
+Over the course of this work the roll error fell 39% and the lag went from 18 ms
+to under 5. **Timing is right; amplitude is not.**
+
 ### What is still wrong
+
+**The model responds too softly.** Gain 0.74-0.86 in roll, 0.62-0.86 in yaw, and
+**0.44-0.54 in pitch**. A pilot would feel that: the model needs more stick than
+the aircraft for the same rotation.
+
+Pitch is the outlier and it is unexplained. Its measured inertia is less than
+half of roll's, which a symmetric X frame should not give, and a stretched frame
+would have explained both — but the frame is 205 mm square, so it does not. The
+inertia anomaly and the gain anomaly are probably the same unknown.
+
+**Propeller drag and motor loss are not separable from this data.** The logs
+constrain their sum and nothing else, so `profileLoss` at 2.4 carries both and
+the model is right about the system while being unreliable about which component
+the loss belongs to. A thrust-stand run on the prop, or motor efficiency data,
+would split them.
+
+Anti-gravity is still unimplemented, and yaw keeps a few ms of lag that roll and
+pitch have lost.
 
 Gain is still 0.48-0.83: the model responds at roughly half to four-fifths of
 the aircraft's amplitude, worst in pitch. The prop's **torque coefficient is

@@ -51,7 +51,10 @@ export interface Airframe {
  * measured from the logs, see tools/identify.ts and the README.
  */
 export function kronos(): Airframe {
-  const a = 0.0778;
+  // 205 mm motor-to-motor diagonal, measured on the frame. A symmetric X, so
+  // the offset is the same on both axes: (205/2)/sqrt(2). The earlier 77.8 mm
+  // assumed a 220 mm frame.
+  const a = 0.0725;
   const zDisc = -0.021;
   const base = racer5();
   return {
@@ -60,13 +63,16 @@ export function kronos(): Airframe {
     mass: 0.47,
     // Measured from the logs by tools/identify.ts, not estimated: thrust
     // differential across the arms against the gyro's derivative. Roll came out
-    // at 1.759e-3 against a 1.8e-3 parts estimate, which is closer than that
-    // estimate deserved. Pitch fitted at 8.4e-4, half of roll, which is not
-    // what a symmetric X frame should give — the pitch fit uses half as many
-    // samples and much smaller thrust differentials, so treat it as the weaker
-    // of the two. Yaw is Ixx + Iyy by the perpendicular axis theorem, the quad
-    // being near enough planar.
-    inertia: { x: 0.00176, y: 0.00084, z: 0.0026 },
+    // at 1.639e-3 on the corrected 205 mm arm. Pitch fits at 7.8e-4, less than
+    // half of roll, which a symmetric X frame should not give. A stretched
+    // frame would have explained it; the frame is not stretched. So it remains
+    // unexplained, it is the weaker fit (half the samples, much smaller thrust
+    // differentials), and it sits alongside pitch being the worst axis in the
+    // replay comparison — the two are probably the same unknown.
+    //
+    // Yaw is Ixx + Iyy by the perpendicular axis theorem, the quad being near
+    // enough planar.
+    inertia: { x: 0.00164, y: 0.00078, z: 0.00242 },
     dragArea: { x: 0.0048, y: 0.0056, z: 0.011 },
     mounts: [
       { pos: { x: -a, y: a, z: zDisc }, spin: -1 },
@@ -88,7 +94,11 @@ export function kronos(): Airframe {
       // the resistance can be what a 2107 winding actually is.
       resistance: 0.045,
       inertia: 5.5e-6,
-      maxCurrent: 50,
+      // 278 A peak pack draw in the log is ~70 A per motor. The earlier 50 A
+      // was a guess, and it was current-limiting the model below the rotor
+      // speed the aircraft actually reaches.
+      maxCurrent: 70,
+      ironLoss: 2.4e-9,
     },
     prop: {
       ...defaultProp(),
@@ -106,6 +116,18 @@ export function kronos(): Airframe {
       // profile drag stay at 0.02.
       clAlpha: 3.7,
       cd0: 0.035,
+      // Fitted, and the only fitted constant in the aerodynamics. At 2.4 the
+      // model reproduces four independent things measured from the flight at
+      // once — hover rotor speed 9 428 against 9 568, hover pack current 6.2 A
+      // against 6.4, full-throttle 28 046 rpm against 28 286, and peak pack
+      // current 280 A against 278.
+      //
+      // What this does NOT do is separate propeller drag from motor loss. The
+      // data constrains their sum and nothing more, so the model is right about
+      // system behaviour and unreliable about which component the loss belongs
+      // to. A thrust-stand run on this prop, or motor efficiency data, would
+      // split them; until then this number carries both.
+      profileLoss: 2.4,
     },
     battery: {
       cells: 6,

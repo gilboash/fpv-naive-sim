@@ -6,8 +6,7 @@ target: one 5" racing quad, a few simple maps with basic obstacles.
 
 Remote: https://github.com/gilboash/fpv-naive-sim (pushed 2026-08-25).
 
-**M0 (input spike) signed off 2026-08-25. M1 (flight model) built the same
-day.** Vite + TypeScript, no framework. Per the brief, do not move to art
+**M0 signed off 2026-08-25. M1 signed off 2026-08-26.** Vite + TypeScript, no framework. Per the brief, do not move to art
 before the feel is right.
 
 ## Layout
@@ -219,6 +218,18 @@ Also added: RC smoothing on the setpoint (Betaflight has it; without it the
 staircase from a 200 Hz radio into a 1 kHz loop spikes the feedforward), D_MIN,
 and a `setpointOverride` on FlightSim for driving replay from a logged setpoint.
 
+**M1 SIGNED OFF 2026-08-26.** Validated against NACRONOS: four independent
+measured quantities reproduced with one fitted aerodynamic constant (hover rotor
+speed 9 428 vs 9 568, hover pack current 6.2 vs 6.4 A, full throttle 28 046 vs
+28 286 rpm, peak pack current 280 vs 278 A). Rate response over three real
+flights: RMS 13.9-21.0 roll, 8.8-11.7 pitch, 3.9-8.2 yaw; lag 0-5 ms on roll and
+pitch. Roll error fell 39% and lag went from 18 ms to under 5 over this work.
+
+Signed off with a known, quantified gap rather than as correct: **timing is
+right, amplitude is not.** Gain 0.74-0.86 roll, 0.62-0.86 yaw, 0.44-0.54 pitch.
+Gilboa's call was to finalise M1 and fine-tune as more data arrives, which is
+the right call — the remaining gap needs data this project does not have.
+
 **Still open, and quantified:** gain 0.48-0.83, so the model still responds too
 softly, worst in pitch. Prop torque coefficient is ~1.7x low against the logs
 (3.0e-8 duty-corrected vs 1.45e-8 modelled), which also puts hover current at
@@ -243,7 +254,21 @@ motor-to-motor diagonal). Bidirectional DShot matters more than any debug flag �
 it puts per-motor RPM in the log, which is what separates the motor model from
 the rotor model from the PID.
 
-**After sign-off:** M2, the scene. Not before the feel is right.
+**Next: M2, the scene.** M1 is signed off, so this is now unblocked.
+
+**The fine-tuning loop, which is now the standing process:** more logs arrive ->
+`npm run identify` for airframe parameters -> `npm run replay` for the rate
+comparison -> read the gain/lag/shape decomposition, not the RMS. Everything
+needed is in the repo and needs no human in the loop except to fly.
+
+**What would actually move the remaining gap**, in order:
+1. A thrust-stand run on a Gemfan 51377, or motor efficiency data for the 2107.
+   That splits propeller drag from motor loss, which no flight log can.
+2. Anything that explains pitch. Its inertia fits at under half of roll's on a
+   square frame, and it is the worst axis for gain. Same unknown, probably.
+3. Anti-gravity, still unimplemented.
+4. Gilboa flying the sim with the TX16S and saying what feels wrong. The metrics
+   are a proxy; the brief is about feel. If the two disagree, feel wins.
 
 **How to verify a browser change without a human:** `npm run check:browser`,
 which is the M0 technique packaged — headless Chrome with
