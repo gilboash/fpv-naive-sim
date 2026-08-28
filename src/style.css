@@ -253,3 +253,43 @@ tbody tr:hover { background: var(--panel-2); }
   border: 1px solid #2a3140;
   border-radius: 6px;
 }
+
+/* ------------------------------------------------------------------- tune */
+
+.tune-grid {
+  display: grid;
+  grid-template-columns: 52px repeat(3, 74px) 62px 62px;
+  gap: 5px;
+  align-items: center;
+  margin: 10px 0;
+}
+
+.tune-head {
+  font-size: 11px;
+  color: #7d8899;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tune-axis { font-size: 12px; color: #dbe3ee; }
+
+.tune-val {
+  font-size: 12px;
+  color: #4a9eff;
+  font-variant-numeric: tabular-nums;
+}
+
+.tune-grid input { width: 100%; }
+
+.tune-curve {
+  width: 100%;
+  max-width: 340px;
+  height: 110px;
+  background: #11161f;
+  border: 1px solid #2a3140;
+  border-radius: 4px;
+  display: block;
+}
+
+.tune-axisline { stroke: #2a3140; stroke-width: 1; fill: none; vector-effect: non-scaling-stroke; }
+.tune-curveline { stroke: #f4b400; stroke-width: 2; fill: none; vector-effect: non-scaling-stroke; }

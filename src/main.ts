@@ -17,6 +17,7 @@ import { AxisDetector, EndpointCalibrator, GamepadPoller, MAX_BUTTONS } from './
 import { JitterRun, type RunResult, type Stats } from './jitter.ts';
 import { FlightPanel } from './flight-panel.ts';
 import { SceneView } from './scene-view.ts';
+import { TunePanel } from './tune-panel.ts';
 import TickerWorker from './ticker.worker.ts?worker';
 import {
   CTRL_FUTEX,
@@ -91,6 +92,7 @@ function setTicking(on: boolean): void {
 // whoever moves this next.
 const flight = new FlightPanel($('flight-panel'));
 const scene = new SceneView($('scene-view'), flight.sim);
+const tune = new TunePanel($('tune-panel'), flight.sim);
 
 /**
  * The whole input path, in one place, with nothing awaited. The physics step
@@ -564,7 +566,7 @@ $('jitter-start').onclick = startRun;
 // model without a radio attached. Stripped from a production build by the
 // import.meta.env.DEV guard, so it cannot become a load-bearing API.
 if (import.meta.env.DEV) {
-  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene };
+  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune };
 }
 
 globalThis.addEventListener('gamepadconnected', refreshDevices);

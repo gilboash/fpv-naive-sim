@@ -356,6 +356,47 @@ const main = async () => {
     );
   }
 
+  // The tune panel: editing a rate must reach the model, not just the DOM.
+  const tuneResult = await evaluate(`(() => {
+    const { tune, flight } = globalThis.__fpvsim;
+    const panel = document.querySelector('#tune-panel');
+    const inputs = [...panel.querySelectorAll('input[type=number]')];
+    if (inputs.length < 9) return { ok: false, reason: inputs.length + ' inputs' };
+    const before = flight.sim.rates.rate[0];
+    inputs[1].value = '40';
+    inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+    const after = flight.sim.rates.rate[0];
+    const curve = panel.querySelector('.tune-curveline');
+    const stored = localStorage.getItem('fpvsim.tune.v1');
+    return {
+      ok: true,
+      before, after,
+      curveDrawn: !!curve && (curve.getAttribute('d') || '').length > 50,
+      persisted: !!stored && stored.includes('"rate"'),
+      readouts: [...panel.querySelectorAll('.tune-val')].map((e) => e.textContent),
+    };
+  })()`);
+
+  check(
+    'tune panel present and wired',
+    tuneResult.ok === true,
+    tuneResult.ok ? 'nine rate fields' : `no — ${tuneResult.reason}`,
+  );
+  if (tuneResult.ok) {
+    check(
+      'editing a rate reaches the flight model',
+      tuneResult.before !== tuneResult.after && tuneResult.after === 40,
+      `sim rates.rate[0] ${tuneResult.before} -> ${tuneResult.after}`,
+    );
+    check('rate curve is drawn', tuneResult.curveDrawn === true, 'path has geometry');
+    check('tune persists to localStorage', tuneResult.persisted === true, 'stored');
+    check(
+      'centre and max readouts computed',
+      tuneResult.readouts.every((t) => /°\/s$/.test(t ?? '')),
+      tuneResult.readouts.join(' '),
+    );
+  }
+
   // Let it run a while longer to catch anything that only shows up over time.
   await sleep(2000);
 
@@ -373,7 +414,7 @@ const main = async () => {
       flight.sim.onGround = false;
       scene.render();
     })()`);
-    await evaluate(`document.querySelector('#scene').scrollIntoView()`);
+    await evaluate(`document.querySelector('#${process.env.SHOT_SECTION || 'scene'}').scrollIntoView()`);
     await sleep(400);
     const shot = await send(ws, 'Page.captureScreenshot', { format: 'png' }, sessionId);
     const { writeFileSync } = await import('node:fs');

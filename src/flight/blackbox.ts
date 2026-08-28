@@ -494,6 +494,24 @@ export function decodeBlackbox(buf: Uint8Array, session = 0): DecodedLog {
   };
 }
 
+/**
+ * Parse only the header of a session. Cheap: a tune is a few dozen text lines
+ * at the front of the file, and decoding a 16 MB frame stream to read them
+ * would be absurd.
+ */
+export function readHeaderOnly(buf: Uint8Array, session = 0): BlackboxHeader {
+  const text = new TextDecoder('latin1').decode(buf.subarray(0, Math.min(buf.length, 1 << 20)));
+  const starts: number[] = [];
+  let i = text.indexOf(HEADER_MAGIC);
+  while (i >= 0) {
+    starts.push(i);
+    i = text.indexOf(HEADER_MAGIC, i + 1);
+  }
+  if (starts.length === 0) throw new Error('no Blackbox header found');
+  const start = starts[Math.min(session, starts.length - 1)]!;
+  return parseHeader(text.slice(start)).header;
+}
+
 /** How many separate flights the file holds. */
 export function countSessions(buf: Uint8Array): number {
   const text = new TextDecoder('latin1').decode(buf);

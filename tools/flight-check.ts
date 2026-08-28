@@ -12,7 +12,8 @@
 
 import { FlightSim, type StickInput } from '../src/flight/sim.ts';
 import { kronos, racer5 } from '../src/flight/airframe.ts';
-import { defaultRates, applyRates, AXIS_ROLL } from '../src/flight/rates.ts';
+import { defaultRates, applyRates, AXIS_ROLL, type RateProfile } from '../src/flight/rates.ts';
+import { defaultPids } from '../src/flight/pid.ts';
 import { Mixer } from '../src/flight/mixer.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
 
@@ -475,6 +476,50 @@ section('Replay: a model can be restarted from a logged state');
   const dMotor = Math.abs((a.telemetry.motorOutputs[0] ?? 0) - (b.telemetry.motorOutputs[0] ?? 0));
   ok('seeded model matches on the next gyro sample', dGyro < 0.5, `${dGyro.toFixed(4)} deg/s apart`);
   ok('seeded model commands the same motor output', dMotor < 0.05, `${dMotor.toFixed(4)} apart on motor 1`);
+}
+
+// ------------------------------------------------------------- applying a tune
+
+section('Tune: changing rates and PIDs must actually change the flying');
+{
+  // A tune the model accepts but does not fly is worse than no tune UI at all,
+  // because it looks like it worked.
+  const gentle: RateProfile = {
+    type: 'betaflight',
+    rcRate: [105, 95, 87],
+    rate: [59, 59, 58],
+    expo: [1, 1, 10],
+  };
+  ok(
+    'the two curves disagree where it matters',
+    Math.abs(applyRates(gentle, AXIS_ROLL, 1)) < 600 &&
+      Math.abs(applyRates(defaultRates(), AXIS_ROLL, 1)) > 750,
+    `full stick: ${applyRates(gentle, AXIS_ROLL, 1).toFixed(0)} vs ` +
+      `${applyRates(defaultRates(), AXIS_ROLL, 1).toFixed(0)} deg/s`,
+  );
+
+  const flyFullStick = (rates: RateProfile): number => {
+    const sim = new FlightSim({ airframe: kronos() });
+    sim.applyTune(rates, defaultPids());
+    sim.reset(0);
+    sim.arm(sticks());
+    sim.pos.z = -200;
+    sim.onGround = false;
+    run(sim, sticks({ throttle: 0.3, roll: 1 }), 1.2);
+    return sim.telemetry.gyro.x;
+  };
+  const fast = flyFullStick(defaultRates());
+  const slow = flyFullStick(gentle);
+  ok(
+    'applyTune changes the rate the quad actually achieves',
+    fast > slow + 150,
+    `${fast.toFixed(0)} deg/s on the default curve vs ${slow.toFixed(0)} on the gentler one`,
+  );
+  ok(
+    'each tracks its own setpoint',
+    Math.abs(slow - applyRates(gentle, AXIS_ROLL, 1)) < 60,
+    `achieved ${slow.toFixed(0)} against a ${applyRates(gentle, AXIS_ROLL, 1).toFixed(0)} deg/s setpoint`,
+  );
 }
 
 // --------------------------------------------------- settling at low throttle

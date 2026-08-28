@@ -575,6 +575,29 @@ thing being calibrated is not the thing being flown**, and no test caught it
 because every test constructed its own airframe explicitly. A pilot flying it
 for ten minutes caught it immediately.
 
+## Rates and tune
+
+Section 6 is where a pilot's own rates go, and it exists because one asked where
+he was supposed to enter them and the answer was that he could not. The model
+had been flying its own defaults — **800 deg/s at full stick against his quad's
+512** — while feeling nearly right around centre (228 against 221 deg/s), which
+is precisely why it took a pilot rather than a test to notice. The rate curve is
+most of what makes muscle memory transfer, so it has to be the right curve.
+
+Both curves are editable per axis, with the centre sensitivity, full-stick rate
+and the stick-to-rate shape shown live, and the tune is saved in the browser.
+
+**The important button is "Load from Blackbox log".** Every one of these values
+already exists in the header of any `.BBL`, so the reliable way to fly your own
+quad is to hand over a log rather than retype a dozen numbers out of a
+configurator — and it brings the PIDs, filters, feedforward and D_MIN across
+too. Reading the header of a 16.8 MB log takes 11 ms, because it parses only the
+text at the front and never touches the frame stream.
+
+`FlightSim.applyTune()` swaps a tune while flying: the rate profile is mutated
+in place so references stay valid, and the controller is rebuilt because its
+filters are constructed from the cutoffs and cannot be re-cut.
+
 ### Known gaps, stated rather than omitted
 
 - **Not validated against a real Blackbox log.** The model is physically

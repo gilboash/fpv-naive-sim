@@ -294,6 +294,16 @@ measured 11.5). And Betaflight's `iterm_windup` anti-windup is now implemented �
 it was not the cause here, since the mix range never nears the windup point at
 low throttle, but it was genuinely missing.
 
+**Rates UI built 2026-08-28**, prompted by Gilboa asking where he entered his
+rates. He could not: the model flew `defaultRates()` at 800 deg/s full stick
+against his quad's 512, while matching almost exactly at centre (228 vs 221),
+which is why it felt broadly right and no test caught it. Section 6 now edits
+both curves per axis with live centre/max/shape, persists to localStorage, and
+imports a whole tune — rates, PIDs, filters, feedforward, D_MIN — from a
+Blackbox header in 11 ms on a 16.8 MB file (`readHeaderOnly`, text only, never
+touches the frames). `tuneFromHeader` in `src/flight/tune.ts` is shared with the
+log reader so the two cannot drift.
+
 **Next: collision.** There is now scenery to hit and nothing happens when you
 hit it, and half of a recorded flight was within half a metre of the ground.
 

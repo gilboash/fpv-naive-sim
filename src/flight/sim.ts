@@ -105,7 +105,8 @@ export class FlightSim {
   readonly airframe: Airframe;
   readonly dt: number;
   readonly rates: RateProfile;
-  readonly controller: RateController;
+  /** Replaced wholesale by applyTune; read it fresh rather than caching it. */
+  controller: RateController;
   readonly mixer: Mixer;
   readonly motors: Motor[] = [];
   readonly rotors: Rotor[] = [];
@@ -218,6 +219,28 @@ export class FlightSim {
     };
 
     this.reset();
+  }
+
+  /**
+   * Swap in a different tune while flying.
+   *
+   * The rate profile is mutated in place so anything holding a reference to it
+   * keeps working; the controller is rebuilt, because its filters are
+   * constructed from the cutoffs and cannot be re-cut in place.
+   */
+  applyTune(rates: RateProfile, pids: PidProfile): void {
+    this.rates.type = rates.type;
+    for (let i = 0; i < 3; i++) {
+      this.rates.rcRate[i] = rates.rcRate[i]!;
+      this.rates.rate[i] = rates.rate[i]!;
+      this.rates.expo[i] = rates.expo[i]!;
+    }
+    this.controller = new RateController(pids, this.dt);
+    for (const f of this.gyroFilter) f.setCutoff(pids.gyroLowpassHz, this.dt);
+    const rcHz = pids.feedforwardSmoothHz ?? 125;
+    for (const f of this.setpointFilter) f.setCutoff(rcHz, this.dt);
+    for (const f of this.gyroFilter) f.reset(0);
+    for (const f of this.setpointFilter) f.reset(0);
   }
 
   /** Put it back on the ground, level, facing north, with a full pack. */

@@ -8,7 +8,7 @@
   </head>
   <body>
     <header>
-      <h1>fpvsim <span class="dim">/ M1 flight model</span></h1>
+      <h1>fpvsim <span class="dim">/ trainer</span></h1>
       <div id="status-pills" class="pills"></div>
     </header>
 
@@ -90,8 +90,19 @@
         <div id="scene-view"></div>
       </section>
 
+      <section id="tune">
+        <h2>6 · Rates and tune</h2>
+        <p class="hint">
+          The rate curve is most of what makes muscle memory transfer, so it has to be
+          <em>your</em> curve. Every value here lives in the header of any Blackbox log —
+          load one and it comes across, PIDs and filters included, rather than being
+          retyped from a configurator. Saved in this browser.
+        </p>
+        <div id="tune-panel"></div>
+      </section>
+
       <section id="flight">
-        <h2>6 · Instruments</h2>
+        <h2>7 · Instruments</h2>
         <p class="hint">
           1 kHz rate-mode flight model: blade-element rotors, brushless motors with
           battery sag, and a Betaflight-scaled PID loop. The physics step runs inside
