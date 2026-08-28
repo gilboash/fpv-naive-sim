@@ -153,23 +153,25 @@ export class SceneView {
   }
 
   /**
-   * Put it back where it went in, level and stationary, a little above the
-   * ground and pushed clear of whatever it hit — respawning inside the pole you
-   * just clipped is an instant second crash and reads as broken.
+   * Put it back where it went in, level and stationary, standing on the ground
+   * and pushed clear of whatever it hit — respawning inside the pole you just
+   * clipped is an instant second crash and reads as broken.
+   *
+   * On the ground, not hovering. Handing the quad back in mid-air looks
+   * friendlier and is a trap: with the throttle down, as it must be to re-arm,
+   * a metre and a half of free fall arrives at 5.2 m/s and crashes it again
+   * within 600 ms. The pilot presses reset, watches it drop, and cannot fly.
    *
    * Heading comes from the moment of the crash rather than from the wreck,
    * because a tumbled quad ends up pointing anywhere and the pilot wants to be
    * facing back down the line they were flying.
    */
   respawnInPlace(): void {
-    const up = 1.6;
     const yaw = this.sim.crashed ? this.sim.yawAtCrash : this.sim.telemetry.attitude.yaw;
-    const spot = clearance(this.sim.obstacles, this.sim.pos.x, this.sim.pos.y, up, 1.2);
+    const spot = clearance(this.sim.obstacles, this.sim.pos.x, this.sim.pos.y, 0.5, 1.2);
     this.sim.reset(yaw);
     this.sim.pos.x = spot.north;
     this.sim.pos.y = spot.east;
-    this.sim.pos.z = -up;
-    this.sim.onGround = false;
   }
 
   render(): void {

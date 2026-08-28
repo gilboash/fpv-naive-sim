@@ -766,6 +766,33 @@ section('Collision: the ground and the things standing on it');
     'arming refused until it is reset',
   );
 
+  // The regression that shipped: a respawn has to survive being left alone.
+  // Handed back in mid-air with the throttle down — as it must be to re-arm —
+  // the quad free-falls onto the ground and crashes again inside a second, so
+  // the pilot presses reset, watches it drop, and cannot fly.
+  const respawned = mk();
+  respawned.reset(0);
+  respawned.arm(sticks());
+  run(respawned, sticks(), 3);
+  ok(
+    'a respawn left alone at idle stays intact',
+    !respawned.crashed && respawned.armed,
+    `still armed and unbroken after 3 s at zero throttle`,
+  );
+
+  const midAir = mk();
+  midAir.reset(0);
+  midAir.pos.z = -1.6;
+  midAir.onGround = false;
+  midAir.arm(sticks());
+  run(midAir, sticks(), 3);
+  ok(
+    'which is why it is handed back on the ground, not hovering',
+    midAir.crashed,
+    `1.6 m of free fall arrives at ${midAir.crashSpeed.toFixed(1)} m/s, over the ` +
+      `${midAir.contact.crashSpeed} m/s limit`,
+  );
+
   ok(
     'the model remembers it was flying when it crashed',
     hard.armedAtCrash === true,

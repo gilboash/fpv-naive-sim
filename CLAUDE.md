@@ -352,7 +352,10 @@ rather than assuming headless has no gamepad.
 
 **Circuit is the default map (2026-08-29)** and carries freestyle furniture —
 floodlight masts, two tubes, three elevated square windows — added for a round
-of feedback from other pilots. Reset defaults to respawning in place.
+of feedback from other pilots. Reset defaults to respawning in place, **on the ground**. Respawning in mid-air
+shipped first and was a crash loop: the throttle must be down to re-arm, so
+1.5 m of free fall lands at 5.2 m/s against a 4.5 m/s threshold and crashes
+again inside 600 ms — press reset, watch it drop, cannot fly. Tested now.
 
 A trap worth remembering: two browser checks broke when the circuit became the
 default, because they `reset()` to the origin and the circuit has a tube

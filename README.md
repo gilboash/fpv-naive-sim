@@ -634,10 +634,18 @@ A hard enough impact sets `crashed`, disarms, and keeps simulating, because a
 crashed quad still tumbles. Scenery is less forgiving than grass by a factor of
 three: a post takes a prop off at a speed the ground would shrug at.
 
-**Recovering is one key: `R`.** By default it drops the quad back in *where it
-went in* — level, stationary, a metre and a half up, pushed clear of whatever it
+**Recovering is one key: `R`.** By default it puts the quad back *where it went
+in* — level, stationary, standing on the ground, pushed clear of whatever it
 hit, facing the way it was going before it tumbled — intact and already armed,
-provided the throttle is down. Sending a pilot to the start line after every
+provided the throttle is down.
+
+On the ground, not hovering, and that distinction shipped as a bug first.
+Handing the quad back in mid-air looks friendlier and is a trap: the throttle
+has to be down for it to re-arm, so a metre and a half of free fall arrives at
+5.2 m/s, over the 4.5 m/s crash threshold, and it crashes again within 600 ms.
+The pilot presses reset, watches it drop, and cannot fly. There is now a test
+that a respawn left alone at idle is still intact three seconds later, which is
+the check that was missing. Sending a pilot to the start line after every
 crash spends their session on the walk rather than on the thing they were
 practising. The scene has a selector for the other behaviour, and "To start
 line" is always one click away. Crashing is the normal

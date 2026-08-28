@@ -474,8 +474,12 @@ const main = async () => {
     flight.reset();
     const rearmed = sim.armed;
     const afterResetText = document.querySelector('#flight-panel .dim')?.textContent ?? '';
+    // And it has to survive being left alone: a respawn that drops and
+    // re-crashes leaves the pilot unable to fly at all.
+    for (let i = 0; i < 3000; i++) sim.step({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
+    const survivedIdle = !sim.crashed && sim.armed;
     return {
-      rearmed, afterResetText,
+      rearmed, afterResetText, survivedIdle,
       ok: true, count, crashedIntoPost, speed, armedWhileCrashed, refusalText,
       clearedByReset: !sim.crashed,
       movedFromCrash: Math.hypot(sim.pos.x - crashN, sim.pos.y - crashE),
@@ -513,6 +517,11 @@ const main = async () => {
       `crashed ${collide.clearedByReset ? 'cleared' : 'still set'}, ` +
         `respawned ${(collide.movedFromCrash ?? 0).toFixed(1)} m from the wreck ` +
         `at ${(collide.respawnAlt ?? 0).toFixed(2)} m`,
+    );
+    check(
+      'the respawn survives being left alone at idle',
+      collide.survivedIdle === true,
+      collide.survivedIdle ? 'still armed and intact after 3 s' : 'it dropped and re-crashed',
     );
     check(
       'and clear of the thing it hit',
