@@ -350,10 +350,27 @@ headless Chrome sees it, so `poller.connected` is true there and the axes are
 live but uncalibrated. Force the disconnected case with `poller.select(-1)`
 rather than assuming headless has no gamepad.
 
-**Next, roughly in order:** gate sequencing and lap timing (the geometry is
-already there, and it turns flying into training with a number attached); motor
-sound, which is a real flight cue and the biggest immersion-per-effort item;
-an OSD; and lens distortion.
+**Next, roughly in order:**
+
+1. **Gate sequencing and lap timing.** The geometry is already there from the
+   collision work; this is what turns flying around into training with a number
+   attached.
+2. **Respawn modes** — Gilboa's request, parked deliberately until tracks are
+   under way because two of the three variants depend on gate sequencing:
+   - *from the start line*, which is what R does today;
+   - *in place*, dropped level and stationary a metre above where it went in;
+   - *from the last gate passed*, which is what a pilot practising a line
+     actually wants and which cannot exist before gates are ordered.
+   It is a training-mode setting rather than anything physical. The part worth
+   getting right is that a respawn has to invalidate the lap — otherwise the
+   timing added in step 1 measures nothing — so the two features are entangled
+   and should be designed together rather than bolted to each other.
+3. **Motor sound.** A real flight cue: pilots hear throttle and RPM before they
+   see the response. The model already produces per-rotor RPM, so this is
+   probably the largest immersion-per-effort item left.
+4. **An OSD** — battery, timer, speed.
+5. **Lens distortion.** The projection is rectilinear where real FPV cameras are
+   wide and barrel-distorted; currently mitigated by keeping the FOV modest.
 
 **The fine-tuning loop, which is now the standing process:** more logs arrive ->
 `npm run identify` for airframe parameters -> `npm run replay` for the rate
