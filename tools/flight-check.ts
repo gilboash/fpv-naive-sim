@@ -11,7 +11,7 @@
  */
 
 import { FlightSim, type StickInput } from '../src/flight/sim.ts';
-import { racer5 } from '../src/flight/airframe.ts';
+import { kronos, racer5 } from '../src/flight/airframe.ts';
 import { defaultRates, applyRates, AXIS_ROLL } from '../src/flight/rates.ts';
 import { Mixer } from '../src/flight/mixer.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
@@ -475,6 +475,76 @@ section('Replay: a model can be restarted from a logged state');
   const dMotor = Math.abs((a.telemetry.motorOutputs[0] ?? 0) - (b.telemetry.motorOutputs[0] ?? 0));
   ok('seeded model matches on the next gyro sample', dGyro < 0.5, `${dGyro.toFixed(4)} deg/s apart`);
   ok('seeded model commands the same motor output', dMotor < 0.05, `${dMotor.toFixed(4)} apart on motor 1`);
+}
+
+// --------------------------------------------------- settling at low throttle
+
+section('Control: releasing the stick must settle, at any throttle');
+{
+  // From a pilot report, not from theory: "put in a little roll or pitch
+  // without throttle and let it go, and the quad shakes as if trying to
+  // stabilise itself back". In acro nothing should return it anywhere — the
+  // rate should simply go to zero and stay there.
+  //
+  // The cause was that the simulator flew the uncalibrated airframe, whose
+  // motor time constant was four times the measured one. Low throttle is where
+  // that hurts most, because it is where the demanded rotor speed change is
+  // largest. No test covered it, so this is that test.
+  const settleAt = (throttle: number): { ms: number; crossings: number } => {
+    const sim = new FlightSim({ airframe: kronos() });
+    sim.reset(0);
+    sim.arm(sticks());
+    sim.pos.z = -80;
+    sim.onGround = false;
+    const hold = sticks({ throttle });
+    run(sim, hold, 1.5);
+    run(sim, sticks({ throttle, roll: 0.25 }), 0.25);
+    const trace: number[] = [];
+    for (let i = 0; i < 1200; i++) {
+      sim.step(hold);
+      trace.push(sim.telemetry.gyro.x);
+    }
+    let ms = trace.length;
+    for (let i = trace.length - 1; i >= 0; i--) {
+      if (Math.abs(trace[i]!) > 15) {
+        ms = i + 1;
+        break;
+      }
+    }
+    const crossings = trace
+      .slice(0, 600)
+      .reduce((n, v, i, a) => (i > 0 && v > 0 !== a[i - 1]! > 0 ? n + 1 : n), 0);
+    return { ms, crossings };
+  };
+
+  for (const throttle of [0, 0.05, 0.16, 0.4]) {
+    const { ms, crossings } = settleAt(throttle);
+    ok(
+      `settles after release at ${(throttle * 100).toFixed(0)}% throttle`,
+      ms < 250,
+      `${ms} ms to stay inside 15 deg/s, ${crossings} zero crossings`,
+    );
+  }
+
+  // And the thing the pilot actually described: with the sticks centred it must
+  // hold whatever attitude it has, not seek level.
+  const sim = new FlightSim({ airframe: kronos() });
+  sim.reset(0);
+  sim.arm(sticks());
+  sim.pos.z = -60;
+  sim.onGround = false;
+  fromEuler(sim.q, 40 * DEG_TO_RAD, 0, 0);
+  // One step first: telemetry is only refreshed inside step(), so reading it
+  // straight after setting the quaternion returns the previous state.
+  sim.step(sticks({ throttle: 0 }));
+  const before = sim.telemetry.attitude.roll;
+  run(sim, sticks({ throttle: 0 }), 2.5);
+  const after = sim.telemetry.attitude.roll;
+  ok(
+    'holds attitude with the sticks centred — this is acro, not angle mode',
+    Math.abs(after - before) < 2,
+    `roll ${before.toFixed(1)}° -> ${after.toFixed(1)}° over 2.5 s at zero throttle`,
+  );
 }
 
 // ------------------------------------------------------------- camera basis

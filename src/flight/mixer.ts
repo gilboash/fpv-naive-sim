@@ -51,6 +51,13 @@ export interface MixResult {
   saturated: boolean;
   /** Throttle actually used after any airmode shift. */
   throttleUsed: number;
+  /**
+   * Spread of the raw mix before any clamping, Betaflight's motor mix range.
+   * The controller uses it for anti-windup: a mix wider than the motors can
+   * express means the correction is not being delivered, and integrating
+   * against that is how a controller winds itself into an oscillation.
+   */
+  range: number;
 }
 
 export class Mixer {
@@ -62,7 +69,12 @@ export class Mixer {
   constructor(mounts: MotorMount[], airmode = true) {
     this.airmode = airmode;
     this.mix = mixFromGeometry(mounts);
-    this.result = { outputs: new Array<number>(mounts.length).fill(0), saturated: false, throttleUsed: 0 };
+    this.result = {
+      outputs: new Array<number>(mounts.length).fill(0),
+      saturated: false,
+      throttleUsed: 0,
+      range: 0,
+    };
   }
 
   /**
@@ -87,6 +99,7 @@ export class Mixer {
     }
 
     const range = hi - lo;
+    res.range = range;
     res.saturated = false;
     let thr = clamp(throttle, 0, 1);
 
@@ -101,6 +114,11 @@ export class Mixer {
       thr = 0.5;
       res.saturated = true;
     } else if (this.airmode) {
+      // Airmode shifts throttle to fit the mix. When the throttle stick is at
+      // the bottom the shift puts the lowest motor at exactly zero, so any
+      // further correction on that side has nowhere to go — which is why the
+      // range above matters to the controller.
+
       // Shift throttle so the full mix fits. This is what keeps attitude
       // authority at zero throttle.
       const min = -lo;

@@ -53,6 +53,13 @@ export interface PidProfile {
   itermRelaxHz: number;
   /** Absolute clamp on accumulated I, in output units. */
   itermLimit: number;
+  /**
+   * Betaflight's iterm_windup, percent. I-term accumulation is cut as the motor
+   * mix range approaches this, because past it the mixer cannot deliver the
+   * correction and integrating the resulting error just stores energy that
+   * comes back as overshoot.
+   */
+  itermWindupPercent?: number;
   /** Clamp on the summed output, roll/pitch. */
   pidSumLimit: number;
   /** Clamp on the summed output, yaw. */
@@ -88,6 +95,7 @@ export function defaultPids(): PidProfile {
     dtermLowpassHz: 117,
     itermRelaxHz: 15,
     itermLimit: 400,
+    itermWindupPercent: 85,
     pidSumLimit: 500,
     pidSumLimitYaw: 400,
     tpaBreakpoint: 0.35,
@@ -188,7 +196,13 @@ export class RateController {
    * @param throttle  0..1, for throttle PID attenuation
    * @returns         output in Betaflight pidSum units
    */
-  update(axis: number, setpoint: number, gyro: number, throttle: number): number {
+  update(
+    axis: number,
+    setpoint: number,
+    gyro: number,
+    throttle: number,
+    mixRange = 0,
+  ): number {
     const st = this.axes[axis]!;
     const g = this.gainsFor(axis);
     const dt = this.dt;
@@ -216,8 +230,19 @@ export class RateController {
     const growing = error * st.integral >= 0;
     const iError = growing ? error * relax : error;
 
+    // Anti-windup. As the mix range approaches the windup point the integrator
+    // is progressively frozen: beyond it the motors are already doing all they
+    // can, the remaining error is not the controller's to fix, and integrating
+    // it is how a quad at zero throttle winds itself into a half-second
+    // oscillation with the sticks centred.
+    let windup = 1;
+    const point = this.profile.itermWindupPercent ?? 0;
+    if (point > 0 && point < 100) {
+      windup = clamp((1 - mixRange) / (1 - point / 100), 0, 1);
+    }
+
     st.integral = clamp(
-      st.integral + ITERM_SCALE * g.i * iError * dt,
+      st.integral + ITERM_SCALE * g.i * iError * dt * windup,
       -this.profile.itermLimit,
       this.profile.itermLimit,
     );

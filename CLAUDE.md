@@ -270,6 +270,30 @@ fill — `SceneView` degrades gracefully when WebGL is missing, so an
 error-watching check passed while nothing was being drawn. Headless needs
 `--use-angle=swiftshader --enable-unsafe-swiftshader`.
 
+**Pilot report, 2026-08-28, and the bug it found.** Gilboa flew M2 and reported
+that roll and pitch felt like angle mode — a small input released at low
+throttle made the quad shake as if self-levelling. It is not angle mode (with
+sticks centred the model holds 60 degrees of roll and rotates at exactly zero)
+but the report was otherwise right: the recording shows a 4 Hz damped
+oscillation with sticks centred, ringing 400-600 ms, every instance at zero
+throttle.
+
+**Cause: the simulator was flying the uncalibrated airframe.** `FlightPanel`
+constructed a bare `FlightSim()`, which defaults to `racer5()`, while every
+parameter measured from the logs had gone into `kronos()`. So the whole Blackbox
+calibration effort had been landing on an airframe the product did not use.
+Settling at zero throttle went from never to 81 ms once fixed.
+
+That is the lesson worth keeping: **a calibration is worthless if the thing
+calibrated is not the thing flown**, and no test caught it because every test
+constructs its airframe explicitly. Ten minutes of a pilot flying it did.
+
+Also fixed: `defaultMotor()` still carried the inflated 0.13 ohm resistance that
+had been standing in for the pack-current bug (time constant 41 ms against a
+measured 11.5). And Betaflight's `iterm_windup` anti-windup is now implemented —
+it was not the cause here, since the mix range never nears the windup point at
+low throttle, but it was genuinely missing.
+
 **Next: collision.** There is now scenery to hit and nothing happens when you
 hit it, and half of a recorded flight was within half a metre of the ground.
 

@@ -322,9 +322,13 @@ export class FlightSim {
     let mixPitch = 0;
     let mixYaw = 0;
     if (this.armed) {
-      mixRoll = this.controller.update(AXIS_ROLL, sp.x, gyro.x, thr) / PID_MIXER_SCALING;
-      mixPitch = this.controller.update(AXIS_PITCH, sp.y, gyro.y, thr) / PID_MIXER_SCALING;
-      mixYaw = this.controller.update(AXIS_YAW, sp.z, gyro.z, thr) / PID_MIXER_SCALING;
+      // Last step's mix range feeds the anti-windup, as it does in Betaflight:
+      // the mixer runs after the controller, so the freshest figure available
+      // is one step old, and at 1 kHz that is immaterial.
+      const range = this.mixer.result.range;
+      mixRoll = this.controller.update(AXIS_ROLL, sp.x, gyro.x, thr, range) / PID_MIXER_SCALING;
+      mixPitch = this.controller.update(AXIS_PITCH, sp.y, gyro.y, thr, range) / PID_MIXER_SCALING;
+      mixYaw = this.controller.update(AXIS_YAW, sp.z, gyro.z, thr, range) / PID_MIXER_SCALING;
     }
 
     const mix = this.mixer.apply(this.armed ? thr : 0, mixRoll, mixPitch, mixYaw);

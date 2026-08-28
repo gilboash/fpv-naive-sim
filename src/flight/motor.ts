@@ -52,15 +52,18 @@ export interface MotorSpec {
 export function defaultMotor(): MotorSpec {
   return {
     kv: 1900,
-    // Lumped, not the winding alone: this stands in for phase resistance plus
-    // commutation and ESC losses. Using the ~0.05 ohm winding figure on its own
-    // let the model pull 290 A at full throttle, which no 6S racing setup does.
-    resistance: 0.13,
+    // The winding, near enough. An earlier 0.13 ohm was standing in for two
+    // things that are now modelled properly — ESC current limiting, and the
+    // fact that pack current is duty times motor current — and the cost of that
+    // stand-in was a mechanical time constant (J*R/ke^2) of 41 ms against a
+    // measured 11.5. That slow motor is what made the model ring at low
+    // throttle, where the demanded rotor speed change is largest.
+    resistance: 0.05,
     inertia: 8e-6,
     friction: 2e-7,
-    ironLoss: 1.2e-9,
+    ironLoss: 2.4e-9,
     idle: 0.055,
-    maxCurrent: 55,
+    maxCurrent: 65,
   };
 }
 

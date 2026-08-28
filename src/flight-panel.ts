@@ -11,6 +11,7 @@
 
 import type { Commands } from './mapping.ts';
 import { FlightSim } from './flight/sim.ts';
+import { kronos } from './flight/airframe.ts';
 import { FlightRecorder } from './flight/recorder.ts';
 import { maxRate } from './flight/rates.ts';
 import { AXIS_ROLL } from './flight/rates.ts';
@@ -56,7 +57,13 @@ function motorBar(name: string): Bar {
 }
 
 export class FlightPanel {
-  readonly sim = new FlightSim();
+  // The Kronos, not the generic racer: it is the airframe whose rotor thrust,
+  // motor time constant and inertia were measured from real logs, where the
+  // racer's are estimates that the same logs showed to be 43% out on thrust and
+  // four times too slow on the motor. Flying the uncalibrated one was an
+  // oversight — every fix from the Blackbox work was landing on an airframe the
+  // simulator did not use.
+  readonly sim = new FlightSim({ airframe: kronos() });
   /** 60 s at 1 kHz is the largest recording the UI offers; about 11 MB held. */
   readonly recorder = new FlightRecorder(60_000);
   /** Wall-clock microseconds spent in the last batch of physics steps. */

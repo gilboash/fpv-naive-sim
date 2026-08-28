@@ -538,6 +538,43 @@ There is also still no crash model: the quad passes through gates and pylons.
 Collision is the obvious next milestone now that there is something to collide
 with.
 
+### A pilot report, and what it found
+
+> "Pitch and roll feel a little like it's horizon/angle mode — put in a little
+> roll or pitch without throttle and let it go, and the quad starts to shake as
+> if it tries to stabilise itself back. That is not expected in acro."
+
+It was not angle mode: with the sticks centred the model holds 30° or 60° of
+roll indefinitely and rotates at exactly zero. But the report was right about
+everything else, and the recorded flight showed why — a damped oscillation with
+the sticks centred, ringing for 400-600 ms, **every instance at zero throttle**.
+
+Settling time after releasing a roll input, before and after:
+
+| throttle | 0% | 5% | 10% | 16% | 40% |
+|---|---|---|---|---|---|
+| before | never settles | 409 ms | 192 ms | 80 ms | 23 ms |
+| after | **81 ms** | 80 ms | 18 ms | 18 ms | 14 ms |
+
+**The cause was that the simulator was flying the uncalibrated airframe.** Every
+parameter measured from the Blackbox logs — rotor thrust, motor time constant,
+inertia — went into `kronos()`, while `FlightPanel` constructed a bare
+`FlightSim()` and got `racer5()`, whose motor was four times too slow and whose
+prop was 43% out on thrust. Low throttle is exactly where a slow motor hurts
+most, because it is where the demanded rotor-speed change is largest.
+
+Two smaller things came out of the same investigation: `defaultMotor()` still
+carried the inflated 0.13 ohm resistance that had been standing in for the
+pack-current bug, and Betaflight's `iterm_windup` anti-windup was not
+implemented at all. The anti-windup turned out not to be the cause here — the
+mix range never approaches the windup point at low throttle — but it is real
+behaviour and it is in now.
+
+The lesson is not about motors. It is that **a calibration is worthless if the
+thing being calibrated is not the thing being flown**, and no test caught it
+because every test constructed its own airframe explicitly. A pilot flying it
+for ten minutes caught it immediately.
+
 ### Known gaps, stated rather than omitted
 
 - **Not validated against a real Blackbox log.** The model is physically
