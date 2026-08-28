@@ -632,8 +632,13 @@ at all.
 
 A hard enough impact sets `crashed`, disarms, and keeps simulating, because a
 crashed quad still tumbles. Scenery is less forgiving than grass by a factor of
-three: a post takes a prop off at a speed the ground would shrug at. Only
-`reset()` clears it.
+three: a post takes a prop off at a speed the ground would shrug at.
+
+**Recovering is `R`, the Reset button, or To start line** — all three put the
+quad back on the start line intact. Arming is refused while crashed, and says
+so. That last rule is not a flight-controller behaviour, it is an honesty one:
+without it a wreck could be re-armed where it lay, with the crash flag still set
+and the banner still up, and fly on as though nothing had happened.
 
 The tests are behaviours rather than numbers — it rests without sinking or
 buzzing, falls flat from 45°, survives a gentle landing, crashes and disarms

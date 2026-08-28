@@ -255,7 +255,8 @@ export class FlightPanel {
       'p',
       'hint',
       'Arming refuses above 5% throttle, as a real flight controller does. ' +
-        'Keys: A arm, D disarm, R reset. Rate mode only — there is no self-levelling, ' +
+        'Keys: A arm, D disarm, R reset — R is also how you recover from a crash. ' +
+        'Rate mode only — there is no self-levelling, ' +
         'which is the mode the brief is about. Recording captures the same fields ' +
         'Betaflight Blackbox logs, so a sim flight and a real log can be compared ' +
         'side by side.',
@@ -287,6 +288,8 @@ export class FlightPanel {
     if (this.sim.arm(this.lastInput)) {
       this.armBtn.textContent = 'Disarm';
       this.setStatus('armed');
+    } else if (this.sim.crashed) {
+      this.setStatus('crashed — press R or Reset first');
     } else {
       this.setStatus('refused: throttle is not down');
     }

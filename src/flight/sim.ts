@@ -333,8 +333,17 @@ export class FlightSim {
     this.gyroDeg.z = gyro.z;
   }
 
-  /** Arming refuses at anything but idle throttle, exactly as a real FC does. */
+  /**
+   * Arming refuses at anything but idle throttle, exactly as a real FC does,
+   * and refuses outright after a crash.
+   *
+   * The second rule is not a flight-controller behaviour, it is an honesty one:
+   * without it a crashed quad could be re-armed where it lay, with the crash
+   * flag still set and the banner still up, and fly on as though nothing had
+   * happened. Picking it up is a reset.
+   */
   arm(input: StickInput): boolean {
+    if (this.crashed) return false;
     if (input.throttle > 0.05) return false;
     this.armed = true;
     this.controller.reset();

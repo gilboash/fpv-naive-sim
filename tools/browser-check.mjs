@@ -430,11 +430,17 @@ const main = async () => {
     }
     const crashedIntoPost = sim.crashed;
     const speed = sim.crashSpeed;
+    // Arming must be refused while wrecked, and the button must say why.
+    const armBtn = [...document.querySelectorAll('#flight-panel button')]
+      .find((b) => b.textContent === 'Arm');
+    armBtn?.click();
+    const armedWhileCrashed = sim.armed;
+    const refusalText = document.querySelector('#flight-panel .dim')?.textContent ?? '';
 
     // Reset must clear it, and put the quad back on the start line.
     flight.reset();
     return {
-      ok: true, count, crashedIntoPost, speed,
+      ok: true, count, crashedIntoPost, speed, armedWhileCrashed, refusalText,
       clearedByReset: !sim.crashed,
       backAtStart: Math.abs(sim.pos.x - scene.track.start.north) < 0.01,
     };
@@ -450,6 +456,11 @@ const main = async () => {
       'flying into a gate post crashes',
       collide.crashedIntoPost === true,
       `crashed at ${(collide.speed ?? 0).toFixed(1)} m/s`,
+    );
+    check(
+      'a crashed quad refuses to arm, and says so',
+      collide.armedWhileCrashed === false && /crash/i.test(collide.refusalText ?? ''),
+      `"${collide.refusalText}"`,
     );
     check(
       'reset clears the crash and returns to the start line',

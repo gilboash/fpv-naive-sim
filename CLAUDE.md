@@ -334,6 +334,10 @@ third of the ground's threshold, because a post takes a prop off.
 start line rather than the origin — delegation rather than a second key handler,
 so the outcome does not depend on listener order.
 
+Recovery is R, the Reset button, or To start line. Arming is refused while
+crashed — found by Gilboa asking how to reset, because until then arming a wreck
+succeeded and left the flag stuck on.
+
 **Next, roughly in order:** gate sequencing and lap timing (the geometry is
 already there, and it turns flying into training with a number attached); motor
 sound, which is a real flight cue and the biggest immersion-per-effort item;

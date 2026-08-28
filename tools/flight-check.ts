@@ -758,9 +758,18 @@ section('Collision: the ground and the things standing on it');
   run(into, sticks({ throttle: 0.16 }), 0.4);
   ok('flying into it is not', into.crashed, `crashed at ${into.crashSpeed.toFixed(1)} m/s`);
 
-  // Reset has to clear the wreck.
+  // A crashed quad must not simply re-arm where it lies: without this it would
+  // fly on with the crash flag still set and the banner still up.
+  ok(
+    'a crashed quad refuses to arm',
+    hard.arm(sticks()) === false && !hard.armed,
+    'arming refused until it is reset',
+  );
+
+  // Reset has to clear the wreck, and then arming works again.
   hard.reset(0);
   ok('reset clears the crash', !hard.crashed && hard.crashSpeed === 0, 'back to intact');
+  ok('and arming works again afterwards', hard.arm(sticks()) === true, 'armed');
 }
 
 // ------------------------------------------------------------- camera basis
