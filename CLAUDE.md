@@ -254,7 +254,24 @@ motor-to-motor diagonal). Bidirectional DShot matters more than any debug flag �
 it puts per-motor RPM in the log, which is what separates the motor model from
 the rotor model from the PID.
 
-**Next: M2, the scene.** M1 is signed off, so this is now unblocked.
+**M2 (the scene) built 2026-08-28.** `src/render/` — WebGL2, one shader, two
+draw calls, three maps, no dependency. Renders every rAF; text panels stay at
+30 Hz. Frame conversion NED/FRD -> Y-up happens once, in `renderer.ts`, and
+nowhere else.
+
+Three bugs, none of which threw: the camera basis was not orthonormal (body-up
+about the tilt axis is `(-sin t, 0, -cos t)`, and `+sin t` gave forward·up =
+0.766, which shears the view — there is a test for it now); seven identical
+gates in a line nest behind each other so the pilot sees one; and the ground
+chequer's two greens differed by 0.03, leaving no speed cues at all.
+
+The browser check now reads pixels back and asserts the frame is not a flat
+fill — `SceneView` degrades gracefully when WebGL is missing, so an
+error-watching check passed while nothing was being drawn. Headless needs
+`--use-angle=swiftshader --enable-unsafe-swiftshader`.
+
+**Next: collision.** There is now scenery to hit and nothing happens when you
+hit it, and half of a recorded flight was within half a metre of the ground.
 
 **The fine-tuning loop, which is now the standing process:** more logs arrive ->
 `npm run identify` for airframe parameters -> `npm run replay` for the rate

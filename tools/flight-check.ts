@@ -14,6 +14,7 @@ import { FlightSim, type StickInput } from '../src/flight/sim.ts';
 import { racer5 } from '../src/flight/airframe.ts';
 import { defaultRates, applyRates, AXIS_ROLL } from '../src/flight/rates.ts';
 import { Mixer } from '../src/flight/mixer.ts';
+import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
 
 let passed = 0;
 let failed = 0;
@@ -474,6 +475,48 @@ section('Replay: a model can be restarted from a logged state');
   const dMotor = Math.abs((a.telemetry.motorOutputs[0] ?? 0) - (b.telemetry.motorOutputs[0] ?? 0));
   ok('seeded model matches on the next gyro sample', dGyro < 0.5, `${dGyro.toFixed(4)} deg/s apart`);
   ok('seeded model commands the same motor output', dMotor < 0.05, `${dMotor.toFixed(4)} apart on motor 1`);
+}
+
+// ------------------------------------------------------------- camera basis
+
+section('Renderer: the camera basis must stay orthonormal');
+{
+  // Not a rendering test — a maths one. A basis that is not orthonormal still
+  // draws a picture, just a sheared one, and the error is easy to look at and
+  // not notice.
+  const check = (tiltDeg: number, rollDeg: number, pitchDeg: number): void => {
+    const t = tiltDeg * DEG_TO_RAD;
+    const ct = Math.cos(t);
+    const st = Math.sin(t);
+    const fwdB = { x: ct, y: 0, z: -st };
+    const upB = { x: -st, y: 0, z: -ct };
+    const rightB = { x: 0, y: 1, z: 0 };
+
+    const q = { w: 1, x: 0, y: 0, z: 0 };
+    fromEuler(q, rollDeg * DEG_TO_RAD, pitchDeg * DEG_TO_RAD, 0);
+    const f = rotateBodyToWorld({ x: 0, y: 0, z: 0 }, q, fwdB);
+    const u = rotateBodyToWorld({ x: 0, y: 0, z: 0 }, q, upB);
+    const r = rotateBodyToWorld({ x: 0, y: 0, z: 0 }, q, rightB);
+
+    const dot = (a: typeof f, b: typeof f): number => a.x * b.x + a.y * b.y + a.z * b.z;
+    const len = (a: typeof f): number => Math.hypot(a.x, a.y, a.z);
+    const worst = Math.max(
+      Math.abs(dot(f, u)),
+      Math.abs(dot(f, r)),
+      Math.abs(dot(u, r)),
+      Math.abs(len(f) - 1),
+      Math.abs(len(u) - 1),
+      Math.abs(len(r) - 1),
+    );
+    ok(
+      `camera basis orthonormal at tilt ${tiltDeg}, roll ${rollDeg}, pitch ${pitchDeg}`,
+      worst < 1e-9,
+      `worst deviation ${worst.toExponential(2)}`,
+    );
+  };
+  check(0, 0, 0);
+  check(25, 0, 0);
+  check(40, 35, -20);
 }
 
 // ----------------------------------------------------------- determinism

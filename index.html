@@ -79,8 +79,19 @@
         <div id="jitter-results"></div>
       </section>
 
+      <section id="scene">
+        <h2>5 · FPV view</h2>
+        <p class="hint">
+          Rate mode, camera tilted up as on a real quad. Arm with <strong>A</strong>
+          (throttle down first), <strong>D</strong> to disarm, <strong>R</strong> to reset.
+          The physics is unchanged by any of this — the scene reads simulator state and
+          never writes it, except to place the quad on the start line.
+        </p>
+        <div id="scene-view"></div>
+      </section>
+
       <section id="flight">
-        <h2>5 · Flight model</h2>
+        <h2>6 · Instruments</h2>
         <p class="hint">
           1 kHz rate-mode flight model: blade-element rotors, brushless motors with
           battery sag, and a Betaflight-scaled PID loop. The physics step runs inside

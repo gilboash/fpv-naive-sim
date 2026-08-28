@@ -241,3 +241,15 @@ tbody tr:hover { background: var(--panel-2); }
   margin-left: -1px;
   background: #f4b400;
 }
+
+/* ------------------------------------------------------------------ scene */
+
+.fpv-canvas {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 62vh;
+  display: block;
+  background: #adc6d8;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+}

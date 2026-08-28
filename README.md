@@ -4,7 +4,7 @@ Browser-based FPV drone simulator for skill training, flown with a real RC
 transmitter over USB. See the project brief for the full scope; first target is
 a single 5" racing quad and a few simple maps with basic track obstacles.
 
-**Current phase: M1 signed off, M2 next.** M0 (input spike) is signed off: the tick
+**Current phase: M2 — the scene.** M0 (input spike) is signed off: the tick
 source holds 1 kHz on real hardware and the radio was measured at 201.8 Hz. M1
 adds the flight model itself — blade-element rotors, brushless motors, battery
 sag, and a Betaflight-scaled PID loop, stepping at 1 kHz inside the input tick.
@@ -478,6 +478,65 @@ open deliberately.
 
 Anti-gravity is also still unimplemented, and yaw retains 9-18 ms of lag that
 roll and pitch no longer have.
+
+## M2 — the scene
+
+Section 5 of the page is an FPV view: WebGL2, one shader, two draw calls, three
+maps. It renders every animation frame while the text panels stay at 30 Hz,
+because rebuilding their DOM at display rate costs more than the scene does.
+
+Written directly rather than on a scene-graph library. The geometry the brief
+asks for is a ground plane, gates and pylons; the project has no runtime
+dependencies and this keeps it that way; and a renderer written here can be
+instrumented for frame cost like everything else.
+
+**Frames convert once, at the renderer's boundary.** The physics stays FRD body
+in NED world — that is where the gyro and PID signs come from and it is not
+negotiable — and the renderer maps it to Y-up:
+
+```
+render.x =  east  =  ned.y
+render.y = -down  = -ned.z
+render.z = -north = -ned.x
+```
+
+which is right-handed, so nothing comes out mirrored.
+
+### Three things the scene got wrong, and how they were caught
+
+None of these threw an exception, and a check that only watches for errors would
+have passed all three.
+
+- **The camera basis was not orthonormal.** Rotating body-up about the tilt axis
+  gives `(-sin t, 0, -cos t)`; using `+sin t` left forward·up at 0.766 instead of
+  0. A skewed basis still draws a picture, just a sheared one — the horizon sat
+  in the wrong place and vertical posts leaned. There is now a test asserting
+  orthonormality across tilt, roll and pitch, because this is a maths error that
+  looks like an art problem.
+- **Seven gates in a straight line at one height nest perfectly behind each
+  other.** The geometry was right and the scene was useless: the pilot saw one
+  gate. They are staggered now, which is also a better exercise.
+- **The ground chequer was invisible**, its two greens differing by 0.03. At
+  20 m/s over an untextured plane a quad looks stationary, which defeats the
+  point of having a scene.
+
+The browser check reads pixels back off the canvas and asserts the frame is not
+a flat fill, because "no exception thrown" would have passed with WebGL absent
+entirely — `SceneView` degrades gracefully on purpose. Headless Chrome needs
+`--use-angle=swiftshader --enable-unsafe-swiftshader` or there is no WebGL2 to
+test.
+
+### What the scene is not
+
+The lens is rectilinear. Real FPV cameras are far wider and strongly barrel
+distorted, and a rectilinear projection at 150° stretches the edges into
+something no camera produces — so the default is 75° vertical (about 120°
+horizontal) which at least does not lie about the middle of the frame. Matching
+a real lens is a later job.
+
+There is also still no crash model: the quad passes through gates and pylons.
+Collision is the obvious next milestone now that there is something to collide
+with.
 
 ### Known gaps, stated rather than omitted
 

@@ -16,6 +16,7 @@ import {
 import { AxisDetector, EndpointCalibrator, GamepadPoller, MAX_BUTTONS } from './gamepad.ts';
 import { JitterRun, type RunResult, type Stats } from './jitter.ts';
 import { FlightPanel } from './flight-panel.ts';
+import { SceneView } from './scene-view.ts';
 import TickerWorker from './ticker.worker.ts?worker';
 import {
   CTRL_FUTEX,
@@ -89,6 +90,7 @@ function setTicking(on: boolean): void {
 // finished by then, but relying on that would make the ordering a trap for
 // whoever moves this next.
 const flight = new FlightPanel($('flight-panel'));
+const scene = new SceneView($('scene-view'), flight.sim);
 
 /**
  * The whole input path, in one place, with nothing awaited. The physics step
@@ -311,6 +313,11 @@ let lastRender = 0;
 function render(tNow: number): void {
   requestAnimationFrame(render);
   run?.recordFrame(tNow);
+
+  // The 3D view draws every frame; the text panels do not need to, and
+  // rebuilding their DOM at display rate would cost more than the scene does.
+  scene.render();
+
   if (tNow - lastRender < 33) return; // 30 Hz is plenty for text
   lastRender = tNow;
 
@@ -557,7 +564,7 @@ $('jitter-start').onclick = startRun;
 // model without a radio attached. Stripped from a production build by the
 // import.meta.env.DEV guard, so it cannot become a load-bearing API.
 if (import.meta.env.DEV) {
-  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping };
+  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene };
 }
 
 globalThis.addEventListener('gamepadconnected', refreshDevices);

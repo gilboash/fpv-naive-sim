@@ -32,7 +32,12 @@ const chrome = spawn(
     `--user-data-dir=${profile}`,
     '--no-first-run',
     '--no-default-browser-check',
-    '--disable-gpu',
+    // Headless has no GPU, so WebGL2 needs the software rasteriser turned on
+    // explicitly. Without these the renderer is simply absent and every scene
+    // check silently passes as "gracefully degraded", which is exactly the kind
+    // of green tick that means nothing.
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
     'about:blank',
   ],
   { stdio: 'ignore' },
@@ -304,11 +309,71 @@ const main = async () => {
     uiRec.links.join(', ') || 'none',
   );
 
+  // The 3D view. "No exception thrown" would pass even with WebGL missing
+  // entirely, because SceneView degrades gracefully on purpose — so this reads
+  // pixels back off the canvas and checks the frame is not a flat fill.
+  const scenePixels = await evaluate(`(() => {
+    const { scene, flight } = globalThis.__fpvsim;
+    if (!scene.available) return { ok: false, reason: 'no renderer' };
+    // Put the quad in the air, facing down the gate run, and draw.
+    flight.sim.reset(0);
+    flight.sim.pos.x = -30; flight.sim.pos.y = 0; flight.sim.pos.z = -2.5;
+    flight.sim.onGround = false;
+    scene.render();
+    const c = scene.canvas;
+    const off = document.createElement('canvas');
+    off.width = c.width; off.height = c.height;
+    const ctx = off.getContext('2d');
+    ctx.drawImage(c, 0, 0);
+    const d = ctx.getImageData(0, 0, off.width, off.height).data;
+    let min = [255,255,255], max = [0,0,0], n = 0;
+    for (let i = 0; i < d.length; i += 4 * 97) {
+      for (let k = 0; k < 3; k++) {
+        if (d[i+k] < min[k]) min[k] = d[i+k];
+        if (d[i+k] > max[k]) max[k] = d[i+k];
+      }
+      n++;
+    }
+    const spread = Math.max(max[0]-min[0], max[1]-min[1], max[2]-min[2]);
+    return { ok: true, w: c.width, h: c.height, spread, samples: n, cost: scene.renderer?.frameCostMs ?? 0 };
+  })()`);
+
+  check(
+    'WebGL2 renderer available',
+    scenePixels.ok === true,
+    scenePixels.ok ? 'yes' : `no — ${scenePixels.reason}`,
+  );
+  if (scenePixels.ok) {
+    check(
+      'canvas has a real backing size',
+      scenePixels.w > 100 && scenePixels.h > 100,
+      `${scenePixels.w}x${scenePixels.h}`,
+    );
+    check(
+      'frame is drawn, not a flat fill',
+      scenePixels.spread > 30,
+      `channel spread ${scenePixels.spread} across ${scenePixels.samples} sampled pixels`,
+    );
+  }
+
   // Let it run a while longer to catch anything that only shows up over time.
   await sleep(2000);
 
   if (process.env.SCREENSHOT) {
-    await evaluate(`document.querySelector('#flight').scrollIntoView()`);
+    // Put the quad somewhere worth photographing: airborne on the gate run,
+    // looking down the line.
+    await evaluate(`(() => {
+      const { scene, flight } = globalThis.__fpvsim;
+      if (scene.available) {
+        const t = (scene.constructor, null);
+        scene.loadTrack(scene.track);
+      }
+      flight.sim.reset(0);
+      flight.sim.pos.x = -34; flight.sim.pos.y = 1.5; flight.sim.pos.z = -2.2;
+      flight.sim.onGround = false;
+      scene.render();
+    })()`);
+    await evaluate(`document.querySelector('#scene').scrollIntoView()`);
     await sleep(400);
     const shot = await send(ws, 'Page.captureScreenshot', { format: 'png' }, sessionId);
     const { writeFileSync } = await import('node:fs');
