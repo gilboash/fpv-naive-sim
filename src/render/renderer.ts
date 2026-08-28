@@ -23,6 +23,7 @@ import { rotateBodyToWorld, vec3, type Vec3 } from '../flight/math.ts';
 import { MeshBuilder, FLOATS_PER_VERTEX, type MeshData } from './mesh.ts';
 import { mat4, multiply, perspective, viewFromBasis, type Mat4 } from './mat4.ts';
 import type { Track } from './track.ts';
+import type { Obstacle } from '../flight/collision.ts';
 
 const VERT = `#version 300 es
 precision highp float;
@@ -183,10 +184,13 @@ export class Renderer {
     return { vao, count: data.indices.length };
   }
 
-  loadTrack(track: Track): void {
+  /** Builds the mesh and returns the collision volumes that came with it. */
+  loadTrack(track: Track): Obstacle[] {
     const m = new MeshBuilder();
-    track.build(m);
+    const obstacles: Obstacle[] = [];
+    track.build(m, obstacles);
     this.scene = this.upload(m.build());
+    return obstacles;
   }
 
   /** Draw one frame from the simulator's current state. */

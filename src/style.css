@@ -293,3 +293,9 @@ tbody tr:hover { background: var(--panel-2); }
 
 .tune-axisline { stroke: #2a3140; stroke-width: 1; fill: none; vector-effect: non-scaling-stroke; }
 .tune-curveline { stroke: #f4b400; stroke-width: 2; fill: none; vector-effect: non-scaling-stroke; }
+
+.crash-flag {
+  font-size: 12px;
+  color: #ff6b6b;
+  font-weight: 600;
+}

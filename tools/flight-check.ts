@@ -15,6 +15,7 @@ import { kronos, racer5 } from '../src/flight/airframe.ts';
 import { defaultRates, applyRates, AXIS_ROLL, RATE_FIELDS, type RateProfile } from '../src/flight/rates.ts';
 import { defaultPids } from '../src/flight/pid.ts';
 import { Mixer } from '../src/flight/mixer.ts';
+import type { Obstacle } from '../src/flight/collision.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
 
 let passed = 0;
@@ -644,6 +645,122 @@ section('Control: releasing the stick must settle, at any throttle');
     Math.abs(after - before) < 2,
     `roll ${before.toFixed(1)}° -> ${after.toFixed(1)}° over 2.5 s at zero throttle`,
   );
+}
+
+// ----------------------------------------------------------------- collision
+
+section('Collision: the ground and the things standing on it');
+{
+  const mk = (): FlightSim => new FlightSim({ airframe: kronos() });
+
+  // Resting is the hardest case for penalty contact: too soft and it sinks,
+  // too stiff and it buzzes.
+  const resting = mk();
+  resting.reset(0);
+  run(resting, sticks(), 5);
+  ok(
+    'sits still on the ground without sinking or buzzing',
+    Math.abs(resting.telemetry.altitude - 0.045) < 0.005 &&
+      Math.hypot(resting.omega.x, resting.omega.y, resting.omega.z) < 0.01,
+    `altitude ${resting.telemetry.altitude.toFixed(4)} m, ` +
+      `rates ${Math.hypot(resting.omega.x, resting.omega.y, resting.omega.z).toFixed(5)} rad/s`,
+  );
+
+  // Set down at an angle it must fall flat, which a position clamp could not do.
+  const tipped = mk();
+  tipped.reset(0);
+  fromEuler(tipped.q, 45 * DEG_TO_RAD, 0, 0);
+  tipped.pos.z = -0.3;
+  tipped.onGround = false;
+  run(tipped, sticks(), 4);
+  ok(
+    'dropped at 45 degrees, it falls flat',
+    Math.abs(tipped.telemetry.attitude.roll) < 8,
+    `settled at ${tipped.telemetry.attitude.roll.toFixed(1)}°`,
+  );
+
+  const gentle = mk();
+  gentle.reset(0);
+  gentle.arm(sticks());
+  gentle.pos.z = -2;
+  gentle.onGround = false;
+  run(gentle, sticks({ throttle: 0.14 }), 3);
+  ok('a gentle landing is not a crash', !gentle.crashed, `on the ground, still intact`);
+
+  const hard = mk();
+  hard.reset(0);
+  hard.arm(sticks());
+  hard.pos.z = -30;
+  hard.onGround = false;
+  run(hard, sticks(), 5);
+  ok(
+    'a 30 m drop is, and it disarms',
+    hard.crashed && !hard.armed,
+    `crashed at ${hard.crashSpeed.toFixed(1)} m/s`,
+  );
+
+  // Scenery.
+  const post = mk();
+  post.reset(0);
+  post.arm(sticks());
+  post.obstacles = [{ kind: 'cylinder', north: 10, east: 0, radius: 0.2, height: 5 }];
+  post.pos.z = -2;
+  post.onGround = false;
+  post.vel.x = 12;
+  run(post, sticks({ throttle: 0.16 }), 3);
+  ok(
+    'flying into a pylon crashes, and stops at its face',
+    post.crashed && Math.abs(post.pos.x - 9.8) < 0.5,
+    `stopped at ${post.pos.x.toFixed(2)} m north against a face at 9.8`,
+  );
+
+  const clear = mk();
+  clear.reset(0);
+  clear.arm(sticks());
+  clear.obstacles = [{ kind: 'cylinder', north: 10, east: 6, radius: 0.2, height: 5 }];
+  clear.pos.z = -2;
+  clear.onGround = false;
+  clear.vel.x = 12;
+  run(clear, sticks({ throttle: 0.16 }), 2);
+  ok(
+    'and passing beside one does not',
+    !clear.crashed && clear.pos.x > 15,
+    `travelled ${clear.pos.x.toFixed(1)} m north, clear`,
+  );
+
+  // Under a gate bar is flying; through the bar is not.
+  const bar: Obstacle = {
+    kind: 'box',
+    minNorth: 9.8, maxNorth: 10.2, minEast: -2, maxEast: 2, minUp: 2.5, maxUp: 2.8,
+  };
+  const under = mk();
+  under.reset(0);
+  under.arm(sticks());
+  under.obstacles = [bar];
+  under.pos.z = -1.4;
+  under.onGround = false;
+  under.vel.x = 12;
+  run(under, sticks({ throttle: 0.16 }), 2);
+  ok('flying under a gate bar is clear', !under.crashed, `passed at ${under.pos.x.toFixed(1)} m`);
+
+  const into = mk();
+  into.reset(0);
+  into.arm(sticks());
+  into.obstacles = [bar];
+  // Aimed at the middle of the bar and started close to it. Over a longer run
+  // the quad sinks a few centimetres — thrust falls as it accelerates into its
+  // own inflow — and slips under a bar only 300 mm tall, which is the model
+  // being right and the test being careless.
+  into.pos.x = 8;
+  into.pos.z = -(2.65 + 0.045);
+  into.onGround = false;
+  into.vel.x = 12;
+  run(into, sticks({ throttle: 0.16 }), 0.4);
+  ok('flying into it is not', into.crashed, `crashed at ${into.crashSpeed.toFixed(1)} m/s`);
+
+  // Reset has to clear the wreck.
+  hard.reset(0);
+  ok('reset clears the crash', !hard.crashed && hard.crashSpeed === 0, 'back to intact');
 }
 
 // ------------------------------------------------------------- camera basis

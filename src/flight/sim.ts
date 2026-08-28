@@ -35,6 +35,13 @@ import { PID_MIXER_SCALING, RateController, defaultPids } from './pid.ts';
 import type { RateProfile } from './rates.ts';
 import { AXIS_PITCH, AXIS_ROLL, AXIS_YAW, applyRates, defaultRates } from './rates.ts';
 import { RHO_SEA_LEVEL, Rotor } from './rotor.ts';
+import {
+  contactPoint,
+  defaultContact,
+  type ContactParams,
+  type ContactResult,
+  type Obstacle,
+} from './collision.ts';
 
 export const G = 9.80665;
 export const DEFAULT_DT = 1 / 1000;
@@ -123,6 +130,17 @@ export class FlightSim {
 
   armed = false;
   onGround = true;
+  /**
+   * Set when a contact was hard enough to have broken something. The model
+   * keeps simulating — a crashed quad still tumbles and slides — but it
+   * disarms, and only reset() clears this.
+   */
+  crashed = false;
+  /** Speed of the worst impact that caused the crash, m/s. */
+  crashSpeed = 0;
+  /** Scenery to collide with, in NED. Empty means open ground. */
+  obstacles: readonly Obstacle[] = [];
+  readonly contact: ContactParams = defaultContact();
   /** Seconds of simulated time since reset. */
   time = 0;
 
@@ -165,6 +183,18 @@ export class FlightSim {
   private setpointDeg = vec3();
   private angMomentum = vec3();
   private lastAccelBody = vec3();
+  /** One under each arm, body frame. Where the quad actually touches things. */
+  private contactPoints: Vec3[] = [];
+  private cWorld = vec3();
+  private cVel = vec3();
+  private cRot = vec3();
+  private contactOut: ContactResult = {
+    force: vec3(),
+    moment: vec3(),
+    touching: false,
+    impactSpeed: 0,
+    hitObstacle: false,
+  };
 
   constructor(opts: SimOptions = {}) {
     this.airframe = opts.airframe ?? racer5();
@@ -181,6 +211,12 @@ export class FlightSim {
     for (let i = 0; i < this.airframe.mounts.length; i++) {
       this.motors.push(new Motor(this.airframe.motor));
       this.rotors.push(new Rotor(this.airframe.prop, this.rho));
+    }
+
+    // Feet under the motors, standHeight below the centre of gravity: that is
+    // what a quad rests on and what hits first.
+    for (const mount of this.airframe.mounts) {
+      this.contactPoints.push(vec3(mount.pos.x, mount.pos.y, this.standHeight));
     }
 
     this.gyroFilter = [
@@ -245,6 +281,8 @@ export class FlightSim {
 
   /** Put it back on the ground, level, facing north, with a full pack. */
   reset(yawDeg = 0): void {
+    this.crashed = false;
+    this.crashSpeed = 0;
     setV(this.pos, 0, 0, -this.standHeight);
     setV(this.vel, 0, 0, 0);
     setV(this.omega, 0, 0, 0);
@@ -437,8 +475,53 @@ export class FlightSim {
     this.mBody.y -= this.tmp.y;
     this.mBody.z -= this.tmp.z;
 
+    // ---- contact, before anything is integrated
+    //
+    // Penalty forces rather than a position clamp: a clamp cannot tip, slide or
+    // tumble, and the old one crushed body rates by 0.6 every step, which is
+    // why a 27 m/s impact used to have no consequences at all.
+    const c = this.contactOut;
+    setV(c.force, 0, 0, 0);
+    setV(c.moment, 0, 0, 0);
+    c.touching = false;
+    c.impactSpeed = 0;
+    c.hitObstacle = false;
+
+    for (const arm of this.contactPoints) {
+      rotateBodyToWorld(this.cRot, this.q, arm);
+      this.cWorld.x = this.pos.x + this.cRot.x;
+      this.cWorld.y = this.pos.y + this.cRot.y;
+      this.cWorld.z = this.pos.z + this.cRot.z;
+      // Point velocity is the body's plus omega x r, rotated out to the world.
+      crossV(this.tmp, this.omega, arm);
+      rotateBodyToWorld(this.tmp, this.q, this.tmp);
+      this.cVel.x = this.vel.x + this.tmp.x;
+      this.cVel.y = this.vel.y + this.tmp.y;
+      this.cVel.z = this.vel.z + this.tmp.z;
+      contactPoint(c, this.contact, this.obstacles, this.cWorld, this.cVel, arm, this.q);
+    }
+
+    this.onGround = c.touching;
+    this.mBody.x += c.moment.x;
+    this.mBody.y += c.moment.y;
+    this.mBody.z += c.moment.z;
+
+    if (!this.crashed && c.impactSpeed > 0) {
+      // Scenery is less forgiving than grass: a post takes a prop off at a
+      // speed the ground would shrug at.
+      const limit = c.hitObstacle ? this.contact.crashSpeed * 0.35 : this.contact.crashSpeed;
+      if (c.impactSpeed > limit) {
+        this.crashed = true;
+        this.crashSpeed = c.impactSpeed;
+        this.disarm();
+      }
+    }
+
     // ---- linear dynamics, in the world frame
     rotateBodyToWorld(this.fWorld, this.q, this.fBody);
+    this.fWorld.x += c.force.x;
+    this.fWorld.y += c.force.y;
+    this.fWorld.z += c.force.z;
     const invM = 1 / af.mass;
     const ax = this.fWorld.x * invM;
     const ay = this.fWorld.y * invM;
@@ -467,37 +550,8 @@ export class FlightSim {
 
     addScaledV(this.pos, this.pos, this.vel, dt);
 
-    this.groundContact();
-
     this.time += dt;
     this.updateTelemetry(mix.outputs, mix.saturated, totalThrust, input);
-  }
-
-  /**
-   * Ground plane at z = 0, and no more than that.
-   *
-   * This is a hard floor with friction, not a contact model: no per-arm
-   * collision, no tumbling, no prop strikes. M1 is the flight model, and the
-   * ground exists here only so that "sitting still before takeoff" and "you
-   * have landed" are representable. Crashes are a later milestone's problem.
-   */
-  private groundContact(): void {
-    const floor = -this.standHeight;
-    if (this.pos.z < floor) {
-      this.onGround = false;
-      return;
-    }
-    this.onGround = true;
-    this.pos.z = floor;
-    if (this.vel.z > 0) this.vel.z = 0;
-
-    // Ground friction, strong enough that it does not slide away on its own.
-    const k = 0.85;
-    this.vel.x *= k;
-    this.vel.y *= k;
-    this.omega.x *= 0.6;
-    this.omega.y *= 0.6;
-    this.omega.z *= 0.6;
   }
 
   private updateTelemetry(

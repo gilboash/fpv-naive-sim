@@ -68,6 +68,13 @@ export class FlightPanel {
   readonly recorder = new FlightRecorder(60_000);
   /** Wall-clock microseconds spent in the last batch of physics steps. */
   stepCostUs = 0;
+  /**
+   * Set by whoever owns placement — the scene, when a track is loaded — so that
+   * resetting puts the quad on the start line rather than at the origin.
+   * Delegation rather than a second key handler, so the result does not depend
+   * on which listener happens to run last.
+   */
+  onReset: (() => void) | null = null;
 
   private rateBars: Bar[];
   private motorBars: Bar[];
@@ -200,10 +207,7 @@ export class FlightPanel {
     const resetBtn = el<HTMLButtonElement>('button');
     resetBtn.type = 'button';
     resetBtn.textContent = 'Reset';
-    resetBtn.onclick = () => {
-      this.sim.reset();
-      this.setStatus('reset — throttle down, then arm');
-    };
+    resetBtn.onclick = () => this.reset();
     this.statusEl = el('span', 'dim', 'disarmed');
     bar.appendChild(this.armBtn);
     bar.appendChild(resetBtn);
@@ -263,8 +267,15 @@ export class FlightPanel {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       if (e.key === 'a' || e.key === 'A') this.tryArm();
       else if (e.key === 'd' || e.key === 'D') this.disarm();
-      else if (e.key === 'r' || e.key === 'R') this.sim.reset();
+      else if (e.key === 'r' || e.key === 'R') this.reset();
     });
+  }
+
+  reset(): void {
+    if (this.onReset) this.onReset();
+    else this.sim.reset();
+    this.armBtn.textContent = 'Arm';
+    this.setStatus('reset — throttle down, then arm');
   }
 
   private setStatus(text: string): void {

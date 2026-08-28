@@ -24,6 +24,7 @@ export class SceneView {
   track: Track = TRACKS[1] ?? TRACKS[0]!;
   private sim: FlightSim;
   private statusEl: HTMLElement;
+  private crashEl: HTMLElement;
 
   constructor(root: HTMLElement, sim: FlightSim) {
     this.sim = sim;
@@ -80,6 +81,9 @@ export class SceneView {
     restart.onclick = () => this.placeAtStart();
     row.appendChild(restart);
 
+    this.crashEl = el('span', 'crash-flag', '');
+    row.appendChild(this.crashEl);
+
     this.statusEl = el('span', 'dim', '');
     row.appendChild(this.statusEl);
     root.appendChild(row);
@@ -105,7 +109,10 @@ export class SceneView {
 
   loadTrack(track: Track): void {
     this.track = track;
-    this.renderer?.loadTrack(track);
+    // The collision volumes come back from the same build that made the mesh,
+    // so the quad hits what it can see.
+    const obstacles = this.renderer?.loadTrack(track);
+    if (obstacles) this.sim.obstacles = obstacles;
     this.placeAtStart();
   }
 
@@ -121,5 +128,8 @@ export class SceneView {
     if (!this.renderer) return;
     this.renderer.render(this.sim);
     this.statusEl.textContent = `${this.renderer.frameCostMs.toFixed(2)} ms/frame`;
+    this.crashEl.textContent = this.sim.crashed
+      ? `crashed at ${this.sim.crashSpeed.toFixed(1)} m/s — R to reset`
+      : '';
   }
 }

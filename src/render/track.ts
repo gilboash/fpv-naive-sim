@@ -10,12 +10,23 @@
  */
 
 import { MeshBuilder } from './mesh.ts';
+import type { Obstacle } from '../flight/collision.ts';
+
+/**
+ * Render space to NED, for collision volumes.
+ *
+ * The scene is authored in render coordinates because that is where it is drawn,
+ * and the physics needs NED. Both come out of the same call so a gate cannot end
+ * up drawn in one place and solid in another.
+ */
+const north = (renderZ: number): number => -renderZ;
+const east = (renderX: number): number => renderX;
 
 export interface Track {
   name: string;
   /** Where the quad starts, in NED metres, and its heading in degrees. */
   start: { north: number; east: number; yawDeg: number };
-  build(m: MeshBuilder): void;
+  build(m: MeshBuilder, obstacles: Obstacle[]): void;
 }
 
 // The two greens have to be visibly different. An earlier pair differed by 0.03
@@ -45,6 +56,7 @@ function ground(m: MeshBuilder, half = 220, tile = 8): void {
  */
 function gate(
   m: MeshBuilder,
+  obs: Obstacle[],
   cx: number,
   cz: number,
   width: number,
@@ -55,9 +67,23 @@ function gate(
   const half = width / 2;
   const postR = 0.06;
   const bar = 0.09;
+  // Collision radius is a little over the drawn one: props stick out past the
+  // motors, and a pilot who clips a post with a blade has crashed.
+  const hitR = postR + 0.06;
   if (along === 'x') {
     m.cylinder(cx - half, cz, 0, height, postR, 10, ...POST);
     m.cylinder(cx + half, cz, 0, height, postR, 10, ...POST);
+    obs.push({ kind: 'cylinder', north: north(cz), east: east(cx - half), radius: hitR, height });
+    obs.push({ kind: 'cylinder', north: north(cz), east: east(cx + half), radius: hitR, height });
+    obs.push({
+      kind: 'box',
+      minNorth: north(cz + bar),
+      maxNorth: north(cz - bar),
+      minEast: east(cx - half - postR),
+      maxEast: east(cx + half + postR),
+      minUp: height,
+      maxUp: height + bar * 2,
+    });
     m.slab(cx - half - postR, height, cz - bar, cx + half + postR, height + bar * 2, cz + bar, ...colour);
     // Foot markers, so the gate reads as a gate from a distance.
     m.groundQuad(cx - half - 0.4, cz - 0.4, cx - half + 0.4, cz + 0.4, 0.01, ...colour);
@@ -65,22 +91,34 @@ function gate(
   } else {
     m.cylinder(cx, cz - half, 0, height, postR, 10, ...POST);
     m.cylinder(cx, cz + half, 0, height, postR, 10, ...POST);
+    obs.push({ kind: 'cylinder', north: north(cz - half), east: east(cx), radius: hitR, height });
+    obs.push({ kind: 'cylinder', north: north(cz + half), east: east(cx), radius: hitR, height });
+    obs.push({
+      kind: 'box',
+      minNorth: north(cz + half + postR),
+      maxNorth: north(cz - half - postR),
+      minEast: east(cx - bar),
+      maxEast: east(cx + bar),
+      minUp: height,
+      maxUp: height + bar * 2,
+    });
     m.slab(cx - bar, height, cz - half - postR, cx + bar, height + bar * 2, cz + half + postR, ...colour);
     m.groundQuad(cx - 0.4, cz - half - 0.4, cx + 0.4, cz - half + 0.4, 0.01, ...colour);
     m.groundQuad(cx - 0.4, cz + half - 0.4, cx + 0.4, cz + half + 0.4, 0.01, ...colour);
   }
 }
 
-function pylon(m: MeshBuilder, cx: number, cz: number, height: number): void {
+function pylon(m: MeshBuilder, obs: Obstacle[], cx: number, cz: number, height: number): void {
   m.cylinder(cx, cz, 0, height, 0.18, 12, 0.9, 0.45, 0.1);
   m.cylinder(cx, cz, height * 0.45, height * 0.55, 0.2, 12, 0.95, 0.95, 0.95);
+  obs.push({ kind: 'cylinder', north: north(cz), east: east(cx), radius: 0.24, height });
 }
 
 /** An open field with a landing pad. Somewhere to learn hovering and turns. */
 export const openField: Track = {
   name: 'Open field',
   start: { north: 0, east: 0, yawDeg: 0 },
-  build(m) {
+  build(m, obs) {
     ground(m);
     m.groundQuad(-6, -6, 6, 6, 0.02, ...TARMAC);
     m.groundQuad(-0.6, -0.6, 0.6, 0.6, 0.03, 0.9, 0.9, 0.2);
@@ -91,7 +129,7 @@ export const openField: Track = {
       [0, 40],
       [0, -40],
     ] as [number, number][]) {
-      pylon(m, x, z, 4);
+      pylon(m, obs, x, z, 4);
     }
   },
 };
@@ -100,7 +138,7 @@ export const openField: Track = {
 export const gateRun: Track = {
   name: 'Gate run',
   start: { north: -30, east: 0, yawDeg: 0 },
-  build(m) {
+  build(m, obs) {
     ground(m);
     m.groundQuad(-2.5, -40, 2.5, 60, 0.01, ...TARMAC);
     // Staggered left and right, and at varying heights. Seven identical gates
@@ -113,11 +151,11 @@ export const gateRun: Track = {
     for (let i = 0; i < offsets.length; i++) {
       // Track runs north; render z is -north, so gates march toward -z.
       const z = -(-20 + i * 14);
-      gate(m, offsets[i]!, z, 3.2, heights[i]!, 'x', i % 2 === 0 ? GATE_A : GATE_B);
+      gate(m, obs, offsets[i]!, z, 3.2, heights[i]!, 'x', i % 2 === 0 ? GATE_A : GATE_B);
     }
-    pylon(m, 12, 20, 5);
-    pylon(m, -12, -20, 5);
-    pylon(m, 14, -34, 5);
+    pylon(m, obs, 12, 20, 5);
+    pylon(m, obs, -12, -20, 5);
+    pylon(m, obs, 14, -34, 5);
   },
 };
 
@@ -125,7 +163,7 @@ export const gateRun: Track = {
 export const circuit: Track = {
   name: 'Circuit',
   start: { north: -34, east: 0, yawDeg: 0 },
-  build(m) {
+  build(m, obs) {
     ground(m);
     const gates: [number, number, number, 'x' | 'z'][] = [
       [0, 30, 2.6, 'x'],
@@ -141,7 +179,7 @@ export const circuit: Track = {
       [-14, -26, 2.8, 'z'],
     ];
     gates.forEach(([x, z, h, along], i) => {
-      gate(m, x, z, 3.2, h, along, i % 2 === 0 ? GATE_A : GATE_B);
+      gate(m, obs, x, z, 3.2, h, along, i % 2 === 0 ? GATE_A : GATE_B);
     });
     for (const [x, z] of [
       [22, 22],
@@ -149,7 +187,7 @@ export const circuit: Track = {
       [22, -22],
       [-22, -22],
     ] as [number, number][]) {
-      pylon(m, x, z, 6);
+      pylon(m, obs, x, z, 6);
     }
   },
 };

@@ -318,8 +318,26 @@ the wrong units and the wrong fields. Two real bugs:
    it shapes with cmd^3 where Betaflight uses cmd*|cmd|^3, and has no
    incremental boost above RC rate 2.
 
-**Next: collision.** There is now scenery to hit and nothing happens when you
-hit it, and half of a recorded flight was within half a metre of the ground.
+**Collision built 2026-08-28** (`src/flight/collision.ts`). Penalty contact at
+four points under the arms — spring-damper along the normal, Coulomb across it —
+against a ground plane plus cylinder and box obstacles in NED. Tracks emit the
+volumes from the same call that builds the mesh, so drawn and solid cannot
+diverge. Replaces the old clamp that pinned the CG and scaled body rates by 0.6
+every step.
+
+Resting, sliding, tipping and tumbling all fall out of the same code with no
+special cases; set down at 45 degrees it falls flat, which a clamp could not do.
+Hard impacts set `crashed`, disarm, and keep simulating. Scenery crashes at a
+third of the ground's threshold, because a post takes a prop off.
+
+`FlightPanel.onReset` delegates reset to the scene so R returns the quad to the
+start line rather than the origin — delegation rather than a second key handler,
+so the outcome does not depend on listener order.
+
+**Next, roughly in order:** gate sequencing and lap timing (the geometry is
+already there, and it turns flying into training with a number attached); motor
+sound, which is a real flight cue and the biggest immersion-per-effort item;
+an OSD; and lens distortion.
 
 **The fine-tuning loop, which is now the standing process:** more logs arrive ->
 `npm run identify` for airframe parameters -> `npm run replay` for the rate

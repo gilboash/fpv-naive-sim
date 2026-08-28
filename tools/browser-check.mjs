@@ -407,6 +407,58 @@ const main = async () => {
     );
   }
 
+  // Collision, end to end: the track's volumes must reach the model, and
+  // hitting one must crash it.
+  const collide = await evaluate(`(() => {
+    const { scene, flight } = globalThis.__fpvsim;
+    const sim = flight.sim;
+    const count = sim.obstacles.length;
+    if (!count) return { ok: false, reason: 'no obstacles loaded from the track' };
+
+    // Aim at the nearest gate post on the gate run and fly into it.
+    const posts = sim.obstacles.filter((o) => o.kind === 'cylinder');
+    const target = posts.reduce((a, b) => (Math.abs(b.north) < Math.abs(a.north) ? b : a));
+    sim.reset(0);
+    sim.armed = true;
+    sim.pos.x = target.north - 6;
+    sim.pos.y = target.east;
+    sim.pos.z = -1.5;
+    sim.onGround = false;
+    sim.vel.x = 12;
+    for (let i = 0; i < 1500 && !sim.crashed; i++) {
+      sim.step({ throttle: 0.16, roll: 0, pitch: 0, yaw: 0 });
+    }
+    const crashedIntoPost = sim.crashed;
+    const speed = sim.crashSpeed;
+
+    // Reset must clear it, and put the quad back on the start line.
+    flight.reset();
+    return {
+      ok: true, count, crashedIntoPost, speed,
+      clearedByReset: !sim.crashed,
+      backAtStart: Math.abs(sim.pos.x - scene.track.start.north) < 0.01,
+    };
+  })()`);
+
+  check(
+    'track collision volumes reach the model',
+    collide.ok === true,
+    collide.ok ? `${collide.count} obstacles on this map` : `no — ${collide.reason}`,
+  );
+  if (collide.ok) {
+    check(
+      'flying into a gate post crashes',
+      collide.crashedIntoPost === true,
+      `crashed at ${(collide.speed ?? 0).toFixed(1)} m/s`,
+    );
+    check(
+      'reset clears the crash and returns to the start line',
+      collide.clearedByReset === true && collide.backAtStart === true,
+      `crashed ${collide.clearedByReset ? 'cleared' : 'still set'}, ` +
+        `position ${collide.backAtStart ? 'restored' : 'wrong'}`,
+    );
+  }
+
   // Let it run a while longer to catch anything that only shows up over time.
   await sleep(2000);
 

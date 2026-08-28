@@ -534,9 +534,7 @@ something no camera produces — so the default is 75° vertical (about 120°
 horizontal) which at least does not lie about the middle of the frame. Matching
 a real lens is a later job.
 
-There is also still no crash model: the quad passes through gates and pylons.
-Collision is the obvious next milestone now that there is something to collide
-with.
+Collision now exists — see below — so the quad hits what it can see.
 
 ### A pilot report, and what it found
 
@@ -613,6 +611,35 @@ text at the front and never touches the frame stream.
 in place so references stay valid, and the controller is rebuilt because its
 filters are constructed from the cutoffs and cannot be re-cut.
 
+## Collision
+
+`src/flight/collision.ts`. Four contact points, one under each arm, each pushed
+out of any surface it is inside by a spring-damper along the normal with Coulomb
+friction across it. Obstacles are cylinders and boxes in NED; the track emits
+them from the same call that builds the mesh, so a gate cannot be drawn in one
+place and be solid in another.
+
+It replaces a hard floor that clamped the centre of gravity and multiplied body
+rates by 0.6 every step. That was honest as a placeholder and useless as
+physics: a quad hit the ground at 27 m/s in a recorded flight and simply carried
+on, and half that flight was spent within half a metre of a surface it could not
+touch.
+
+Penalty contact is worth the arithmetic because resting, sliding, tipping,
+bouncing and tumbling all fall out of the same four lines. Nothing is a special
+case, and set down at 45° the quad falls flat — which a position clamp cannot do
+at all.
+
+A hard enough impact sets `crashed`, disarms, and keeps simulating, because a
+crashed quad still tumbles. Scenery is less forgiving than grass by a factor of
+three: a post takes a prop off at a speed the ground would shrug at. Only
+`reset()` clears it.
+
+The tests are behaviours rather than numbers — it rests without sinking or
+buzzing, falls flat from 45°, survives a gentle landing, crashes and disarms
+from 30 m, stops at a pylon's face, passes cleanly beside one, flies under a
+gate bar and crashes into it.
+
 ### Known gaps, stated rather than omitted
 
 - **Not validated against a real Blackbox log.** The model is physically
@@ -625,11 +652,8 @@ filters are constructed from the cutoffs and cannot be re-cut.
   descent.
 - No anti-gravity, dynamic idle, or D_MIN. Each is a real part of modern feel.
 - No rotor-to-rotor interaction, so no prop wash.
-- The ground is a plane with friction, not a contact model. No prop strikes and
-  no tumbling on impact — crashes are a later milestone. The first recorded
-  flight hit the ground at 27 m/s and simply carried on flying, so this is now
-  a demonstrated gap rather than an anticipated one, and half that flight was
-  spent within 0.5 m of the ground.
+- Contact is four points under the arms, not a mesh: the airframe between them
+  passes through thin scenery, and there is no damage model beyond a crash flag.
 - Rate mode only. No angle or horizon mode, which is what the brief is about.
 - Under 20 s of sustained full-deflection stick reversal the model tumbles past
   4 000 deg/s. The gyro clips at 2 000 deg/s exactly as real hardware does, and
