@@ -304,6 +304,20 @@ Blackbox header in 11 ms on a 16.8 MB file (`readHeaderOnly`, text only, never
 touches the frames). `tuneFromHeader` in `src/flight/tune.ts` is shared with the
 log reader so the two cannot drift.
 
+**Rates units and KISS, 2026-08-28.** Gilboa pointed out that the panel showed
+the wrong units and the wrong fields. Two real bugs:
+
+1. The panel displayed Betaflight's internal storage values, so a tune reading
+   1.05 / 0.59 / 0.01 in a configurator showed as 105 / 59 / 1. Fields and units
+   now follow the selected curve, via `RATE_FIELDS` in rates.ts. Conversion
+   happens in the UI and nowhere else.
+2. **KISS is not the Betaflight curve.** An earlier note in this file said they
+   were algebraically identical; that is only true when expo is near zero, which
+   was the case for NACRONOS (expo 1) and is not the case generally. With expo
+   40 they are 8% apart at half stick. KISS is now its own implementation:
+   it shapes with cmd^3 where Betaflight uses cmd*|cmd|^3, and has no
+   incremental boost above RC rate 2.
+
 **Next: collision.** There is now scenery to hit and nothing happens when you
 hit it, and half of a recorded flight was within half a metre of the ground.
 

@@ -8,15 +8,25 @@
 
 import { clamp } from './math.ts';
 
-export type RateType = 'actual' | 'betaflight';
+export type RateType = 'actual' | 'betaflight' | 'kiss';
 
+/**
+ * Rates in Betaflight's internal storage units, which are not the units a
+ * configurator shows. The UI converts; nothing else should.
+ *
+ *   actual      rcRate x10 = centre sensitivity deg/s, rate x10 = max deg/s
+ *   betaflight  rcRate/100 = RC rate, rate/100 = super rate
+ *   kiss        rcRate/100 = RC rate, rate/100 = rate, expo/100 = RC curve
+ *
+ * In all three, expo/100 is the 0..1 figure on screen.
+ */
 export interface RateProfile {
   type: RateType;
   /** Per axis: roll, pitch, yaw. */
   rcRate: [number, number, number];
-  /** "Super" rate for betaflight-type, max rate/10 for actual-type. */
+  /** Super rate, max rate, or KISS rate, depending on type. */
   rate: [number, number, number];
-  /** Expo, 0..100 as shown in the configurator. */
+  /** Expo or RC curve, 0..100. */
   expo: [number, number, number];
 }
 
@@ -66,13 +76,61 @@ function applyBetaflight(rcRateIn: number, rate: number, expoPct: number, cmd: n
   return angleRate;
 }
 
+/**
+ * KISS rates.
+ *
+ * Not the same curve as Betaflight's, which an earlier version of this file
+ * claimed. They agree only when expo is near zero — which is exactly the case
+ * on the quad it was checked against, expo 1 out of 100. With a real expo of 40
+ * they are 8% apart at half stick, which is the difference between a pilot's
+ * muscle memory transferring and not.
+ *
+ * Two differences: KISS shapes with cmd^3 where Betaflight uses cmd*|cmd|^3,
+ * and KISS has no incremental boost above an RC rate of 2.
+ */
+function applyKiss(rcRate: number, rate: number, curvePct: number, cmd: number): number {
+  const absCmd = Math.abs(cmd);
+  const curve = curvePct / 100;
+  const shaped = Math.pow(cmd, 3) * curve + cmd * (1 - curve);
+  const useRates = 1 / clamp(1 - absCmd * (rate / 100), 0.01, 1.0);
+  return 2000 * useRates * shaped * (rcRate / 1000);
+}
+
 /** Stick command in [-1,1] to setpoint in deg/s. */
 export function applyRates(p: RateProfile, axis: number, cmd: number): number {
   const c = clamp(cmd, -1, 1);
-  return p.type === 'actual'
-    ? applyActual(p.rcRate[axis]!, p.rate[axis]!, p.expo[axis]!, c)
-    : applyBetaflight(p.rcRate[axis]!, p.rate[axis]!, p.expo[axis]!, c);
+  const rc = p.rcRate[axis]!;
+  const rt = p.rate[axis]!;
+  const ex = p.expo[axis]!;
+  if (p.type === 'actual') return applyActual(rc, rt, ex, c);
+  if (p.type === 'kiss') return applyKiss(rc, rt, ex, c);
+  return applyBetaflight(rc, rt, ex, c);
 }
+
+/**
+ * How a configurator shows each field, per rate type: label, and the factor to
+ * multiply the stored value by for display.
+ */
+export const RATE_FIELDS: Record<
+  RateType,
+  { label: string; scale: number; unit: string; step: number }[]
+> = {
+  actual: [
+    { label: 'Centre sens.', scale: 10, unit: '°/s', step: 10 },
+    { label: 'Max rate', scale: 10, unit: '°/s', step: 10 },
+    { label: 'Expo', scale: 0.01, unit: '', step: 0.01 },
+  ],
+  betaflight: [
+    { label: 'RC rate', scale: 0.01, unit: '', step: 0.01 },
+    { label: 'Super rate', scale: 0.01, unit: '', step: 0.01 },
+    { label: 'RC expo', scale: 0.01, unit: '', step: 0.01 },
+  ],
+  kiss: [
+    { label: 'RC rate', scale: 0.01, unit: '', step: 0.01 },
+    { label: 'Rate', scale: 0.01, unit: '', step: 0.01 },
+    { label: 'RC curve', scale: 0.01, unit: '', step: 0.01 },
+  ],
+};
 
 /** Rate at full stick, for display and for sanity checks. */
 export function maxRate(p: RateProfile, axis: number): number {

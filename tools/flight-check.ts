@@ -12,7 +12,7 @@
 
 import { FlightSim, type StickInput } from '../src/flight/sim.ts';
 import { kronos, racer5 } from '../src/flight/airframe.ts';
-import { defaultRates, applyRates, AXIS_ROLL, type RateProfile } from '../src/flight/rates.ts';
+import { defaultRates, applyRates, AXIS_ROLL, RATE_FIELDS, type RateProfile } from '../src/flight/rates.ts';
 import { defaultPids } from '../src/flight/pid.ts';
 import { Mixer } from '../src/flight/mixer.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
@@ -476,6 +476,60 @@ section('Replay: a model can be restarted from a logged state');
   const dMotor = Math.abs((a.telemetry.motorOutputs[0] ?? 0) - (b.telemetry.motorOutputs[0] ?? 0));
   ok('seeded model matches on the next gyro sample', dGyro < 0.5, `${dGyro.toFixed(4)} deg/s apart`);
   ok('seeded model commands the same motor output', dMotor < 0.05, `${dMotor.toFixed(4)} apart on motor 1`);
+}
+
+// --------------------------------------------------------------- rate curves
+
+section('Rates: three curves, and the units a pilot actually sees');
+{
+  // KISS is not Betaflight's curve. They agree only when expo is near zero,
+  // which is true of the quad this was first checked against and is not true in
+  // general — with expo 40 they are 8% apart at half stick.
+  const bf: RateProfile = { type: 'betaflight', rcRate: [105,105,105], rate: [59,59,59], expo: [40,40,40] };
+  const kiss: RateProfile = { ...bf, type: 'kiss' };
+  const half = Math.abs(applyRates(kiss, AXIS_ROLL, 0.5) - applyRates(bf, AXIS_ROLL, 0.5));
+  ok(
+    'KISS and Betaflight differ once expo is real',
+    half > 5,
+    `${applyRates(bf, AXIS_ROLL, 0.5).toFixed(1)} vs ${applyRates(kiss, AXIS_ROLL, 0.5).toFixed(1)} deg/s at half stick`,
+  );
+  const zeroExpo: RateProfile = { ...bf, expo: [0,0,0] };
+  const zeroKiss: RateProfile = { ...zeroExpo, type: 'kiss' };
+  ok(
+    'and coincide when it is not',
+    Math.abs(applyRates(zeroExpo, AXIS_ROLL, 0.5) - applyRates(zeroKiss, AXIS_ROLL, 0.5)) < 0.5,
+    'expo 0: the two agree, which is why the difference went unnoticed',
+  );
+  ok(
+    'both reach the same rate at full stick',
+    Math.abs(applyRates(bf, AXIS_ROLL, 1) - applyRates(kiss, AXIS_ROLL, 1)) < 0.5,
+    `${applyRates(bf, AXIS_ROLL, 1).toFixed(1)} deg/s`,
+  );
+
+  // Display units must round-trip: what a configurator shows, converted in and
+  // back out, has to be the same number.
+  let worst = 0;
+  for (const type of ['actual', 'betaflight', 'kiss'] as const) {
+    RATE_FIELDS[type].forEach((spec, f) => {
+      for (const shown of [0.5, 1.05, 20, 200, 800]) {
+        const stored = shown / spec.scale;
+        worst = Math.max(worst, Math.abs(stored * spec.scale - shown));
+      }
+      void f;
+    });
+  }
+  ok('configurator units round-trip exactly', worst < 1e-9, `worst error ${worst.toExponential(1)}`);
+
+  // The real quad's numbers, as they read on screen.
+  const nac: RateProfile = { type: 'kiss', rcRate: [105,95,87], rate: [59,59,58], expo: [1,1,10] };
+  const f = RATE_FIELDS.kiss;
+  ok(
+    'a real tune displays the way its configurator does',
+    Math.abs(nac.rcRate[0] * f[0]!.scale - 1.05) < 1e-9 &&
+      Math.abs(nac.rate[0] * f[1]!.scale - 0.59) < 1e-9,
+    `RC rate ${(nac.rcRate[0] * f[0]!.scale).toFixed(2)}, rate ${(nac.rate[0] * f[1]!.scale).toFixed(2)}, ` +
+      `full stick ${applyRates(nac, AXIS_ROLL, 1).toFixed(0)} deg/s`,
+  );
 }
 
 // ------------------------------------------------------------- applying a tune

@@ -22,12 +22,17 @@ export interface Tune {
 
 /**
  * Betaflight's rates_type: 0 betaflight, 1 raceflight, 2 KISS, 3 actual,
- * 4 quick. Only two curves are implemented here. KISS is algebraically the same
- * as Betaflight's for ordinary expo — checked against a logged setpoint, which
- * the actual curve misses by 372 deg/s — so it maps onto that one.
+ * 4 quick.
+ *
+ * KISS is its own curve, not a synonym for Betaflight's — an earlier version of
+ * this mapped it onto Betaflight and the two only agree when expo is near zero.
+ * Raceflight and Quick are not implemented and fall back to Betaflight, which is
+ * flagged rather than silent.
  */
 function rateTypeFrom(n: number): RateProfile['type'] {
-  return n === 3 ? 'actual' : 'betaflight';
+  if (n === 3) return 'actual';
+  if (n === 2) return 'kiss';
+  return 'betaflight';
 }
 
 export function tuneFromHeader(H: Map<string, string>): Tune {

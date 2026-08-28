@@ -13,7 +13,7 @@
  */
 
 import type { FlightSim } from './flight/sim.ts';
-import { applyRates, defaultRates, type RateProfile } from './flight/rates.ts';
+import { applyRates, defaultRates, RATE_FIELDS, type RateProfile } from './flight/rates.ts';
 import { defaultPids, type PidProfile } from './flight/pid.ts';
 import { readHeaderOnly } from './flight/blackbox.ts';
 import { tuneFromHeader } from './flight/tune.ts';
@@ -39,6 +39,7 @@ export class TunePanel {
   private rates: RateProfile = defaultRates();
   private pids: PidProfile = defaultPids();
   private inputs: HTMLInputElement[][] = [];
+  private headings: HTMLElement[] = [];
   private typeSel: HTMLSelectElement;
   private summary: HTMLElement;
   private status: HTMLElement;
@@ -52,7 +53,8 @@ export class TunePanel {
     this.typeSel = el<HTMLSelectElement>('select');
     for (const [v, label] of [
       ['actual', 'Actual'],
-      ['betaflight', 'Betaflight / KISS'],
+      ['betaflight', 'Betaflight'],
+      ['kiss', 'KISS'],
     ] as const) {
       const o = el<HTMLOptionElement>('option');
       o.value = v;
@@ -62,6 +64,10 @@ export class TunePanel {
     this.typeSel.value = this.rates.type;
     this.typeSel.onchange = () => {
       this.rates.type = this.typeSel.value as RateProfile['type'];
+      // The three curves do not share field names or units, so the headings and
+      // the values on screen both have to change with the type.
+      this.relabel();
+      this.writeInputs();
       this.apply();
     };
     const tl = el('label', undefined, 'Rate curve ');
@@ -91,6 +97,7 @@ export class TunePanel {
       this.rates = defaultRates();
       this.pids = defaultPids();
       this.typeSel.value = this.rates.type;
+      this.relabel();
       this.writeInputs();
       this.apply();
       this.status.textContent = 'back to defaults';
@@ -103,23 +110,26 @@ export class TunePanel {
 
     // ---- the three rate rows
     const grid = el('div', 'tune-grid');
-    for (const h of ['', 'RC rate', 'Rate', 'Expo', 'centre', 'max']) {
-      grid.appendChild(el('span', 'tune-head', h));
-    }
+    grid.appendChild(el('span', 'tune-head', ''));
+    for (let f = 0; f < 3; f++) this.headings.push(el('span', 'tune-head', ''));
+    for (const h of this.headings) grid.appendChild(h);
+    grid.appendChild(el('span', 'tune-head', 'centre'));
+    grid.appendChild(el('span', 'tune-head', 'max'));
     AXES.forEach((axis, ai) => {
       grid.appendChild(el('span', 'tune-axis', axis));
       const row: HTMLInputElement[] = [];
       for (let f = 0; f < 3; f++) {
         const input = el<HTMLInputElement>('input');
         input.type = 'number';
-        input.step = '1';
         input.min = '0';
-        input.max = '250';
         input.oninput = () => {
-          const v = Number(input.value);
-          if (!Number.isFinite(v)) return;
+          const shown = Number(input.value);
+          if (!Number.isFinite(shown)) return;
+          // On screen these are configurator units; stored they are
+          // Betaflight's internal ones. Convert here and nowhere else.
+          const scale = RATE_FIELDS[this.rates.type][f]!.scale;
           const target = f === 0 ? this.rates.rcRate : f === 1 ? this.rates.rate : this.rates.expo;
-          target[ai] = v;
+          target[ai] = shown / scale;
           this.apply();
         };
         row.push(input);
@@ -150,6 +160,7 @@ export class TunePanel {
     this.summary = el('p', 'hint', '');
     root.appendChild(this.summary);
 
+    this.relabel();
     this.writeInputs();
     this.apply();
   }
@@ -176,11 +187,29 @@ export class TunePanel {
     }
   }
 
+  /** Column headings follow the rate type, as a configurator's do. */
+  private relabel(): void {
+    const fields = RATE_FIELDS[this.rates.type];
+    this.headings.forEach((h, f) => {
+      const spec = fields[f]!;
+      h.textContent = spec.unit ? `${spec.label} (${spec.unit})` : spec.label;
+    });
+    for (const row of this.inputs) {
+      row.forEach((input, f) => {
+        input.step = String(fields[f]!.step);
+      });
+    }
+  }
+
   private writeInputs(): void {
+    const fields = RATE_FIELDS[this.rates.type];
+    const store = [this.rates.rcRate, this.rates.rate, this.rates.expo];
     this.inputs.forEach((row, ai) => {
-      row[0]!.value = String(this.rates.rcRate[ai]);
-      row[1]!.value = String(this.rates.rate[ai]);
-      row[2]!.value = String(this.rates.expo[ai]);
+      row.forEach((input, f) => {
+        const shown = store[f]![ai]! * fields[f]!.scale;
+        // Two decimals for the 0..1 fields, whole numbers for deg/s.
+        input.value = fields[f]!.scale < 1 ? shown.toFixed(2) : String(Math.round(shown));
+      });
     });
   }
 
@@ -193,6 +222,7 @@ export class TunePanel {
       this.rates = tune.rates;
       this.pids = tune.pids;
       this.typeSel.value = this.rates.type;
+      this.relabel();
       this.writeInputs();
       this.apply();
       this.status.textContent =

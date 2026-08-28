@@ -362,10 +362,14 @@ const main = async () => {
     const panel = document.querySelector('#tune-panel');
     const inputs = [...panel.querySelectorAll('input[type=number]')];
     if (inputs.length < 9) return { ok: false, reason: inputs.length + ' inputs' };
+    // The field shows configurator units; the model stores Betaflight's. On the
+    // default Actual curve the max-rate field is deg/s, so 400 on screen must
+    // become 40 stored.
     const before = flight.sim.rates.rate[0];
-    inputs[1].value = '40';
+    inputs[1].value = '400';
     inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
     const after = flight.sim.rates.rate[0];
+    const heads = [...panel.querySelectorAll('.tune-head')].map((e) => e.textContent);
     const curve = panel.querySelector('.tune-curveline');
     const stored = localStorage.getItem('fpvsim.tune.v1');
     return {
@@ -374,6 +378,7 @@ const main = async () => {
       curveDrawn: !!curve && (curve.getAttribute('d') || '').length > 50,
       persisted: !!stored && stored.includes('"rate"'),
       readouts: [...panel.querySelectorAll('.tune-val')].map((e) => e.textContent),
+      heads,
     };
   })()`);
 
@@ -384,9 +389,14 @@ const main = async () => {
   );
   if (tuneResult.ok) {
     check(
-      'editing a rate reaches the flight model',
+      'editing a rate reaches the model, in configurator units',
       tuneResult.before !== tuneResult.after && tuneResult.after === 40,
-      `sim rates.rate[0] ${tuneResult.before} -> ${tuneResult.after}`,
+      `typed 400 deg/s, stored ${tuneResult.after} (was ${tuneResult.before})`,
+    );
+    check(
+      'column headings name the fields of the selected curve',
+      (tuneResult.heads || []).some((h) => /Centre sens/.test(h || '')),
+      (tuneResult.heads || []).filter(Boolean).join(' | '),
     );
     check('rate curve is drawn', tuneResult.curveDrawn === true, 'path has geometry');
     check('tune persists to localStorage', tuneResult.persisted === true, 'stored');

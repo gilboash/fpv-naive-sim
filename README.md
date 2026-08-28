@@ -584,8 +584,23 @@ had been flying its own defaults — **800 deg/s at full stick against his quad'
 is precisely why it took a pilot rather than a test to notice. The rate curve is
 most of what makes muscle memory transfer, so it has to be the right curve.
 
-Both curves are editable per axis, with the centre sensitivity, full-stick rate
-and the stick-to-rate shape shown live, and the tune is saved in the browser.
+Three curves — Actual, Betaflight and KISS — editable per axis **in the units a
+configurator shows**, with the centre sensitivity, full-stick rate and the
+stick-to-rate shape live, and the tune saved in the browser. The field names
+change with the curve, because they are not the same fields: Actual has centre
+sensitivity and max rate in deg/s, Betaflight has RC rate and super rate,
+KISS has RC rate, rate and RC curve.
+
+That distinction was a bug worth recording. The panel first showed Betaflight's
+internal storage values, so a quad reading `1.05 / 0.59 / 0.01` in its
+configurator appeared here as `105 / 59 / 1` — anyone typing what was on their
+screen would have been out by a hundred.
+
+And **KISS is not Betaflight's curve**, which an earlier version of this claimed.
+They agree only when expo is near zero, which happened to be true of the quad it
+was checked against. With an expo of 40 they are 8% apart at half stick: 96.8
+against 104.3 deg/s. Both are implemented properly now, and there is a test that
+they differ with real expo and coincide without it.
 
 **The important button is "Load from Blackbox log".** Every one of these values
 already exists in the header of any `.BBL`, so the reliable way to fly your own
