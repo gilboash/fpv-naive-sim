@@ -214,6 +214,25 @@ const main = async () => {
     flight.step({ throttle: 0.5, roll: 0, pitch: 0, yaw: 0 }, false);
     return { armedBefore, armedAfter: flight.sim.armed };
   })()`);
+  // Losing the link must read as no stick, not as whatever the axes last held.
+  // A raw zero on a unipolar channel is mid-travel, so stale axes present as
+  // half throttle — which is what an uncalibrated device does here, and what a
+  // vanished one used to do.
+  const noLink = await evaluate(`(async () => {
+    const { flight, poller } = globalThis.__fpvsim;
+    const saved = poller.index;
+    poller.select(-1);
+    await new Promise((r) => setTimeout(r, 60));
+    const out = { connected: poller.connected, throttle: flight.lastInputThrottle };
+    poller.select(saved);
+    return out;
+  })()`);
+  check(
+    'losing the link reads as no throttle',
+    noLink.connected === false && noLink.throttle === 0,
+    `connected ${noLink.connected}, throttle ${noLink.throttle}`,
+  );
+
   check(
     'failsafe disarms when the link drops',
     failsafe.armedBefore === true && failsafe.armedAfter === false,
@@ -437,9 +456,17 @@ const main = async () => {
     const armedWhileCrashed = sim.armed;
     const refusalText = document.querySelector('#flight-panel .dim')?.textContent ?? '';
 
-    // Reset must clear it, and put the quad back on the start line.
+    // Reset must clear it, put the quad back on the start line, and — since the
+    // pilot was flying when it crashed and the throttle is down — hand it back
+    // armed, so recovering is one key rather than two. One step through the
+    // panel's own input path first, so the throttle it reads is a known zero
+    // rather than whatever an uncalibrated radio is presenting.
+    flight.step({ throttle: 0, roll: 0, pitch: 0, yaw: 0 }, true);
     flight.reset();
+    const rearmed = sim.armed;
+    const afterResetText = document.querySelector('#flight-panel .dim')?.textContent ?? '';
     return {
+      rearmed, afterResetText,
       ok: true, count, crashedIntoPost, speed, armedWhileCrashed, refusalText,
       clearedByReset: !sim.crashed,
       backAtStart: Math.abs(sim.pos.x - scene.track.start.north) < 0.01,
@@ -461,6 +488,11 @@ const main = async () => {
       'a crashed quad refuses to arm, and says so',
       collide.armedWhileCrashed === false && /crash/i.test(collide.refusalText ?? ''),
       `"${collide.refusalText}"`,
+    );
+    check(
+      'reset hands the quad back armed, so recovery is one key',
+      collide.rearmed === true,
+      `"${collide.afterResetText}"`,
     );
     check(
       'reset clears the crash and returns to the start line',

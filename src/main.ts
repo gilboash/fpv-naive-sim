@@ -121,6 +121,19 @@ function onTick(fired: number, scheduled: number): void {
 
   commands = computeCommands(mapping, poller.axes as unknown as number[]);
 
+  // No link means no input, and that has to be said explicitly. With no device
+  // the poller returns early and leaves its axis array at zero, and a raw zero
+  // on a *unipolar* channel is mid-travel, not the bottom — so an unmapped,
+  // unplugged radio was reading as 55% throttle. The failsafe disarms, so
+  // nothing ever flew away on it, but every consumer downstream was being told
+  // the pilot was holding half throttle.
+  if (!poller.connected) {
+    commands.throttle = 0;
+    commands.roll = 0;
+    commands.pitch = 0;
+    commands.yaw = 0;
+  }
+
   // The physics step, in the tick and immediately after the poll — the position
   // M0 existed to make safe. It costs a few microseconds of a 1000 us budget.
   flight.step(commands, poller.connected);

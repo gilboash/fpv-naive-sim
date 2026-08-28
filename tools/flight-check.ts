@@ -766,6 +766,24 @@ section('Collision: the ground and the things standing on it');
     'arming refused until it is reset',
   );
 
+  ok(
+    'the model remembers it was flying when it crashed',
+    hard.armedAtCrash === true,
+    'so a reset can hand back an armed quad rather than making the pilot re-arm',
+  );
+
+  // Crashing while already disarmed must not hand back an armed quad.
+  const droppedIdle = mk();
+  droppedIdle.reset(0);
+  droppedIdle.pos.z = -30;
+  droppedIdle.onGround = false;
+  run(droppedIdle, sticks(), 5);
+  ok(
+    'but not when it was already disarmed',
+    droppedIdle.crashed && droppedIdle.armedAtCrash === false,
+    `crashed at ${droppedIdle.crashSpeed.toFixed(1)} m/s while disarmed`,
+  );
+
   // Reset has to clear the wreck, and then arming works again.
   hard.reset(0);
   ok('reset clears the crash', !hard.crashed && hard.crashSpeed === 0, 'back to intact');

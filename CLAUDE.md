@@ -334,9 +334,21 @@ third of the ground's threshold, because a post takes a prop off.
 start line rather than the origin — delegation rather than a second key handler,
 so the outcome does not depend on listener order.
 
-Recovery is R, the Reset button, or To start line. Arming is refused while
-crashed — found by Gilboa asking how to reset, because until then arming a wreck
-succeeded and left the flag stuck on.
+Recovery is one key: R puts the quad back on the start line already armed, if
+the throttle is down. Arming a wreck is refused. Both came from Gilboa asking
+how to reset and then pointing out that having to re-arm was friction — until
+then arming a wreck succeeded and left the flag stuck on.
+
+That chase found a real failsafe hole: with no device the poller returns early
+leaving its axes untouched, and a raw zero on a *unipolar* channel is mid-travel,
+so a vanished radio read as 50% throttle. Nothing flew away because the failsafe
+disarms, but everything downstream was told the pilot held half throttle. No link
+now means no input, explicitly, in main.ts.
+
+Note for browser checks: Gilboa's Radiomaster is plugged into this machine and
+headless Chrome sees it, so `poller.connected` is true there and the axes are
+live but uncalibrated. Force the disconnected case with `poller.select(-1)`
+rather than assuming headless has no gamepad.
 
 **Next, roughly in order:** gate sequencing and lap timing (the geometry is
 already there, and it turns flying into training with a number attached); motor

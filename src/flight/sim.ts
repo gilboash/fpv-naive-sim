@@ -138,6 +138,12 @@ export class FlightSim {
   crashed = false;
   /** Speed of the worst impact that caused the crash, m/s. */
   crashSpeed = 0;
+  /**
+   * Whether the quad was flying when it crashed, so a reset can put the pilot
+   * back where they were. Crashing while already disarmed — dropped from a
+   * height, say — should not hand back an armed quad.
+   */
+  armedAtCrash = false;
   /** Scenery to collide with, in NED. Empty means open ground. */
   obstacles: readonly Obstacle[] = [];
   readonly contact: ContactParams = defaultContact();
@@ -283,6 +289,7 @@ export class FlightSim {
   reset(yawDeg = 0): void {
     this.crashed = false;
     this.crashSpeed = 0;
+    this.armedAtCrash = false;
     setV(this.pos, 0, 0, -this.standHeight);
     setV(this.vel, 0, 0, 0);
     setV(this.omega, 0, 0, 0);
@@ -522,6 +529,7 @@ export class FlightSim {
       if (c.impactSpeed > limit) {
         this.crashed = true;
         this.crashSpeed = c.impactSpeed;
+        this.armedAtCrash = this.armed;
         this.disarm();
       }
     }

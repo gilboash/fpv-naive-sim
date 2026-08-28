@@ -634,16 +634,33 @@ A hard enough impact sets `crashed`, disarms, and keeps simulating, because a
 crashed quad still tumbles. Scenery is less forgiving than grass by a factor of
 three: a post takes a prop off at a speed the ground would shrug at.
 
-**Recovering is `R`, the Reset button, or To start line** — all three put the
-quad back on the start line intact. Arming is refused while crashed, and says
-so. That last rule is not a flight-controller behaviour, it is an honesty one:
-without it a wreck could be re-armed where it lay, with the crash flag still set
-and the banner still up, and fly on as though nothing had happened.
+**Recovering is one key: `R`.** It puts the quad back on the start line, intact
+and *already armed*, provided the throttle is down. Crashing is the normal
+outcome of practice and making a pilot re-arm after every one is friction with
+nothing behind it — arming is a deliberate act once per session, not once per
+prang. If the throttle is up it stays disarmed and says so, because otherwise
+the quad would leap off the reset.
+
+Arming a crashed quad is refused. That is not a flight-controller behaviour, it
+is an honesty one: without it a wreck could be re-armed where it lay, flag still
+set and banner still up, and fly on as though nothing had happened.
+
+A quad that crashes while already disarmed — dropped from a height — comes back
+disarmed, because it was not flying.
 
 The tests are behaviours rather than numbers — it rests without sinking or
 buzzing, falls flat from 45°, survives a gentle landing, crashes and disarms
 from 30 m, stops at a pylon's face, passes cleanly beside one, flies under a
 gate bar and crashes into it.
+
+### A failsafe that was not one
+
+Chasing the reset behaviour turned up something worse. When the poller has no
+device it returns early and leaves its axis array untouched, and **a raw zero on
+a unipolar channel is mid-travel, not the bottom** — so a vanished radio
+presented as 50% throttle rather than none. The failsafe disarmed, so nothing
+ever flew away on it, but every consumer downstream was being told the pilot was
+holding half throttle. No link now means no input, explicitly.
 
 ### Known gaps, stated rather than omitted
 

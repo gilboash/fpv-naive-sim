@@ -255,7 +255,8 @@ export class FlightPanel {
       'p',
       'hint',
       'Arming refuses above 5% throttle, as a real flight controller does. ' +
-        'Keys: A arm, D disarm, R reset — R is also how you recover from a crash. ' +
+        'Keys: A arm, D disarm, R reset. After a crash, R alone puts you back on the ' +
+        'start line already armed, provided the throttle is down. ' +
         'Rate mode only — there is no self-levelling, ' +
         'which is the mode the brief is about. Recording captures the same fields ' +
         'Betaflight Blackbox logs, so a sim flight and a real log can be compared ' +
@@ -273,10 +274,27 @@ export class FlightPanel {
   }
 
   reset(): void {
+    // Come back the way you left. Crashing is the normal outcome of practice,
+    // and making a pilot re-arm after every one is friction with nothing behind
+    // it: arming is a deliberate act once per session, not once per prang.
+    // Throttle still has to be down, or the quad would leap off the reset.
+    const wasFlying = this.sim.armed || this.sim.armedAtCrash;
+    const throttleDown = this.lastInput.throttle <= 0.05;
+
     if (this.onReset) this.onReset();
     else this.sim.reset();
+
+    if (wasFlying && throttleDown && this.sim.arm(this.lastInput)) {
+      this.armBtn.textContent = 'Disarm';
+      this.setStatus('reset — armed, ready');
+      return;
+    }
     this.armBtn.textContent = 'Arm';
-    this.setStatus('reset — throttle down, then arm');
+    this.setStatus(
+      wasFlying && !throttleDown
+        ? 'reset — drop the throttle, then arm'
+        : 'reset — throttle down, then arm',
+    );
   }
 
   private setStatus(text: string): void {
@@ -307,6 +325,11 @@ export class FlightPanel {
   }
 
   private lastInput = { throttle: 0, roll: 0, pitch: 0, yaw: 0 };
+
+  /** For diagnostics only. */
+  get lastInputThrottle(): number {
+    return this.lastInput.throttle;
+  }
 
   private toggleRecord(): void {
     if (this.recorder.recording) {

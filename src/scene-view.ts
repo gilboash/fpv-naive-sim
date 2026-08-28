@@ -129,7 +129,7 @@ export class SceneView {
     this.renderer.render(this.sim);
     this.statusEl.textContent = `${this.renderer.frameCostMs.toFixed(2)} ms/frame`;
     this.crashEl.textContent = this.sim.crashed
-      ? `crashed at ${this.sim.crashSpeed.toFixed(1)} m/s — press R, or To start line`
+      ? `crashed at ${this.sim.crashSpeed.toFixed(1)} m/s — press R to go again`
       : '';
   }
 }
