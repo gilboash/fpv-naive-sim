@@ -9,6 +9,7 @@
 import type { FlightSim } from './flight/sim.ts';
 import { Renderer } from './render/renderer.ts';
 import { TRACKS, type Track } from './render/track.ts';
+import { clearance } from './flight/collision.ts';
 
 const el = <T extends HTMLElement>(tag: string, cls?: string, text?: string): T => {
   const n = document.createElement(tag) as T;
@@ -21,10 +22,11 @@ export class SceneView {
   readonly canvas: HTMLCanvasElement;
   renderer: Renderer | null = null;
   private failure = '';
-  track: Track = TRACKS[1] ?? TRACKS[0]!;
+  track: Track = TRACKS[2] ?? TRACKS[0]!;
   private sim: FlightSim;
   private statusEl: HTMLElement;
   private crashEl: HTMLElement;
+  resetMode: 'inPlace' | 'start' = 'inPlace';
 
   constructor(root: HTMLElement, sim: FlightSim) {
     this.sim = sim;
@@ -75,6 +77,26 @@ export class SceneView {
       if (this.renderer) this.renderer.camera.tiltDeg = v;
     });
 
+    // Where a reset puts you. In place by default: sending a pilot back to the
+    // start after every crash spends their session on the walk rather than on
+    // the thing they were practising.
+    const modeSel = el<HTMLSelectElement>('select');
+    for (const [v, label] of [
+      ['inPlace', 'where you crashed'],
+      ['start', 'start line'],
+    ] as const) {
+      const o = el<HTMLOptionElement>('option');
+      o.value = v;
+      o.textContent = label;
+      modeSel.appendChild(o);
+    }
+    modeSel.onchange = () => {
+      this.resetMode = modeSel.value === 'start' ? 'start' : 'inPlace';
+    };
+    const ml = el('label', undefined, 'Reset to ');
+    ml.appendChild(modeSel);
+    row.appendChild(ml);
+
     const restart = el<HTMLButtonElement>('button');
     restart.type = 'button';
     restart.textContent = 'To start line';
@@ -116,12 +138,38 @@ export class SceneView {
     this.placeAtStart();
   }
 
+  /** Whatever the current reset mode says. */
+  reset(): void {
+    if (this.resetMode === 'start') this.placeAtStart();
+    else this.respawnInPlace();
+  }
+
   /** Put the quad on the start line, disarmed and on the ground. */
   placeAtStart(): void {
     const s = this.track.start;
     this.sim.reset(s.yawDeg);
     this.sim.pos.x = s.north;
     this.sim.pos.y = s.east;
+  }
+
+  /**
+   * Put it back where it went in, level and stationary, a little above the
+   * ground and pushed clear of whatever it hit — respawning inside the pole you
+   * just clipped is an instant second crash and reads as broken.
+   *
+   * Heading comes from the moment of the crash rather than from the wreck,
+   * because a tumbled quad ends up pointing anywhere and the pilot wants to be
+   * facing back down the line they were flying.
+   */
+  respawnInPlace(): void {
+    const up = 1.6;
+    const yaw = this.sim.crashed ? this.sim.yawAtCrash : this.sim.telemetry.attitude.yaw;
+    const spot = clearance(this.sim.obstacles, this.sim.pos.x, this.sim.pos.y, up, 1.2);
+    this.sim.reset(yaw);
+    this.sim.pos.x = spot.north;
+    this.sim.pos.y = spot.east;
+    this.sim.pos.z = -up;
+    this.sim.onGround = false;
   }
 
   render(): void {

@@ -144,6 +144,12 @@ export class FlightSim {
    * height, say — should not hand back an armed quad.
    */
   armedAtCrash = false;
+  /**
+   * Heading at the moment of the crash, degrees. A quad that has tumbled ends
+   * up pointing anywhere; a pilot picking it up points it back down the line
+   * they were flying, and a respawn should do the same.
+   */
+  yawAtCrash = 0;
   /** Scenery to collide with, in NED. Empty means open ground. */
   obstacles: readonly Obstacle[] = [];
   readonly contact: ContactParams = defaultContact();
@@ -290,6 +296,7 @@ export class FlightSim {
     this.crashed = false;
     this.crashSpeed = 0;
     this.armedAtCrash = false;
+    this.yawAtCrash = 0;
     setV(this.pos, 0, 0, -this.standHeight);
     setV(this.vel, 0, 0, 0);
     setV(this.omega, 0, 0, 0);
@@ -530,6 +537,7 @@ export class FlightSim {
         this.crashed = true;
         this.crashSpeed = c.impactSpeed;
         this.armedAtCrash = this.armed;
+        this.yawAtCrash = this.telemetry.attitude.yaw;
         this.disarm();
       }
     }

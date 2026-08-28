@@ -350,21 +350,27 @@ headless Chrome sees it, so `poller.connected` is true there and the axes are
 live but uncalibrated. Force the disconnected case with `poller.select(-1)`
 rather than assuming headless has no gamepad.
 
+**Circuit is the default map (2026-08-29)** and carries freestyle furniture —
+floodlight masts, two tubes, three elevated square windows — added for a round
+of feedback from other pilots. Reset defaults to respawning in place.
+
+A trap worth remembering: two browser checks broke when the circuit became the
+default, because they `reset()` to the origin and the circuit has a tube
+directly overhead there. They climbed into it, crashed, disarmed and fell back,
+reporting a net climb of zero — a puzzling failure about entirely the wrong
+subsystem. Flight-model checks now clear `sim.obstacles` first.
+
 **Next, roughly in order:**
 
 1. **Gate sequencing and lap timing.** The geometry is already there from the
    collision work; this is what turns flying around into training with a number
    attached.
-2. **Respawn modes** — Gilboa's request, parked deliberately until tracks are
-   under way because two of the three variants depend on gate sequencing:
-   - *from the start line*, which is what R does today;
-   - *in place*, dropped level and stationary a metre above where it went in;
-   - *from the last gate passed*, which is what a pilot practising a line
-     actually wants and which cannot exist before gates are ordered.
-   It is a training-mode setting rather than anything physical. The part worth
-   getting right is that a respawn has to invalidate the lap — otherwise the
-   timing added in step 1 measures nothing — so the two features are entangled
-   and should be designed together rather than bolted to each other.
+2. **Respawn from the last gate passed** — the third variant, and the only one
+   still missing. *In place* landed 2026-08-29 and is now the default, ahead of
+   the pilot feedback round; *start line* is the selector's other option. The
+   part still worth designing rather than bolting on is that a respawn has to
+   invalidate the lap, or the timing added in step 1 measures nothing — so this
+   and lap timing are entangled and should be built together.
 3. **Motor sound.** A real flight cue: pilots hear throttle and RPM before they
    see the response. The model already produces per-rotor RPM, so this is
    probably the largest immersion-per-effort item left.

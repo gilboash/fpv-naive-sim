@@ -93,8 +93,9 @@ function setTicking(on: boolean): void {
 const flight = new FlightPanel($('flight-panel'));
 const scene = new SceneView($('scene-view'), flight.sim);
 const tune = new TunePanel($('tune-panel'), flight.sim);
-// The scene owns where the quad belongs once a track is loaded.
-flight.onReset = () => scene.placeAtStart();
+// The scene owns where the quad belongs once a track is loaded, and which of
+// the reset modes is in force.
+flight.onReset = () => scene.reset();
 
 /**
  * The whole input path, in one place, with nothing awaited. The physics step

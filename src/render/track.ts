@@ -108,6 +108,110 @@ function gate(
   }
 }
 
+/** A render-space box, emitted as both geometry and a collision volume. */
+function solid(
+  m: MeshBuilder,
+  obs: Obstacle[],
+  x0: number,
+  y0: number,
+  z0: number,
+  x1: number,
+  y1: number,
+  z1: number,
+  c: readonly [number, number, number],
+): void {
+  m.slab(x0, y0, z0, x1, y1, z1, c[0]!, c[1]!, c[2]!);
+  obs.push({
+    kind: 'box',
+    minNorth: north(Math.max(z0, z1)),
+    maxNorth: north(Math.min(z0, z1)),
+    minEast: east(Math.min(x0, x1)),
+    maxEast: east(Math.max(x0, x1)),
+    minUp: Math.min(y0, y1),
+    maxUp: Math.max(y0, y1),
+  });
+}
+
+/** Floodlight mast. Tall, thin, and unforgiving — the thing you clip on a dive. */
+function lightPole(m: MeshBuilder, obs: Obstacle[], cx: number, cz: number, height: number): void {
+  m.cylinder(cx, cz, 0, height, 0.1, 10, 0.62, 0.64, 0.68);
+  obs.push({ kind: 'cylinder', north: north(cz), east: east(cx), radius: 0.17, height });
+  // Head, canted so it reads as a lamp rather than a lump.
+  solid(m, obs, cx - 0.55, height, cz - 0.28, cx + 0.55, height + 0.16, cz + 0.28, [0.9, 0.88, 0.72]);
+  solid(m, obs, cx - 0.1, height - 0.5, cz - 0.1, cx + 0.1, height, cz + 0.1, [0.5, 0.52, 0.56]);
+}
+
+/**
+ * A tube to fly through, up in the air on two legs. The bore is the line; the
+ * wall is what you hit when you get it wrong.
+ */
+function flyTube(
+  m: MeshBuilder,
+  obs: Obstacle[],
+  cx: number,
+  cy: number,
+  cz: number,
+  radius: number,
+  halfLength: number,
+  along: 'x' | 'z',
+): void {
+  const thickness = 0.16;
+  m.tube(cx, cy, cz, radius, thickness, halfLength, along, 20, 0.72, 0.44, 0.24);
+  obs.push({
+    kind: 'ring',
+    north: north(cz),
+    east: east(cx),
+    up: cy,
+    radius,
+    thickness,
+    halfLength,
+    axis: along === 'z' ? 'north' : 'east',
+  });
+  // Legs, offset to the ends so they do not block the approach.
+  for (const s of [-1, 1]) {
+    const lx = along === 'z' ? cx : cx + s * halfLength * 0.8;
+    const lz = along === 'z' ? cz + s * halfLength * 0.8 : cz;
+    m.cylinder(lx, lz, 0, cy - radius, 0.08, 8, 0.45, 0.47, 0.5);
+    obs.push({ kind: 'cylinder', north: north(lz), east: east(lx), radius: 0.14, height: cy - radius });
+  }
+}
+
+/** Square frame up in the air: the classic freestyle window. */
+function squareFrame(
+  m: MeshBuilder,
+  obs: Obstacle[],
+  cx: number,
+  cy: number,
+  cz: number,
+  half: number,
+  along: 'x' | 'z',
+  colour: readonly [number, number, number],
+): void {
+  const t = 0.14;
+  const d = 0.14;
+  const bars: [number, number, number, number][] = [
+    [cx - half - t, cy + half, cx + half + t, cy + half + t],
+    [cx - half - t, cy - half - t, cx + half + t, cy - half],
+    [cx - half - t, cy - half, cx - half, cy + half],
+    [cx + half, cy - half, cx + half + t, cy + half],
+  ];
+  for (const [x0, y0, x1, y1] of bars) {
+    if (along === 'z') {
+      solid(m, obs, x0, y0, cz - d, x1, y1, cz + d, colour);
+    } else {
+      // Rotate the frame into the other plane: x becomes z.
+      solid(m, obs, cx - d, y0, cz + (x0 - cx), cx + d, y1, cz + (x1 - cx), colour);
+    }
+  }
+  // Legs down to the ground, clear of the opening.
+  for (const s of [-1, 1]) {
+    const lx = along === 'z' ? cx + s * (half + t) : cx;
+    const lz = along === 'z' ? cz : cz + s * (half + t);
+    m.cylinder(lx, lz, 0, cy - half, 0.07, 8, 0.45, 0.47, 0.5);
+    obs.push({ kind: 'cylinder', north: north(lz), east: east(lx), radius: 0.13, height: cy - half });
+  }
+}
+
 function pylon(m: MeshBuilder, obs: Obstacle[], cx: number, cz: number, height: number): void {
   m.cylinder(cx, cz, 0, height, 0.18, 12, 0.9, 0.45, 0.1);
   m.cylinder(cx, cz, height * 0.45, height * 0.55, 0.2, 12, 0.95, 0.95, 0.95);
@@ -189,6 +293,25 @@ export const circuit: Track = {
     ] as [number, number][]) {
       pylon(m, obs, x, z, 6);
     }
+
+    // Freestyle furniture. The gates are a line to fly; these are things to
+    // play with, and to have opinions about — which is what they are here for.
+    lightPole(m, obs, 8, 34, 11);
+    lightPole(m, obs, -8, 34, 11);
+    lightPole(m, obs, 36, -2, 13);
+    lightPole(m, obs, -36, -2, 13);
+    lightPole(m, obs, 0, -40, 9);
+
+    // A tube on the main straight, and one across it high up.
+    // Kept short: at 7 m long a 3 m bore is a tunnel rather than an obstacle,
+    // and it reads from the outside as a solid disc until you are close.
+    flyTube(m, obs, 0, 4.5, 0, 1.55, 2.2, 'z');
+    flyTube(m, obs, -24, 9, 18, 1.8, 2, 'x');
+
+    // Windows: one low enough to thread on the straight, two high.
+    squareFrame(m, obs, 22, 5.5, 4, 1.8, 'x', GATE_B);
+    squareFrame(m, obs, -20, 12, -12, 2.4, 'z', GATE_A);
+    squareFrame(m, obs, 6, 16, 30, 2.6, 'z', GATE_B);
   },
 };
 

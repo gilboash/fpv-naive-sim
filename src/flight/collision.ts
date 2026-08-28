@@ -40,7 +40,24 @@ export interface Box {
   maxUp: number;
 }
 
-export type Obstacle = Cylinder | Box;
+/**
+ * A tube you fly through: solid between `radius` and `radius + thickness`,
+ * open down the middle. Axis runs along north or east.
+ */
+export interface Ring {
+  kind: 'ring';
+  north: number;
+  east: number;
+  /** Height of the bore centre above the ground. */
+  up: number;
+  radius: number;
+  thickness: number;
+  /** Half the tube's length along its axis. */
+  halfLength: number;
+  axis: 'north' | 'east';
+}
+
+export type Obstacle = Cylinder | Box | Ring;
 
 export interface ContactParams {
   /** Penalty stiffness, N/m. */
@@ -147,6 +164,59 @@ function respond(
  * @param vel     point velocity in NED
  * @param arm     the same point in the body frame, for the moment arm
  */
+/**
+ * Is this spot clear of everything? Used to place a quad after a crash without
+ * dropping it inside the pole it just hit.
+ */
+export function clearance(
+  obstacles: readonly Obstacle[],
+  north: number,
+  east: number,
+  up: number,
+  margin: number,
+): { north: number; east: number } {
+  let n = north;
+  let e = east;
+  for (let pass = 0; pass < 8; pass++) {
+    let moved = false;
+    for (const o of obstacles) {
+      if (o.kind === 'cylinder') {
+        if (up < 0 || up > o.height) continue;
+        const dN = n - o.north;
+        const dE = e - o.east;
+        const d = Math.hypot(dN, dE);
+        const want = o.radius + margin;
+        if (d >= want) continue;
+        const uN = d > 1e-6 ? dN / d : 1;
+        const uE = d > 1e-6 ? dE / d : 0;
+        n = o.north + uN * want;
+        e = o.east + uE * want;
+        moved = true;
+      } else if (o.kind === 'box') {
+        if (up < o.minUp - margin || up > o.maxUp + margin) continue;
+        if (n < o.minNorth - margin || n > o.maxNorth + margin) continue;
+        if (e < o.minEast - margin || e > o.maxEast + margin) continue;
+        // Nearest way out in the horizontal plane.
+        const cands: [number, number, number][] = [
+          [n - (o.minNorth - margin), o.minNorth - margin, e],
+          [o.maxNorth + margin - n, o.maxNorth + margin, e],
+          [e - (o.minEast - margin), n, o.minEast - margin],
+          [o.maxEast + margin - e, n, o.maxEast + margin],
+        ];
+        let best = cands[0]!;
+        for (const c of cands) if (c[0]! < best[0]!) best = c;
+        n = best[1]!;
+        e = best[2]!;
+        moved = true;
+      }
+      // Rings are open down the middle, so a spot inside the bore is fine and
+      // a spot in the wall is close enough to the bore to be pushed by nothing.
+    }
+    if (!moved) break;
+  }
+  return { north: n, east: e };
+}
+
 export function contactPoint(
   out: ContactResult,
   p: ContactParams,
@@ -174,6 +244,28 @@ export function contactPoint(
       const nN = dist > 1e-6 ? dN / dist : 1;
       const nE = dist > 1e-6 ? dE / dist : 0;
       respond(out, p, depth, nN, nE, 0, vel.x, vel.y, vel.z, arm.x, arm.y, arm.z, q);
+      out.hitObstacle = true;
+    } else if (o.kind === 'ring') {
+      const up = -world.z;
+      // Distance along the axis, and the two coordinates across it.
+      const along = o.axis === 'north' ? world.x - o.north : world.y - o.east;
+      if (Math.abs(along) > o.halfLength) continue;
+      const aCross = o.axis === 'north' ? world.y - o.east : world.x - o.north;
+      const bCross = up - o.up;
+      const r = Math.hypot(aCross, bCross);
+      if (r < o.radius || r > o.radius + o.thickness) continue;
+      // Inside the wall. Push to whichever face is nearer — out through the
+      // bore if the quad clipped the lip, outward if it hit the shell.
+      const inward = r - o.radius;
+      const outward = o.radius + o.thickness - r;
+      const sign = inward < outward ? -1 : 1;
+      const depth = Math.min(inward, outward);
+      const ua = r > 1e-6 ? aCross / r : 1;
+      const ub = r > 1e-6 ? bCross / r : 0;
+      const nN = o.axis === 'north' ? 0 : sign * ua;
+      const nE = o.axis === 'north' ? sign * ua : 0;
+      const nUp = sign * ub;
+      respond(out, p, depth, nN, nE, -nUp, vel.x, vel.y, vel.z, arm.x, arm.y, arm.z, q);
       out.hitObstacle = true;
     } else {
       const up = -world.z;

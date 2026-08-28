@@ -167,6 +167,55 @@ export class MeshBuilder {
     this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
 
+  /**
+   * Horizontal tube, open down the bore. `along` is the render axis it points
+   * down. Built as an outer skin, an inner skin with the normals reversed, and
+   * a ring at each end, so it reads as a solid wall from any side.
+   */
+  tube(
+    cx: number,
+    cy: number,
+    cz: number,
+    radius: number,
+    thickness: number,
+    halfLength: number,
+    along: 'x' | 'z',
+    segments: number,
+    r: number,
+    g: number,
+    b: number,
+  ): void {
+    const outer = radius + thickness;
+    const at = (ang: number, rad: number, off: number): [number, number, number] =>
+      along === 'z'
+        ? [cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad, cz + off]
+        : [cx + off, cy + Math.sin(ang) * rad, cz + Math.cos(ang) * rad];
+
+    for (let i = 0; i < segments; i++) {
+      const a0 = (i / segments) * Math.PI * 2;
+      const a1 = ((i + 1) / segments) * Math.PI * 2;
+      const shade = (f: number): [number, number, number] => [r * f, g * f, b * f];
+      // Outer skin, inner skin, and the two end faces.
+      this.quadColored(
+        at(a0, outer, -halfLength), at(a1, outer, -halfLength),
+        at(a1, outer, halfLength), at(a0, outer, halfLength),
+        shade(1), shade(1), shade(1), shade(1),
+      );
+      this.quadColored(
+        at(a0, radius, halfLength), at(a1, radius, halfLength),
+        at(a1, radius, -halfLength), at(a0, radius, -halfLength),
+        shade(0.55), shade(0.55), shade(0.55), shade(0.55),
+      );
+      for (const [off, f] of [[-halfLength, 0.8], [halfLength, 0.8]] as [number, number][]) {
+        this.quadColored(
+          at(a0, radius, off), at(a1, radius, off),
+          at(a1, outer, off), at(a0, outer, off),
+          shade(f), shade(f), shade(f), shade(f),
+        );
+      }
+    }
+  }
+
   build(): MeshData {
     return {
       vertices: Float32Array.from(this.verts),

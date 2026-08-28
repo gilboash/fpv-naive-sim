@@ -177,12 +177,19 @@ const main = async () => {
   const flightResult = await evaluate(`(() => {
     const { flight } = globalThis.__fpvsim;
     const sim = flight.sim;
+    // Flight-model checks, not collision ones. The circuit has a tube directly
+    // over the origin these reset to, so with scenery in place they climb into
+    // it, crash, disarm and fall back — a net climb of zero and a puzzling
+    // failure about the wrong subsystem.
+    const scenery = sim.obstacles;
+    sim.obstacles = [];
     sim.reset();
     if (!sim.arm({ throttle: 0, roll: 0, pitch: 0, yaw: 0 })) return { error: 'arm refused' };
     const start = sim.telemetry.altitude;
     for (let i = 0; i < 3000; i++) sim.step({ throttle: 0.35, roll: 0, pitch: 0, yaw: 0 });
     const climbed = sim.telemetry.altitude - start;
     for (let i = 0; i < 2000; i++) sim.step({ throttle: 0.35, roll: 0.4, pitch: 0, yaw: 0 });
+    sim.obstacles = scenery;
     return {
       climbed,
       rollRate: sim.telemetry.gyro.x,
@@ -461,6 +468,8 @@ const main = async () => {
     // armed, so recovering is one key rather than two. One step through the
     // panel's own input path first, so the throttle it reads is a known zero
     // rather than whatever an uncalibrated radio is presenting.
+    const crashN = sim.pos.x;
+    const crashE = sim.pos.y;
     flight.step({ throttle: 0, roll: 0, pitch: 0, yaw: 0 }, true);
     flight.reset();
     const rearmed = sim.armed;
@@ -469,7 +478,11 @@ const main = async () => {
       rearmed, afterResetText,
       ok: true, count, crashedIntoPost, speed, armedWhileCrashed, refusalText,
       clearedByReset: !sim.crashed,
-      backAtStart: Math.abs(sim.pos.x - scene.track.start.north) < 0.01,
+      movedFromCrash: Math.hypot(sim.pos.x - crashN, sim.pos.y - crashE),
+      nearCrashSite: Math.hypot(sim.pos.x - crashN, sim.pos.y - crashE) < 3,
+      respawnAlt: -sim.pos.z,
+      postDistance: Math.hypot(sim.pos.x - target.north, sim.pos.y - target.east),
+      clearOfPost: Math.hypot(sim.pos.x - target.north, sim.pos.y - target.east) > target.radius + 0.5,
     };
   })()`);
 
@@ -495,10 +508,16 @@ const main = async () => {
       `"${collide.afterResetText}"`,
     );
     check(
-      'reset clears the crash and returns to the start line',
-      collide.clearedByReset === true && collide.backAtStart === true,
+      'reset clears the crash and leaves the quad where it went in',
+      collide.clearedByReset === true && collide.nearCrashSite === true,
       `crashed ${collide.clearedByReset ? 'cleared' : 'still set'}, ` +
-        `position ${collide.backAtStart ? 'restored' : 'wrong'}`,
+        `respawned ${(collide.movedFromCrash ?? 0).toFixed(1)} m from the wreck ` +
+        `at ${(collide.respawnAlt ?? 0).toFixed(2)} m`,
+    );
+    check(
+      'and clear of the thing it hit',
+      collide.clearOfPost === true,
+      `${(collide.postDistance ?? 0).toFixed(2)} m from the post it clipped`,
     );
   }
 
@@ -515,7 +534,7 @@ const main = async () => {
         scene.loadTrack(scene.track);
       }
       flight.sim.reset(0);
-      flight.sim.pos.x = -34; flight.sim.pos.y = 1.5; flight.sim.pos.z = -2.2;
+      flight.sim.pos.x = -14; flight.sim.pos.y = 0; flight.sim.pos.z = -4.2;
       flight.sim.onGround = false;
       scene.render();
     })()`);

@@ -634,8 +634,13 @@ A hard enough impact sets `crashed`, disarms, and keeps simulating, because a
 crashed quad still tumbles. Scenery is less forgiving than grass by a factor of
 three: a post takes a prop off at a speed the ground would shrug at.
 
-**Recovering is one key: `R`.** It puts the quad back on the start line, intact
-and *already armed*, provided the throttle is down. Crashing is the normal
+**Recovering is one key: `R`.** By default it drops the quad back in *where it
+went in* — level, stationary, a metre and a half up, pushed clear of whatever it
+hit, facing the way it was going before it tumbled — intact and already armed,
+provided the throttle is down. Sending a pilot to the start line after every
+crash spends their session on the walk rather than on the thing they were
+practising. The scene has a selector for the other behaviour, and "To start
+line" is always one click away. Crashing is the normal
 outcome of practice and making a pilot re-arm after every one is friction with
 nothing behind it — arming is a deliberate act once per session, not once per
 prang. If the throttle is up it stays disarmed and says so, because otherwise
@@ -661,6 +666,17 @@ a unipolar channel is mid-travel, not the bottom** — so a vanished radio
 presented as 50% throttle rather than none. The failsafe disarmed, so nothing
 ever flew away on it, but every consumer downstream was being told the pilot was
 holding half throttle. No link now means no input, explicitly.
+
+### The maps
+
+**Circuit** is the default: eleven gates round a loop, plus freestyle furniture
+to have opinions about — floodlight masts, two tubes to thread, and three square
+windows, one low enough to take on the straight and two up high. **Gate run** is
+a staggered line for practising a single trajectory, and **Open field** is
+somewhere to learn hovering with nothing to hit.
+
+Every obstacle emits its collision volume from the same call that builds its
+mesh, so the circuit's 76 volumes cannot drift from what is drawn.
 
 ### Known gaps, stated rather than omitted
 
