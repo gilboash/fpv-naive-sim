@@ -706,6 +706,21 @@ mesh, so the circuit's 76 volumes cannot drift from what is drawn.
   it recovers when the sticks centre, but the peak is higher than a real quad
   reaches and is worth revisiting once there is a log to compare against.
 
+## What a visiting pilot sees
+
+Five sections, in the order they need them: pick the radio, map the channels,
+fly, load a tune, read the instruments. The development instrumentation — raw
+axis values and the M0 jitter test — is folded into a collapsed
+**Diagnostics** block at the bottom. It still works and is still how the input
+path was measured; it is simply not what someone who has been sent a link is
+there for.
+
+The dev-only debug handle (`__fpvsim`) is absent from a production bundle —
+`import.meta.env.DEV` compiles it out, verified by grepping the built asset —
+so the browser check's deep assertions degrade to a smoke test against a real
+deployment. That is deliberate: a shipped page should not carry a load-bearing
+API into the world.
+
 ## Hosting it for someone else
 
 **Everything runs on the pilot's machine.** There is no `fetch`, no

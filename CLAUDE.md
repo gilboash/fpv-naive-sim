@@ -404,6 +404,22 @@ Do not use `--dump-dom --virtual-time-budget`: the rAF loop and the 1 kHz ticker
 never let virtual time idle and Chrome hangs. `SCREENSHOT=/path/x.png` on that
 command captures the page.
 
+## Page layout for visitors (2026-08-29)
+
+Five numbered sections in the order a pilot needs them — device, mapping, FPV
+view, rates, instruments — with raw axes and the jitter test folded into a
+collapsed Diagnostics block at the bottom. They still work; the elements keep
+their ids so every binding in main.ts is untouched, and a closed `<details>`
+still has its children in the DOM.
+
+Renumbering touches three places that reference section numbers: the start-here
+paragraph in index.html, and the uncalibrated-throttle notice in main.ts. Grep
+for `· Channel` before assuming a renumber is complete.
+
+Also removed: a `console.log` that dumped the whole jitter result on every run.
+`__fpvsim` was already compiled out of production by `import.meta.env.DEV`,
+confirmed by grepping the built bundle for it.
+
 ## Hosting for other pilots (2026-08-29)
 
 Gilboa wanted 2-3 pilots to try it remotely. It is entirely client-side —

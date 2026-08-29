@@ -344,3 +344,26 @@ tbody tr:hover { background: var(--panel-2); }
   padding: 0 4px;
   font-size: 12px;
 }
+
+/* ------------------------------------------------------------ diagnostics */
+
+.diagnostics {
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  background: #0f141c;
+  padding: 0 14px;
+  margin-top: 8px;
+}
+
+.diagnostics > summary {
+  cursor: pointer;
+  padding: 12px 0;
+  font-size: 13px;
+  color: #7d8899;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.diagnostics > summary:hover { color: #dbe3ee; }
+.diagnostics[open] > summary { border-bottom: 1px solid #2a3140; margin-bottom: 10px; }
+.diagnostics section { border: 0; padding: 0; background: none; }

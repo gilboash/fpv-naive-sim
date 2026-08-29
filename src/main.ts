@@ -368,7 +368,7 @@ function renderNotice(isolated: boolean): void {
     html =
       `<strong>Throttle is reading ${(commands.throttle * 100).toFixed(0)}%.</strong> ` +
       'If your sticks are at rest, that channel is not calibrated yet, and ' +
-      'arming will be refused until it reads zero. Go to <em>3 · Channel ' +
+      'arming will be refused until it reads zero. Go to <em>2 · Channel ' +
       'mapping</em>, use <em>Detect</em> on throttle, then <em>Calibrate ' +
       'endpoints</em> and sweep every stick to its stops.';
   }
@@ -500,8 +500,6 @@ function finishRun(): void {
   $<HTMLButtonElement>('jitter-start').disabled = false;
   $('jitter-progress').textContent = 'done';
   renderResults(lastResult);
-  // eslint-disable-next-line no-console
-  console.log('[fpvsim M0] jitter run', lastResult);
 }
 
 function statRow(name: string, s: Stats): string {
