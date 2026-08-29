@@ -750,6 +750,15 @@ shows a banner saying so. `public/_headers` covers Netlify and Cloudflare Pages.
 without that fallback, which is worth knowing since the repo already lives
 there.
 
+### From the Windows desktop
+
+`SSHPASS=… ./deploy-windows.sh` builds here, ships `dist/` plus a stdlib Python
+server, and restarts it on **127.0.0.1:5180**. The box needs no Node: the Mac
+builds, Windows hands over four static files, and every byte of computation
+happens in the visitor's browser. `tools/serve.py` sets COOP/COEP itself and,
+unlike `vite preview`, does not gate on the Host header — so a tunnel needs no
+allow-list.
+
 ### From your own machine, through a tunnel
 
 ```

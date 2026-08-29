@@ -452,6 +452,40 @@ figure in the README is the atomics backend and the fallback is described as
 "measurably worse" on no evidence. A 60 s run against the plain static server on
 :8099 would settle it.
 
+## Deployed on the Windows desktop (2026-08-29)
+
+`./deploy-windows.sh` with `SSHPASS` set. Same host as genius-invester
+(`gilboash@hotmail.com@192.168.7.54`), destination `C:\Users\gilbo\fpvsim`,
+serving **127.0.0.1:5180** for a Cloudflare tunnel to point at.
+
+**The box has no Node and does not need one.** The Mac builds; Windows serves
+four static files with `tools/serve.py`, stdlib only. Cloning the repo there
+would not help — it would deliver TypeScript that nothing on that machine can
+compile.
+
+Not `vite preview` either, for two reasons: it needs Node, and it gates on the
+Host header, which is the thing that would break a tunnel. `serve.py` does not.
+
+Two Windows-specific traps, both handled in that file and worth keeping:
+
+- Python takes MIME types from the **Windows registry** and can return
+  `text/plain` for `.js`. A module served as text/plain is refused by the
+  browser and the page silently never starts. The extension map is explicit.
+- `start /b` from an SSH session dies with the session. `start-fpvsim.bat` uses
+  PowerShell `Start-Process`, which detaches properly.
+
+And one deploy trap: `scp -r` **nests** a directory when the destination exists
+and **unpacks** it when it does not, so leaving the previous run's staging
+directory behind changes the layout of the next deploy. That is how a stray
+`C:\Users\gilbo\fpvsim\fpvsim` appeared. The script now clears staging first.
+
+Verified end to end by tunnelling `ssh -L 5181:127.0.0.1:5180` and running
+`node tools/browser-check.mjs http://127.0.0.1:5181/` against the live
+instance: isolated, atomics ticker, scene drawing, no page errors.
+
+**Known limitation:** it is a bare background process, so it does not survive a
+reboot. A Scheduled Task or the Docker path would fix that when it matters.
+
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:
 
