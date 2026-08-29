@@ -299,3 +299,48 @@ tbody tr:hover { background: var(--panel-2); }
   color: #ff6b6b;
   font-weight: 600;
 }
+
+/* ----------------------------------------------------------------- notice */
+
+.notice {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid;
+}
+
+.notice.bad {
+  background: #2a1618;
+  border-color: #5c2b30;
+  color: #ffc9cc;
+}
+
+.notice.warn {
+  background: #2a2416;
+  border-color: #5c4f2b;
+  color: #ffe6a8;
+}
+
+.notice strong { color: inherit; }
+
+.startup {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #9aa5b4;
+  background: #11161f;
+  border: 1px solid #2a3140;
+  border-left: 3px solid #4a9eff;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin: 0 0 18px;
+}
+
+.startup kbd {
+  background: #1c2430;
+  border: 1px solid #38414f;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 12px;
+}

@@ -137,6 +137,15 @@ const main = async () => {
   };
 
   let failed = 0;
+  let warned = 0;
+  const warn = (name, condition, detail) => {
+    if (condition) {
+      console.log(`  \x1b[32mPASS\x1b[0m ${name} — ${detail}`);
+    } else {
+      warned++;
+      console.log(`  \x1b[33mWARN\x1b[0m ${name} — ${detail}`);
+    }
+  };
   const check = (name, condition, detail) => {
     if (condition) {
       console.log(`  \x1b[32mPASS\x1b[0m ${name} — ${detail}`);
@@ -148,16 +157,87 @@ const main = async () => {
 
   console.log(`\n\x1b[1mBrowser check: ${URL_TO_CHECK}\x1b[0m`);
 
+  // Which mode we are in decides how isolation is judged. Against our own dev
+  // server it is a hard requirement and a regression if lost. Against an
+  // arbitrary deployed URL it is a property of that host's configuration: the
+  // page degrades on purpose and still flies, so it is a warning about
+  // deployment quality rather than a failure of the build.
+  const hasHandle = await evaluate('!!globalThis.__fpvsim');
+  const judge = hasHandle ? check : warn;
+
   const isolated = await evaluate('globalThis.crossOriginIsolated === true');
-  check('cross-origin isolated', isolated, isolated ? 'yes — SharedArrayBuffer available' : 'no');
+  judge(
+    'cross-origin isolated',
+    isolated,
+    isolated
+      ? 'yes — SharedArrayBuffer available'
+      : 'no — the host is not sending COOP/COEP, so the ticker falls back',
+  );
 
   const backend = await evaluate(
     `document.querySelectorAll('#status-pills .pill')[1]?.textContent ?? '(none)'`,
   );
-  check('ticker backend', /atomics/.test(backend), backend);
+  judge('ticker backend', /atomics/.test(backend), backend);
 
   const hasPanel = await evaluate(`!!document.querySelector('#flight-panel .fl-grid')`);
   check('flight panel rendered', hasPanel, hasPanel ? 'present' : 'missing');
+
+  // The deep checks reach into the page through a debug handle that only exists
+  // in a dev build, on purpose — a production bundle should not carry a
+  // load-bearing API into the world. Against a built artefact this degrades to
+  // a smoke test of the things that can be seen from outside, which is still
+  // worth having: it is the artefact you would actually hand to someone.
+  if (!hasHandle) {
+    console.log(`  \x1b[33mnote\x1b[0m  no debug handle — production build, running smoke checks only`);
+
+    const notice = await evaluate(`(() => {
+      const n = document.querySelector('#notice');
+      return { hidden: n?.hidden !== false, text: (n?.textContent || '').slice(0, 90) };
+    })()`);
+    check(
+      'degraded-state notice matches the environment',
+      isolated ? notice.hidden === true : notice.hidden === false,
+      isolated ? 'isolated, so no notice shown' : `notice shown: "${notice.text}"`,
+    );
+
+    // Read inside an animation frame. The drawing buffer is cleared at
+    // composite, so a readback outside the frame the app drew in sees nothing —
+    // which looks exactly like a renderer that is not working.
+    const canvas = await evaluate(`new Promise((resolve) => requestAnimationFrame(() => {
+      const c = document.querySelector('canvas');
+      if (!c || !c.width) return resolve({ ok: false });
+      const off = document.createElement('canvas');
+      off.width = c.width; off.height = c.height;
+      const ctx = off.getContext('2d');
+      ctx.drawImage(c, 0, 0);
+      const d = ctx.getImageData(0, 0, off.width, off.height).data;
+      let min = [255,255,255], max = [0,0,0];
+      for (let i = 0; i < d.length; i += 4 * 97) {
+        for (let k = 0; k < 3; k++) {
+          if (d[i+k] < min[k]) min[k] = d[i+k];
+          if (d[i+k] > max[k]) max[k] = d[i+k];
+        }
+      }
+      resolve({ ok: true, w: c.width, spread: Math.max(max[0]-min[0], max[1]-min[1], max[2]-min[2]) });
+    }))`);
+    check(
+      'the scene draws in the built page',
+      canvas.ok === true && canvas.spread > 30,
+      canvas.ok ? `${canvas.w}px wide, channel spread ${canvas.spread}` : 'no canvas',
+    );
+
+    await sleep(1500);
+    check('no page errors', problems.length === 0, problems.length === 0 ? 'clean' : `${problems.length} problem(s)`);
+    for (const p of problems) console.log(`      ${p}`);
+    const tail = warned > 0 ? ` (${warned} warning${warned === 1 ? '' : 's'})` : '';
+    console.log(
+      failed === 0
+        ? `\n\x1b[1mSmoke check passed${tail}\x1b[0m`
+        : `\n\x1b[1m${failed} check(s) failed${tail}\x1b[0m`,
+    );
+    cleanup(failed === 0 ? 0 : 1);
+    return;
+  }
 
   // The model must actually be stepping, which means the tick is reaching it.
   const t1 = await evaluate('globalThis.__fpvsim.flight.sim.time');
@@ -238,6 +318,32 @@ const main = async () => {
     'losing the link reads as no throttle',
     noLink.connected === false && noLink.throttle === 0,
     `connected ${noLink.connected}, throttle ${noLink.throttle}`,
+  );
+
+  // The insecure-context case: Chrome does not expose the Gamepad API over
+  // plain http, so the property is simply absent. poll() runs a thousand times
+  // a second, and unguarded it threw every one of them.
+  const noApi = await evaluate(`(async () => {
+    const { poller } = globalThis.__fpvsim;
+    const real = navigator.getGamepads;
+    Object.defineProperty(navigator, 'getGamepads', { value: undefined, configurable: true });
+    const before = globalThis.__fpvsimErrors ?? 0;
+    await new Promise((r) => setTimeout(r, 250));
+    const connected = poller.connected;
+    const notice = document.querySelector('#notice');
+    const shown = notice && notice.hidden === false ? notice.textContent : '';
+    Object.defineProperty(navigator, 'getGamepads', { value: real, configurable: true });
+    return { connected, shown, polls: poller.polls };
+  })()`);
+  check(
+    'a missing Gamepad API does not throw on the hot path',
+    problems.length === 0 && noApi.connected === false,
+    `${noApi.polls.toLocaleString()} polls, no device, no exceptions`,
+  );
+  check(
+    'and the page explains it needs HTTPS',
+    /https/i.test(noApi.shown ?? ''),
+    `"${(noApi.shown ?? '').slice(0, 70)}…"`,
   );
 
   check(

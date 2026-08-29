@@ -706,6 +706,65 @@ mesh, so the circuit's 76 volumes cannot drift from what is drawn.
   it recovers when the sticks centre, but the peak is higher than a real quad
   reaches and is worth revisiting once there is a log to compare against.
 
+## Hosting it for someone else
+
+**Everything runs on the pilot's machine.** There is no `fetch`, no
+`XMLHttpRequest`, no WebSocket and no beacon anywhere in the source; the only
+non-relative reference in the built page is a `data:` URI favicon. Physics,
+rendering, gamepad polling, log parsing and recording all happen in their
+browser, persistence is `localStorage`, and nothing is uploaded. The host serves
+four files, about 80 KB, once per visitor and then does nothing — three pilots
+or three hundred is the same load.
+
+Two things the host must get right, both of which fail quietly:
+
+### HTTPS, or there is no radio at all
+
+Browsers expose the Gamepad API only in a secure context. Over plain `http://`
+to anything but localhost the API is simply absent, and the page will say so
+rather than looking broken.
+
+### COOP/COEP, or the 1 kHz ticker degrades
+
+Without `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` the worker cannot allocate a
+`SharedArrayBuffer`, so the ticker falls back to `setTimeout(0)`. It still
+flies — the flight model is untouched — but loop pacing is worse, and the page
+shows a banner saying so. `public/_headers` covers Netlify and Cloudflare Pages.
+**GitHub Pages cannot set response headers at all**, so it cannot host this
+without that fallback, which is worth knowing since the repo already lives
+there.
+
+### From your own machine, through a tunnel
+
+```
+npm run build
+npm run preview                       # serves dist on :4173 with the headers
+cloudflared tunnel --url http://localhost:4173
+```
+
+`vite preview` already sends COOP/COEP, and the tunnel supplies HTTPS, so this
+keeps full timing fidelity with nothing to configure.
+
+One catch, and it fails on the very first request: Vite answers only to
+`localhost` and bare IPs unless told otherwise, and skips that check only over
+HTTPS. A tunnel arrives over plain HTTP carrying the *public* hostname, so
+without `preview.allowedHosts` every request returns
+`403 Blocked request`. `vite.config.ts` allows `.trycloudflare.com`; set
+`FPVSIM_ALLOWED_HOSTS` for a domain of your own. It is deliberately not `true`,
+which Vite's own docs flag as inviting DNS rebinding onto whatever network the
+machine is sitting on.
+
+### Checking a deployment
+
+`node tools/browser-check.mjs <url>` works against any of these. Against a dev
+server it runs the full suite through a debug handle that only a dev build
+carries; against a built artefact that handle is absent on purpose, and it
+degrades to a smoke test — isolation, ticker backend, the banner matching the
+environment, the scene actually drawing, and no page errors. Cross-origin
+isolation is reported as a warning rather than a failure there, because it is a
+property of the host rather than of the build.
+
 ## Related work on this machine
 
 - `../genius-invester` — Flask + SQLite portfolio portal and a running

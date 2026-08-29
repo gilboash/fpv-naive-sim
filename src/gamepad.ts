@@ -72,9 +72,27 @@ export class GamepadPoller {
     this.missedPolls = 0;
   }
 
+  /**
+   * False when the browser will not expose gamepads at all, as opposed to there
+   * being none plugged in. Chrome restricts the Gamepad API to secure contexts,
+   * so a page served over plain http:// to anything but localhost has no radio
+   * support whatever — advice a pilot needs, and completely different from
+   * "nothing is connected".
+   */
+  static get apiAvailable(): boolean {
+    return typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function';
+  }
+
   /** Hot path. Call from the ticker, not from rAF. */
   poll(tNow: number): boolean {
     this.polls++;
+    // Guarded like list() is. Unguarded this threw a thousand times a second on
+    // an insecure origin, which is exactly where a shared page ends up.
+    if (!navigator.getGamepads) {
+      this.connected = false;
+      this.missedPolls++;
+      return false;
+    }
     const pads = navigator.getGamepads();
     const gp = this.index >= 0 ? pads[this.index] : null;
     if (!gp) {

@@ -1,0 +1,12 @@
+# Cross-origin isolation, for Netlify and Cloudflare Pages.
+#
+# Without these the worker cannot allocate a SharedArrayBuffer, so the 1 kHz
+# ticker falls back to setTimeout(0) and loop timing degrades. The page detects
+# this and says so, but it is silent otherwise — nothing errors, it just paces
+# worse, which is the least helpful kind of failure.
+#
+# GitHub Pages cannot serve custom headers at all, so it cannot host this
+# without that fallback.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp

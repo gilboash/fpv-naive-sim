@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%9A%81%3C/text%3E%3C/svg%3E" />
-    <title>fpvsim — M0 input spike</title>
+    <title>fpvsim — FPV trainer</title>
   </head>
   <body>
     <header>
@@ -12,7 +12,17 @@
       <div id="status-pills" class="pills"></div>
     </header>
 
+    <div id="notice" class="notice" hidden></div>
+
     <main>
+      <p class="startup">
+        <strong>New here?</strong> Put the radio in USB Joystick mode, plug it in, and
+        <strong>move a stick</strong> — browsers hide gamepads until they see activity.
+        Then: pick it in <em>1 · Device</em>, map your channels in <em>3 · Channel mapping</em>,
+        load your rates in <em>6</em> if you have a Blackbox log, and fly in <em>5 · FPV view</em>
+        (throttle down, then <kbd>A</kbd> to arm).
+      </p>
+
       <section id="device">
         <h2>1 · Device</h2>
         <div class="row">

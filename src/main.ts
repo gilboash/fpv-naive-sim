@@ -96,6 +96,9 @@ const tune = new TunePanel($('tune-panel'), flight.sim);
 // The scene owns where the quad belongs once a track is loaded, and which of
 // the reset modes is in force.
 flight.onReset = () => scene.reset();
+flight.onArmed = () => {
+  hasArmed = true;
+};
 
 /**
  * The whole input path, in one place, with nothing awaited. The physics step
@@ -328,6 +331,53 @@ function startDetect(ch: Channel): void {
 
 let lastRender = 0;
 
+/** Set once the pilot has armed successfully, so first-run advice can retire. */
+let hasArmed = false;
+
+/**
+ * One line, in words, when something about the environment will confuse a
+ * visiting pilot. The status pills report `isolated: no` and `ticker: timeout`
+ * accurately and mean nothing to someone who has just been sent a link.
+ *
+ * Ordered by how badly it blocks them: no radio support at all, then degraded
+ * timing, then the first-run dead end where an uncalibrated throttle reads
+ * mid-travel and arming is refused for a reason that sounds like the pilot's
+ * fault.
+ */
+function renderNotice(isolated: boolean): void {
+  const box = $('notice');
+  let cls = 'notice bad';
+  let html = '';
+
+  if (!GamepadPoller.apiAvailable) {
+    html =
+      '<strong>This page cannot see your radio.</strong> Browsers only expose ' +
+      'gamepads over HTTPS, and this page was served over plain http. Ask ' +
+      'whoever sent you the link for an https:// one — everything else works, ' +
+      'but nothing can be flown without it.';
+  } else if (!isolated) {
+    cls = 'notice warn';
+    html =
+      '<strong>Timing is running in fallback mode.</strong> The host is not ' +
+      'sending the COOP/COEP headers, so the 1 kHz loop is paced by a timer ' +
+      'rather than by shared memory. It still flies and the flight model is ' +
+      'unaffected — this is loop precision only, and worth mentioning if ' +
+      'something feels stuttery.';
+  } else if (poller.connected && !hasArmed && commands.throttle > 0.05) {
+    cls = 'notice warn';
+    html =
+      `<strong>Throttle is reading ${(commands.throttle * 100).toFixed(0)}%.</strong> ` +
+      'If your sticks are at rest, that channel is not calibrated yet, and ' +
+      'arming will be refused until it reads zero. Go to <em>3 · Channel ' +
+      'mapping</em>, use <em>Detect</em> on throttle, then <em>Calibrate ' +
+      'endpoints</em> and sweep every stick to its stops.';
+  }
+
+  box.className = cls;
+  box.innerHTML = html;
+  box.hidden = html.length === 0;
+}
+
 function render(tNow: number): void {
   requestAnimationFrame(render);
   run?.recordFrame(tNow);
@@ -351,6 +401,8 @@ function render(tNow: number): void {
     { text: `polls: ${poller.polls.toLocaleString()}`, cls: '' },
   ];
   pills.innerHTML = items.map((i) => `<span class="pill ${i.cls}">${i.text}</span>`).join('');
+
+  renderNotice(coi);
 
   // raw axes
   if (axisRows.length !== poller.axisCount) buildRawRows(poller.axisCount);

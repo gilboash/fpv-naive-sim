@@ -404,6 +404,38 @@ Do not use `--dump-dom --virtual-time-budget`: the rAF loop and the 1 kHz ticker
 never let virtual time idle and Chrome hangs. `SCREENSHOT=/path/x.png` on that
 command captures the page.
 
+## Hosting for other pilots (2026-08-29)
+
+Gilboa wanted 2-3 pilots to try it remotely. It is entirely client-side —
+verified, no network calls of any kind, four files and ~80 KB — so the host does
+nothing per pilot. Three things had to be fixed first, all of them silent:
+
+- **Vite blocks tunnel hostnames.** It answers only to localhost and bare IPs
+  unless told, and skips that check only over HTTPS; a tunnel arrives over plain
+  HTTP with the public hostname. Confirmed by curl: `403 Blocked request`.
+  `preview.allowedHosts` now allows `.trycloudflare.com`, overridable with
+  `FPVSIM_ALLOWED_HOSTS`. Not `true` — Vite's docs call that a DNS-rebinding
+  exposure.
+- **`poll()` called `navigator.getGamepads()` unguarded** at 1 kHz. Chrome does
+  not expose the API on insecure origins, so sharing over plain http on a LAN
+  threw a thousand times a second. Guarded, with `GamepadPoller.apiAvailable`
+  so the UI can tell "no radio" from "this browser will never show you one".
+- **Degradation was legible only as a pill.** `isolated: no` means nothing to a
+  visiting pilot, so there is now a banner in words for a missing Gamepad API,
+  for lost isolation, and for the first-run dead end where an uncalibrated
+  throttle reads 50% and arming is refused for a reason that sounds like the
+  pilot's fault.
+
+`tools/browser-check.mjs` now takes any URL. The deep checks need the dev-only
+debug handle; against a production build it degrades to a smoke test and reports
+isolation as a warning rather than a failure, since that is the host's property
+and not the build's.
+
+Still unmeasured: what the `setTimeout` fallback actually costs. Every jitter
+figure in the README is the atomics backend and the fallback is described as
+"measurably worse" on no evidence. A 60 s run against the plain static server on
+:8099 would settle it.
+
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:
 

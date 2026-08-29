@@ -75,6 +75,8 @@ export class FlightPanel {
    * on which listener happens to run last.
    */
   onReset: (() => void) | null = null;
+  /** Fired on a successful arm, so first-run guidance can retire itself. */
+  onArmed: (() => void) | null = null;
 
   private rateBars: Bar[];
   private motorBars: Bar[];
@@ -305,6 +307,7 @@ export class FlightPanel {
     if (this.sim.armed) return;
     if (this.sim.arm(this.lastInput)) {
       this.armBtn.textContent = 'Disarm';
+      this.onArmed?.();
       this.setStatus('armed');
     } else if (this.sim.crashed) {
       this.setStatus('crashed — press R or Reset first');
