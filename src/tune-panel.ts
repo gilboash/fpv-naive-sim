@@ -36,6 +36,10 @@ interface Stored {
 
 export class TunePanel {
   private sim: FlightSim;
+  private pidHost: HTMLElement | null = null;
+  private pidInputs: HTMLInputElement[][] = [];
+  private filterInputs = new Map<string, HTMLInputElement>();
+  private applyTimer: ReturnType<typeof setTimeout> | null = null;
   private rates: RateProfile = defaultRates();
   private pids: PidProfile = defaultPids();
   private inputs: HTMLInputElement[][] = [];
@@ -45,8 +49,17 @@ export class TunePanel {
   private status: HTMLElement;
   private curve: SVGPathElement;
 
-  constructor(root: HTMLElement, sim: FlightSim) {
+  /**
+   * One owner of the tune, two views onto it.
+   *
+   * Rates belong in Settings and PIDs in Instruments, but they are one tune and
+   * one storage key. Two panels each owning half of it, both writing
+   * `fpvsim.tune.v1`, would be a race waiting to happen and would leave the
+   * Blackbox import updating only one of them.
+   */
+  constructor(root: HTMLElement, sim: FlightSim, pidHost?: HTMLElement) {
     this.sim = sim;
+    this.pidHost = pidHost ?? null;
     this.load();
 
     const controls = el('div', 'row');
@@ -99,6 +112,7 @@ export class TunePanel {
       this.typeSel.value = this.rates.type;
       this.relabel();
       this.writeInputs();
+      this.writePidInputs();
       this.apply();
       this.status.textContent = 'back to defaults';
     };
@@ -160,9 +174,125 @@ export class TunePanel {
     this.summary = el('p', 'hint', '');
     root.appendChild(this.summary);
 
+    if (this.pidHost) this.buildPidPanel(this.pidHost);
+
     this.relabel();
     this.writeInputs();
     this.apply();
+  }
+
+  // ------------------------------------------------------------ PID editing
+
+  private buildPidPanel(host: HTMLElement): void {
+    host.innerHTML = '';
+
+    const grid = el('div', 'tune-grid pid-grid');
+    for (const h of ['', 'P', 'I', 'D', 'F', 'D min']) {
+      grid.appendChild(el('span', 'tune-head', h));
+    }
+    AXES.forEach((axis, ai) => {
+      grid.appendChild(el('span', 'tune-axis', axis));
+      const row: HTMLInputElement[] = [];
+      for (const field of ['p', 'i', 'd', 'f', 'dMin'] as const) {
+        const input = el<HTMLInputElement>('input');
+        input.type = 'number';
+        input.min = '0';
+        input.max = '250';
+        input.step = '1';
+        input.oninput = () => {
+          const v = Number(input.value);
+          if (!Number.isFinite(v)) return;
+          if (field === 'dMin') {
+            const arr = (this.pids.dMin ??= [0, 0, 0]);
+            arr[ai] = v;
+          } else {
+            this.pids[AXES[ai]!][field] = v;
+          }
+          this.scheduleApply();
+        };
+        row.push(input);
+        grid.appendChild(input);
+      }
+      this.pidInputs.push(row);
+    });
+    host.appendChild(grid);
+
+    const filters = el('div', 'row');
+    const addFilter = (
+      key: string,
+      label: string,
+      get: () => number,
+      set: (v: number) => void,
+    ): void => {
+      const wrap = el('label', undefined, `${label} `);
+      const input = el<HTMLInputElement>('input');
+      input.type = 'number';
+      input.min = '0';
+      input.max = '2000';
+      input.step = '5';
+      input.value = String(Math.round(get()));
+      input.oninput = () => {
+        const v = Number(input.value);
+        if (Number.isFinite(v)) {
+          set(v);
+          this.scheduleApply();
+        }
+      };
+      wrap.appendChild(input);
+      wrap.appendChild(document.createTextNode(' Hz'));
+      filters.appendChild(wrap);
+      this.filterInputs.set(key, input);
+    };
+    addFilter('gyro', 'Gyro LPF', () => this.pids.gyroLowpassHz, (v) => (this.pids.gyroLowpassHz = v));
+    addFilter('dterm', 'D LPF', () => this.pids.dtermLowpassHz, (v) => (this.pids.dtermLowpassHz = v));
+    addFilter('dterm2', 'D LPF 2', () => this.pids.dtermLowpass2Hz ?? 0, (v) => (this.pids.dtermLowpass2Hz = v));
+    addFilter('ff', 'FF smoothing', () => this.pids.feedforwardSmoothHz ?? 125, (v) => (this.pids.feedforwardSmoothHz = v));
+    host.appendChild(filters);
+
+    this.pidStatus = el('p', 'hint', '');
+    host.appendChild(this.pidStatus);
+    this.writePidInputs();
+  }
+
+  private pidStatus: HTMLElement | null = null;
+
+  private writePidInputs(): void {
+    this.pidInputs.forEach((row, ai) => {
+      const g = this.pids[AXES[ai]!];
+      row[0]!.value = String(g.p);
+      row[1]!.value = String(g.i);
+      row[2]!.value = String(g.d);
+      row[3]!.value = String(g.f);
+      row[4]!.value = String(this.pids.dMin?.[ai] ?? 0);
+    });
+    for (const [key, input] of this.filterInputs) {
+      const v =
+        key === 'gyro' ? this.pids.gyroLowpassHz
+        : key === 'dterm' ? this.pids.dtermLowpassHz
+        : key === 'dterm2' ? (this.pids.dtermLowpass2Hz ?? 0)
+        : (this.pids.feedforwardSmoothHz ?? 125);
+      input.value = String(Math.round(v));
+    }
+  }
+
+  /**
+   * Debounced, because applyTune() rebuilds the RateController — which zeroes
+   * the integrators and the filter state. Doing that on every keystroke means
+   * a jolt per digit typed while airborne, and typing "120" would apply 1, then
+   * 12, then 120.
+   */
+  private scheduleApply(): void {
+    if (this.applyTimer !== null) clearTimeout(this.applyTimer);
+    if (this.pidStatus) this.pidStatus.textContent = 'editing…';
+    this.applyTimer = setTimeout(() => {
+      this.applyTimer = null;
+      this.apply();
+      if (this.pidStatus) {
+        this.pidStatus.textContent = this.sim.armed
+          ? 'applied — the controller was rebuilt, so I-terms and filters restarted'
+          : 'applied';
+      }
+    }, 700);
   }
 
   private load(): void {
@@ -224,6 +354,7 @@ export class TunePanel {
       this.typeSel.value = this.rates.type;
       this.relabel();
       this.writeInputs();
+      this.writePidInputs();
       this.apply();
       this.status.textContent =
         `loaded ${tune.craftName || 'tune'}` + (tune.firmware ? ` · ${tune.firmware}` : '');

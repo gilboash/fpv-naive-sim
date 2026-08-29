@@ -12,6 +12,7 @@
 import type { Commands } from './mapping.ts';
 import { FlightSim } from './flight/sim.ts';
 import { kronos } from './flight/airframe.ts';
+import { QuadView } from './render/quad-view.ts';
 import { FlightRecorder } from './flight/recorder.ts';
 import { maxRate } from './flight/rates.ts';
 import { AXIS_ROLL } from './flight/rates.ts';
@@ -82,8 +83,9 @@ export class FlightPanel {
   private motorBars: Bar[];
   private readouts: Record<string, HTMLElement> = {};
   private armBtn: HTMLButtonElement;
-  private horizon: SVGGElement;
-  private horizonRoll: SVGGElement;
+  quadCanvas: HTMLCanvasElement;
+  /** Null when WebGL is unavailable; the rest of the panel is unaffected. */
+  quadView: QuadView | null = null;
   private statusEl: HTMLElement;
   private costEma = 0;
   private recBtn: HTMLButtonElement;
@@ -95,59 +97,10 @@ export class FlightPanel {
   constructor(root: HTMLElement) {
     const grid = el('div', 'fl-grid');
 
-    // ---- left: attitude and the headline numbers
+    // ---- left: the airframe itself, and the headline numbers
     const left = el('div', 'fl-col');
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('viewBox', '-100 -70 200 140');
-    svg.setAttribute('class', 'fl-horizon');
-    const clip = document.createElementNS(svgNS, 'clipPath');
-    clip.setAttribute('id', 'fl-clip');
-    const clipRect = document.createElementNS(svgNS, 'rect');
-    clipRect.setAttribute('x', '-100');
-    clipRect.setAttribute('y', '-70');
-    clipRect.setAttribute('width', '200');
-    clipRect.setAttribute('height', '140');
-    clip.appendChild(clipRect);
-    svg.appendChild(clip);
-
-    const clipped = document.createElementNS(svgNS, 'g');
-    clipped.setAttribute('clip-path', 'url(#fl-clip)');
-    const rollG = document.createElementNS(svgNS, 'g');
-    const pitchG = document.createElementNS(svgNS, 'g');
-    const sky = document.createElementNS(svgNS, 'rect');
-    sky.setAttribute('x', '-300');
-    sky.setAttribute('y', '-400');
-    sky.setAttribute('width', '600');
-    sky.setAttribute('height', '400');
-    sky.setAttribute('class', 'fl-sky');
-    const ground = document.createElementNS(svgNS, 'rect');
-    ground.setAttribute('x', '-300');
-    ground.setAttribute('y', '0');
-    ground.setAttribute('width', '600');
-    ground.setAttribute('height', '400');
-    ground.setAttribute('class', 'fl-ground');
-    const horizonLine = document.createElementNS(svgNS, 'line');
-    horizonLine.setAttribute('x1', '-300');
-    horizonLine.setAttribute('x2', '300');
-    horizonLine.setAttribute('y1', '0');
-    horizonLine.setAttribute('y2', '0');
-    horizonLine.setAttribute('class', 'fl-horizon-line');
-    pitchG.appendChild(sky);
-    pitchG.appendChild(ground);
-    pitchG.appendChild(horizonLine);
-    rollG.appendChild(pitchG);
-    clipped.appendChild(rollG);
-    svg.appendChild(clipped);
-
-    // Fixed aircraft reference, drawn over the moving world.
-    const ref = document.createElementNS(svgNS, 'path');
-    ref.setAttribute('d', 'M -40 0 L -14 0 M 14 0 L 40 0 M 0 -6 L 0 6');
-    ref.setAttribute('class', 'fl-ref');
-    svg.appendChild(ref);
-    this.horizon = pitchG;
-    this.horizonRoll = rollG;
-    left.appendChild(svg);
+    this.quadCanvas = el<HTMLCanvasElement>('canvas', 'fl-quad');
+    left.appendChild(this.quadCanvas);
 
     const nums = el('div', 'fl-nums');
     for (const [key, label] of [
@@ -266,6 +219,13 @@ export class FlightPanel {
     );
     root.appendChild(hint);
 
+    try {
+      this.quadView = new QuadView(this.quadCanvas, this.sim.airframe);
+    } catch {
+      // No WebGL: the numbers and bars below are the useful part anyway.
+      this.quadCanvas.style.display = 'none';
+    }
+
     globalThis.addEventListener('keydown', (ev: Event) => {
       const e = ev as KeyboardEvent;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
@@ -273,6 +233,36 @@ export class FlightPanel {
       else if (e.key === 'd' || e.key === 'D') this.disarm();
       else if (e.key === 'r' || e.key === 'R') this.reset();
     });
+  }
+
+  /**
+   * Follow an arm switch, which is a level rather than an event.
+   *
+   * Called every tick while a switch is bound. Arming can still be refused —
+   * throttle up, or a crashed quad — and a refusal must not be sticky: the
+   * pilot lowers the throttle and it arms, without flicking the switch again.
+   */
+  setArmLevel(on: boolean, input: Commands): void {
+    if (on === this.sim.armed) return;
+    if (on) {
+      // The caller's commands, not this.lastInput: that is only refreshed
+      // inside step(), which runs after this, so it would be a tick stale.
+      // Immaterial at 1 kHz and still the wrong thing to depend on.
+      if (this.sim.arm(input)) {
+        this.armBtn.textContent = 'Disarm';
+        this.onArmed?.();
+        this.setStatus('armed — from the switch');
+      } else {
+        this.setStatus(
+          this.sim.crashed
+            ? 'crashed — reset before the switch can arm'
+            : 'switch is on, but the throttle is not down',
+        );
+      }
+    } else {
+      this.disarm();
+      this.setStatus('disarmed — from the switch');
+    }
   }
 
   reset(): void {
@@ -432,6 +422,14 @@ export class FlightPanel {
     this.stepCostUs = this.costEma;
   }
 
+  /**
+   * The 3D quad, drawn every animation frame rather than at the panel's 30 Hz,
+   * because a spinning prop at 30 Hz looks like a strobe.
+   */
+  renderQuad(nowMs: number): void {
+    this.quadView?.render(this.sim.telemetry, nowMs);
+  }
+
   /** Called from the 30 Hz render loop. Never from the tick. */
   render(): void {
     const t = this.sim.telemetry;
@@ -442,8 +440,6 @@ export class FlightPanel {
         `recording ${Math.min(100, pct).toFixed(0)}% — ${this.recorder.sampleCount.toLocaleString()} samples`;
     }
 
-    this.horizonRoll.setAttribute('transform', `rotate(${-t.attitude.roll})`);
-    this.horizon.setAttribute('transform', `translate(0 ${t.attitude.pitch * 1.6})`);
 
     this.readouts.alt!.textContent = `${t.altitude.toFixed(1)} m`;
     this.readouts.spd!.textContent = `${t.speed.toFixed(1)} m/s`;

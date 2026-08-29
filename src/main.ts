@@ -1,5 +1,10 @@
 import './style.css';
 import {
+  auxActive,
+  AUX_ACTIONS,
+  AUX_INFO,
+  type AuxAction,
+  type AuxBinding,
   CHANNELS,
   CHANNEL_INFO,
   applyModePreset,
@@ -13,9 +18,17 @@ import {
   type Mapping,
   type StickMode,
 } from './mapping.ts';
-import { AxisDetector, EndpointCalibrator, GamepadPoller, MAX_BUTTONS } from './gamepad.ts';
+import {
+  AxisDetector,
+  EndpointCalibrator,
+  GamepadPoller,
+  MAX_BUTTONS,
+  SwitchDetector,
+} from './gamepad.ts';
 import { JitterRun, type RunResult, type Stats } from './jitter.ts';
 import { FlightPanel } from './flight-panel.ts';
+import { AuxControl } from './aux-control.ts';
+import { Tabs } from './tabs.ts';
 import { SceneView } from './scene-view.ts';
 import { TunePanel } from './tune-panel.ts';
 import TickerWorker from './ticker.worker.ts?worker';
@@ -91,14 +104,18 @@ function setTicking(on: boolean): void {
 // finished by then, but relying on that would make the ordering a trap for
 // whoever moves this next.
 const flight = new FlightPanel($('flight-panel'));
+const auxControl = new AuxControl();
+const switchDetector = new SwitchDetector(poller);
 const scene = new SceneView($('scene-view'), flight.sim);
-const tune = new TunePanel($('tune-panel'), flight.sim);
+const tune = new TunePanel($('tune-panel'), flight.sim, $('pid-panel'));
 // The scene owns where the quad belongs once a track is loaded, and which of
 // the reset modes is in force.
 flight.onReset = () => scene.reset();
 flight.onArmed = () => {
   hasArmed = true;
 };
+
+const tabs = new Tabs();
 
 /**
  * The whole input path, in one place, with nothing awaited. The physics step
@@ -123,6 +140,34 @@ function onTick(fired: number, scheduled: number): void {
     detectingChannel = null;
   }
 
+  // Binding a switch. Threshold sits between the two positions rather than at
+  // zero: a three-position switch reads -1/0/+1, and a threshold of 0 would
+  // make the middle position ambiguous.
+  const bound = switchDetector.update(fired);
+  if (bindingAux && bound) {
+    const b = mapping.aux[bindingAux];
+    b.source = bound.source;
+    b.index = bound.index;
+    b.invert = bound.invert;
+    b.threshold = bound.source === 'button' ? 0.5 : Math.abs(bound.onValue) / 2;
+    bindMessage = `${AUX_INFO[bindingAux].label} → ${bound.source} ${bound.index}${bound.invert ? ' (inverted)' : ''}`;
+    bindingAux = null;
+    auxControl.reset();
+    persist();
+    queueMicrotask(buildAuxRows);
+  } else if (bindingAux && !switchDetector.active) {
+    bindMessage = `Nothing moved far enough — flick the switch fully and try again.`;
+    bindingAux = null;
+  }
+
+  const aux = auxControl.update(
+    mapping,
+    poller.axes as unknown as number[],
+    poller.buttons as unknown as number[],
+    poller.connected,
+  );
+  if (mapping.aux.reset.source !== 'none' && aux.resetEdge) flight.reset();
+
   commands = computeCommands(mapping, poller.axes as unknown as number[]);
 
   // No link means no input, and that has to be said explicitly. With no device
@@ -137,6 +182,10 @@ function onTick(fired: number, scheduled: number): void {
     commands.pitch = 0;
     commands.yaw = 0;
   }
+
+  // The arm switch is followed after the commands are computed, so the throttle
+  // it is checked against is this tick's rather than the last one's.
+  if (mapping.aux.arm.source !== 'none') flight.setArmLevel(aux.armOn, commands);
 
   // The physics step, in the tick and immediately after the poll — the position
   // M0 existed to make safe. It costs a few microseconds of a 1000 us budget.
@@ -186,6 +235,9 @@ function refreshDevices(): void {
 
 function selectDevice(index: number, id: string): void {
   poller.select(index);
+  // A binding on the old radio says nothing about the new one, and the arm
+  // guard in particular has to be re-earned on the new device.
+  auxControl.reset();
   poller.id = id;
   mapping = loadMapping(id) ?? newMapping(id);
   saveNote = loadMapping(id) ? 'loaded saved mapping' : 'new mapping (mode 2 preset)';
@@ -242,6 +294,107 @@ function buildRawRows(axisCount: number): void {
 
 interface ChannelRow { root: HTMLElement; select: HTMLSelectElement; out: HTMLElement; fill: HTMLElement; detect: HTMLButtonElement; }
 const channelRows = new Map<Channel, ChannelRow>();
+
+// ---------------------------------------------------------------- aux rows
+
+interface AuxRow {
+  root: HTMLElement;
+  sourceSel: HTMLSelectElement;
+  indexSel: HTMLSelectElement;
+  invert: HTMLInputElement;
+  state: HTMLElement;
+  detect: HTMLButtonElement;
+}
+
+const auxRows = new Map<AuxAction, AuxRow>();
+let bindingAux: AuxAction | null = null;
+let bindMessage = '';
+
+function startBind(action: AuxAction): void {
+  bindingAux = action;
+  bindMessage = `Flick the ${AUX_INFO[action].label.toLowerCase()} switch now…`;
+  switchDetector.start(performance.now());
+}
+
+function buildAuxRows(): void {
+  const host = $('aux-rows');
+  host.innerHTML = '';
+  auxRows.clear();
+
+  for (const action of AUX_ACTIONS) {
+    const b = mapping.aux[action];
+    const root = document.createElement('div');
+    root.className = 'channel';
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = AUX_INFO[action].label;
+
+    const detect = document.createElement('button');
+    detect.type = 'button';
+    detect.textContent = 'Bind';
+    detect.onclick = () => startBind(action);
+
+    const sourceSel = document.createElement('select');
+    for (const [v, label] of [
+      ['none', 'unbound'],
+      ['axis', 'axis'],
+      ['button', 'button'],
+    ] as const) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = label;
+      sourceSel.append(o);
+    }
+    sourceSel.value = b.source;
+    sourceSel.onchange = () => {
+      b.source = sourceSel.value as AuxBinding['source'];
+      if (b.source !== 'none' && b.index < 0) b.index = 0;
+      auxControl.reset();
+      persist();
+      buildAuxRows();
+    };
+
+    const indexSel = document.createElement('select');
+    const rebuildIndexes = (): void => {
+      indexSel.innerHTML = '';
+      const n = b.source === 'button' ? Math.max(poller.buttonCount, 8) : Math.max(poller.axisCount, 8);
+      for (let i = 0; i < n; i++) {
+        const o = document.createElement('option');
+        o.value = String(i);
+        o.textContent = `${b.source === 'button' ? 'button' : 'axis'} ${i}`;
+        indexSel.append(o);
+      }
+      indexSel.value = String(Math.max(0, b.index));
+      indexSel.disabled = b.source === 'none';
+    };
+    rebuildIndexes();
+    indexSel.onchange = () => {
+      b.index = Number(indexSel.value);
+      auxControl.reset();
+      persist();
+    };
+
+    const invLabel = document.createElement('label');
+    const invert = document.createElement('input');
+    invert.type = 'checkbox';
+    invert.checked = b.invert;
+    invert.disabled = b.source === 'none';
+    invert.onchange = () => {
+      b.invert = invert.checked;
+      auxControl.reset();
+      persist();
+    };
+    invLabel.append(invert, document.createTextNode(' invert'));
+
+    const state = document.createElement('span');
+    state.className = 'aux-state';
+
+    root.append(name, detect, sourceSel, indexSel, invLabel, state);
+    host.append(root);
+    auxRows.set(action, { root, sourceSel, indexSel, invert, state, detect });
+  }
+}
 
 function buildChannelRows(): void {
   const host = $('channel-rows');
@@ -396,12 +549,17 @@ function render(tNow: number): void {
 
   // The 3D view draws every frame; the text panels do not need to, and
   // rebuilding their DOM at display rate would cost more than the scene does.
-  scene.render();
+  // Only the visible tab draws. The physics is unaffected either way — it runs
+  // on the worker ticker, so the quad keeps flying while you are in Settings.
+  if (tabs.visible('fly')) scene.render();
+  // The quad model draws every frame too: a prop stepped at 30 Hz strobes.
+  if (tabs.visible('instruments')) flight.renderQuad(tNow);
 
   if (tNow - lastRender < 33) return; // 30 Hz is plenty for text
   lastRender = tNow;
 
   flight.render();
+  if (tabs.visible('fly')) scene.updateSticks(commands, mapping.mode);
 
   // pills
   const pills = $('status-pills');
@@ -415,6 +573,29 @@ function render(tNow: number): void {
   pills.innerHTML = items.map((i) => `<span class="pill ${i.cls}">${i.text}</span>`).join('');
 
   renderNotice(coi);
+
+  // Aux switch state, live, so a pilot can see the binding working before they
+  // trust it in the air.
+  for (const action of AUX_ACTIONS) {
+    const row = auxRows.get(action);
+    if (!row) continue;
+    const b = mapping.aux[action];
+    row.detect.textContent = bindingAux === action ? 'flick it…' : 'Bind';
+    if (b.source === 'none') {
+      row.state.textContent = 'unbound';
+      row.state.className = 'aux-state';
+      continue;
+    }
+    const on = auxActive(b, poller.axes as unknown as number[], poller.buttons as unknown as number[]);
+    if (action === 'arm' && on && !auxControl.state.armReady) {
+      row.state.textContent = 'ON — flick off to enable';
+      row.state.className = 'aux-state warn';
+    } else {
+      row.state.textContent = on ? 'ON' : 'off';
+      row.state.className = on ? 'aux-state on' : 'aux-state';
+    }
+  }
+  $('bind-message').textContent = bindMessage;
 
   // raw axes
   if (axisRows.length !== poller.axisCount) buildRawRows(poller.axisCount);
@@ -644,13 +825,14 @@ $('jitter-start').onclick = startRun;
 // model without a radio attached. Stripped from a production build by the
 // import.meta.env.DEV guard, so it cannot become a load-bearing API.
 if (import.meta.env.DEV) {
-  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune };
+  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl };
 }
 
 globalThis.addEventListener('gamepadconnected', refreshDevices);
 globalThis.addEventListener('gamepaddisconnected', refreshDevices);
 
 buildChannelRows();
+buildAuxRows();
 refreshDevices();
 requestAnimationFrame(render);
 // Devices stay hidden until the browser sees activity; keep looking.

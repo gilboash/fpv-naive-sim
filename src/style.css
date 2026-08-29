@@ -154,20 +154,15 @@ tbody tr:hover { background: var(--panel-2); }
 
 .fl-col { min-width: 0; }
 
-.fl-horizon {
+.fl-quad {
   width: 100%;
-  height: auto;
-  max-height: 190px;
+  aspect-ratio: 4 / 3;
+  max-height: 220px;
   border: 1px solid #2a3140;
   border-radius: 6px;
-  background: #0d1117;
+  background: #11161f;
   display: block;
 }
-
-.fl-sky { fill: #1d3557; }
-.fl-ground { fill: #3d2b1f; }
-.fl-horizon-line { stroke: #cbd5e1; stroke-width: 1.5; }
-.fl-ref { stroke: #f4b400; stroke-width: 2.5; fill: none; }
 
 .fl-nums {
   display: grid;
@@ -367,3 +362,92 @@ tbody tr:hover { background: var(--panel-2); }
 .diagnostics > summary:hover { color: #dbe3ee; }
 .diagnostics[open] > summary { border-bottom: 1px solid #2a3140; margin-bottom: 10px; }
 .diagnostics section { border: 0; padding: 0; background: none; }
+
+/* -------------------------------------------------------------------- aux */
+
+.sub-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7d8899;
+  margin: 18px 0 6px;
+  font-weight: 600;
+}
+
+.aux-state {
+  font-size: 12px;
+  color: #5c6675;
+  font-variant-numeric: tabular-nums;
+}
+
+.aux-state.on { color: #35c46b; font-weight: 600; }
+.aux-state.warn { color: #f4b400; }
+
+/* ------------------------------------------------------------ fpv overlay */
+
+.fpv-stage {
+  position: relative;
+  display: block;
+  background: #0d1117;
+  border-radius: 6px;
+}
+
+.fpv-overlay {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 210px;
+  max-width: 45%;
+  pointer-events: none;
+}
+
+.stick-view { width: 100%; height: auto; display: block; }
+.stick-box { fill: rgba(13, 17, 23, 0.55); stroke: rgba(219, 227, 238, 0.35); stroke-width: 1; }
+.stick-cross { stroke: rgba(219, 227, 238, 0.22); stroke-width: 0.8; fill: none; }
+.stick-dot { fill: #f4b400; stroke: rgba(13, 17, 23, 0.8); stroke-width: 1; }
+
+/* Fullscreen: the stage fills the screen and the canvas fills the stage. */
+.fpv-stage:fullscreen { border-radius: 0; }
+.fpv-stage:fullscreen .fpv-canvas {
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+}
+.fpv-stage:fullscreen .fpv-overlay { right: 24px; bottom: 24px; width: 300px; }
+
+/* ------------------------------------------------------------------- tabs */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #2a3140;
+}
+
+.tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 9px 16px;
+  font-size: 14px;
+  color: #7d8899;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tab:hover { color: #dbe3ee; }
+
+.tab.active {
+  color: #4a9eff;
+  border-bottom-color: #4a9eff;
+}
+
+.panel[hidden] { display: none; }
+
+.pid-grid {
+  grid-template-columns: 52px repeat(5, 68px);
+}

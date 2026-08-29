@@ -363,8 +363,52 @@ directly overhead there. They climbed into it, crashed, disarmed and fell back,
 reporting a net climb of zero — a puzzling failure about entirely the wrong
 subsystem. Flight-model checks now clear `sim.obstacles` first.
 
+## Radio control, tabs and the quad instrument (2026-08-30)
+
+**Aux switches** (`src/aux-control.ts`, `src/mapping.ts`): arm and reset bind to
+an axis or a button. Arm is a **level**, as on a flight controller; reset is an
+**edge**. A switch already on at page load will not arm until seen off once, and
+link loss drops both the level and that guard — a reconnection re-earns it.
+Storage is v3; the migration adds unbound aux and touches nothing else, with a
+test asserting a v2 mapping keeps its endpoints, centre and inversion.
+
+**Three tabs** (`src/tabs.ts`): go fly, settings, instruments. Only the visible
+tab renders — two GL contexts drawing invisible frames is pure waste — but the
+physics is deliberately unaffected, because it runs on the worker ticker rather
+than rAF. There is a test that the quad keeps flying while the fly tab is
+hidden, since freezing it would be the obvious wrong fix.
+
+**The quad instrument** (`src/render/quad-view.ts`) replaces the artificial
+horizon, which is an aeroplane instrument and reads wrong for a quad. Shares the
+MeshBuilder and matrix helpers with the scene renderer; five draws (airframe
+plus four props) with the model transform folded into the MVP, so the shader
+needed no model matrix.
+
+Two things worth keeping from building it:
+
+- **I got the camera cross product wrong again**, the same error as the scene
+  renderer's basis bug — the quad rendered mostly off the bottom of the frame.
+  There is now an orthonormality test for this camera too. A wrong basis draws a
+  picture; it just shears it.
+- **Prop spin is scaled ~34x down on purpose.** 10 000 rpm is 167 rev/s, which
+  at 60 fps aliases into a wagon-wheel that crawls or reverses with throttle. It
+  is an indicator, not a measurement, and it is commented as such so nobody
+  "fixes" it.
+
+**Stick overlay** (`src/stick-view.ts`) sits on the FPV view and follows
+`mapping.mode`, because hard-coding mode 2 would lie to anyone else — and the
+mode presets are already known-unreliable. Throttle rests at the bottom of its
+gimbal, being unipolar.
+
+**PID and filter editing** lives in Instruments while rates stay in Settings,
+but `TunePanel` still owns both and both DOM trees: they are one tune and one
+storage key, and two panels writing `fpvsim.tune.v1` would race and would leave
+the Blackbox import updating only half. Applying is debounced ~700 ms because
+`applyTune()` rebuilds the controller, restarting I-terms and filters.
+
 **Next, roughly in order:**
 
+0. **Laps and map generation** — the next conversation, per Gilboa.
 1. **Gate sequencing and lap timing.** The geometry is already there from the
    collision work; this is what turns flying around into training with a number
    attached.

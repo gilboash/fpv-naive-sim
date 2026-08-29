@@ -199,6 +199,101 @@ export class AxisDetector {
   }
 }
 
+/**
+ * Watches axes *and* buttons, so a pilot can bind a switch by flicking it.
+ *
+ * A sibling of AxisDetector rather than an option on it: that one runs on the
+ * 1 kHz path for stick detection and is worth keeping to one job. This one is
+ * only live while a Bind button is waiting.
+ */
+export interface SwitchDetectResult {
+  source: 'axis' | 'button';
+  index: number;
+  /** Value when it was on, so the caller can pick a sensible threshold. */
+  onValue: number;
+  /** True if "on" turned out to be the LOW end of the travel. */
+  invert: boolean;
+  travel: number;
+}
+
+export class SwitchDetector {
+  private axisBase = new Float64Array(MAX_AXES);
+  private buttonBase = new Float64Array(MAX_BUTTONS);
+  private axisPeak = new Float64Array(MAX_AXES);
+  private buttonPeak = new Float64Array(MAX_BUTTONS);
+  private started = 0;
+  active = false;
+
+  constructor(
+    private readonly poller: GamepadPoller,
+    private readonly durationMs = 2500,
+    private readonly threshold = 0.4,
+  ) {}
+
+  start(tNow: number): void {
+    this.axisBase.set(this.poller.axes);
+    this.buttonBase.set(this.poller.buttons);
+    this.axisPeak.fill(0);
+    this.buttonPeak.fill(0);
+    this.started = tNow;
+    this.active = true;
+  }
+
+  cancel(): void {
+    this.active = false;
+  }
+
+  elapsed(tNow: number): number {
+    return this.active ? tNow - this.started : this.durationMs;
+  }
+
+  get windowMs(): number {
+    return this.durationMs;
+  }
+
+  update(tNow: number): SwitchDetectResult | null {
+    if (!this.active) return null;
+    for (let i = 0; i < this.poller.axisCount; i++) {
+      const d = (this.poller.axes[i] ?? 0) - (this.axisBase[i] ?? 0);
+      if (Math.abs(d) > Math.abs(this.axisPeak[i] ?? 0)) this.axisPeak[i] = d;
+    }
+    for (let i = 0; i < this.poller.buttonCount; i++) {
+      const d = (this.poller.buttons[i] ?? 0) - (this.buttonBase[i] ?? 0);
+      if (Math.abs(d) > Math.abs(this.buttonPeak[i] ?? 0)) this.buttonPeak[i] = d;
+    }
+
+    if (tNow - this.started < this.durationMs) return null;
+    this.active = false;
+
+    let best: SwitchDetectResult | null = null;
+    let bestAbs = this.threshold;
+    for (let i = 0; i < this.poller.axisCount; i++) {
+      const a = Math.abs(this.axisPeak[i] ?? 0);
+      if (a > bestAbs) {
+        bestAbs = a;
+        const moved = this.axisPeak[i] ?? 0;
+        best = {
+          source: 'axis',
+          index: i,
+          onValue: this.poller.axes[i] ?? 0,
+          // A switch whose "on" position is the low end reads as a negative
+          // excursion; the binding inverts rather than the pilot re-wiring.
+          invert: moved < 0,
+          travel: a,
+        };
+      }
+    }
+    for (let i = 0; i < this.poller.buttonCount; i++) {
+      const a = Math.abs(this.buttonPeak[i] ?? 0);
+      if (a > bestAbs) {
+        bestAbs = a;
+        best = { source: 'button', index: i, onValue: 1, invert: false, travel: a };
+      }
+    }
+    return best;
+  }
+}
+
 // ------------------------------------------------------------- endpoint calib
 
 /** Tracks per-axis min/max while the pilot sweeps every stick to its stops. */

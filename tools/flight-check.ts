@@ -15,7 +15,8 @@ import { kronos, racer5 } from '../src/flight/airframe.ts';
 import { defaultRates, applyRates, AXIS_ROLL, RATE_FIELDS, type RateProfile } from '../src/flight/rates.ts';
 import { defaultPids } from '../src/flight/pid.ts';
 import { Mixer } from '../src/flight/mixer.ts';
-import { newMapping, computeCommands } from '../src/mapping.ts';
+import { newMapping, computeCommands, loadMapping, type Mapping } from '../src/mapping.ts';
+import { AuxControl } from '../src/aux-control.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
 
@@ -919,6 +920,144 @@ section('Collision: the ground and the things standing on it');
   hard.reset(0);
   ok('reset clears the crash', !hard.crashed && hard.crashSpeed === 0, 'back to intact');
   ok('and arming works again afterwards', hard.arm(sticks()) === true, 'armed');
+}
+
+// ----------------------------------------------------------- aux switches
+
+section('Aux: arming from a switch behaves like a flight controller');
+{
+  const bind = (): Mapping => {
+    const m = newMapping('test-radio', 2);
+    m.aux.arm = { source: 'axis', index: 4, threshold: 0.5, invert: false };
+    m.aux.reset = { source: 'axis', index: 5, threshold: 0.5, invert: false };
+    return m;
+  };
+  const axes = (arm: number, reset: number): number[] => [0, 0, 0, 0, arm, reset, 0, 0];
+
+  // The guard that matters: a page opened with the switch already up must not
+  // arm. Without it the quad spools up before the pilot has looked at it.
+  const c = new AuxControl();
+  const m = bind();
+  const first = c.update(m, axes(1, -1), [], true);
+  ok(
+    'a switch already on at startup does not arm',
+    !first.armOn && !first.armReady,
+    'it has to be seen off once first',
+  );
+  c.update(m, axes(-1, -1), [], true);
+  ok('after flicking it off, it arms', c.update(m, axes(1, -1), [], true).armOn, 'armed');
+  ok('and stays armed while held — it is a level', c.update(m, axes(1, -1), [], true).armOn, 'still armed');
+  ok('and disarms when released', !c.update(m, axes(-1, -1), [], true).armOn, 'disarmed');
+
+  // Reset is an edge, or holding the switch respawns a thousand times a second.
+  const r = new AuxControl();
+  r.update(m, axes(-1, -1), [], true);
+  ok('reset fires on the rising edge', r.update(m, axes(-1, 1), [], true).resetEdge, 'fired');
+  ok('and not while it is held', !r.update(m, axes(-1, 1), [], true).resetEdge, 'silent');
+  r.update(m, axes(-1, -1), [], true);
+  ok('and again on the next flick', r.update(m, axes(-1, 1), [], true).resetEdge, 'fired');
+
+  // Losing the radio must drop the arm level *and* the guard: coming back is
+  // a new arrival, and the switch has to be seen off again.
+  const l = new AuxControl();
+  l.update(m, axes(-1, -1), [], true);
+  l.update(m, axes(1, -1), [], true);
+  const lost = l.update(m, axes(1, -1), [], false);
+  ok(
+    'link loss drops the arm level and the guard',
+    !lost.armOn && !lost.armReady,
+    'a reconnection has to earn it again',
+  );
+
+  // Inversion, for a switch whose "on" is the low end.
+  const inv = new AuxControl();
+  const mi = bind();
+  mi.aux.arm.invert = true;
+  inv.update(mi, axes(1, -1), [], true);
+  ok('an inverted binding arms on the low position', inv.update(mi, axes(-1, -1), [], true).armOn, 'armed');
+
+  // An unbound action is inert, which is what every existing pilot has.
+  const none = new AuxControl();
+  const mn = newMapping('x', 2);
+  const r2 = none.update(mn, axes(1, 1), [], true);
+  ok('an unbound switch does nothing', !r2.armOn && !r2.resetEdge, 'inert');
+}
+
+section('Aux: storage migrates without disturbing a mapped radio');
+{
+  // A v2 mapping is a pilot who has already calibrated four channels. The
+  // upgrade must add aux bindings and touch nothing else.
+  const store: Record<string, string> = {};
+  const shim = {
+    getItem: (k: string) => store[k] ?? null,
+    setItem: (k: string, v: string) => {
+      store[k] = v;
+    },
+    removeItem: (k: string) => delete store[k],
+  };
+  const prev = (globalThis as unknown as { localStorage: unknown }).localStorage;
+  (globalThis as unknown as { localStorage: unknown }).localStorage = shim;
+
+  const v2 = {
+    version: 2,
+    deviceId: 'radio',
+    mode: 2,
+    channels: {
+      throttle: { axis: 1, invert: true, min: -0.9, max: 0.95, center: 0, deadband: 0.02 },
+      roll: { axis: 2, invert: false, min: -1, max: 1, center: 0.01, deadband: 0.03 },
+      pitch: { axis: 3, invert: true, min: -1, max: 1, center: 0, deadband: 0.02 },
+      yaw: { axis: 0, invert: false, min: -1, max: 1, center: 0, deadband: 0.02 },
+    },
+  };
+  store['fpvsim.mappings.v1'] = JSON.stringify({ radio: v2 });
+  const loaded = loadMapping('radio');
+  ok(
+    'a v2 mapping survives the upgrade with its calibration intact',
+    loaded !== null &&
+      loaded.channels.throttle.min === -0.9 &&
+      loaded.channels.roll.center === 0.01 &&
+      loaded.channels.pitch.invert === true,
+    'endpoints, centre and inversion all unchanged',
+  );
+  ok(
+    'and gains unbound aux actions',
+    loaded !== null && loaded.aux.arm.source === 'none' && loaded.aux.reset.source === 'none',
+    'nothing on the switches until the pilot binds one',
+  );
+
+  (globalThis as unknown as { localStorage: unknown }).localStorage = prev;
+}
+
+// -------------------------------------------------- quad-view camera basis
+
+section('Instruments: the quad view camera basis');
+{
+  // Same failure as the scene camera, and it happened here too on the first
+  // attempt: a hand-written cross product that is subtly wrong still renders,
+  // just sheared, with the subject sliding out of frame.
+  const eye = { x: 0.13, y: 0.19, z: 0.33 };
+  const len = Math.hypot(eye.x, eye.y, eye.z);
+  const f = { x: -eye.x / len, y: -eye.y / len, z: -eye.z / len };
+  const r0 = { x: f.y * 0 - f.z * 1, y: f.z * 0 - f.x * 0, z: f.x * 1 - f.y * 0 };
+  const rl = Math.hypot(r0.x, r0.y, r0.z);
+  const r = { x: r0.x / rl, y: r0.y / rl, z: r0.z / rl };
+  const u0 = { x: r.y * f.z - r.z * f.y, y: r.z * f.x - r.x * f.z, z: r.x * f.y - r.y * f.x };
+  const ul = Math.hypot(u0.x, u0.y, u0.z);
+  const u = { x: u0.x / ul, y: u0.y / ul, z: u0.z / ul };
+
+  const dot = (a: typeof f, b: typeof f): number => a.x * b.x + a.y * b.y + a.z * b.z;
+  const worst = Math.max(
+    Math.abs(dot(f, u)),
+    Math.abs(dot(f, r)),
+    Math.abs(dot(u, r)),
+    Math.abs(Math.hypot(f.x, f.y, f.z) - 1),
+  );
+  ok('camera basis orthonormal', worst < 1e-12, `worst deviation ${worst.toExponential(2)}`);
+  ok(
+    'and the camera is above the quad, looking down at it',
+    u.y > 0 && f.y < 0,
+    `up.y ${u.y.toFixed(3)}, forward.y ${f.y.toFixed(3)}`,
+  );
 }
 
 // ------------------------------------------------------------- camera basis

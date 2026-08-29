@@ -12,7 +12,60 @@
  * need changing, and the bump is there so the question is answered in code
  * rather than left to be re-derived.
  */
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
+
+/**
+ * Actions a pilot can bind to a switch, so the whole session runs from the
+ * radio without touching the keyboard.
+ */
+export const AUX_ACTIONS = ['arm', 'reset'] as const;
+export type AuxAction = (typeof AUX_ACTIONS)[number];
+
+export const AUX_INFO: Record<AuxAction, { label: string; hint: string }> = {
+  arm: {
+    label: 'Arm',
+    hint: 'Held on to fly, exactly as a flight controller does — flick it off in the air and you disarm in the air.',
+  },
+  reset: {
+    label: 'Reset',
+    hint: 'Momentary: respawns on the rising edge, so holding it does not respawn over and over.',
+  },
+};
+
+/**
+ * A switch, not a stick. Aux bindings are a different shape from AxisMap —
+ * there is nothing to calibrate, no centre and no deadband — so they get their
+ * own type rather than being forced through the proportional path.
+ *
+ * Both sources exist because radios disagree. EdgeTX in USB Joystick mode puts
+ * switches on the spare *axes* (a TX16S reports 8, four of which are AETR), so
+ * an axis reading -1/0/+1 is the common case; buttons are the fallback for
+ * everything else.
+ */
+export interface AuxBinding {
+  source: 'none' | 'axis' | 'button';
+  index: number;
+  /** Above this the switch counts as on. Axes only; buttons use 0.5. */
+  threshold: number;
+  invert: boolean;
+}
+
+export function defaultAux(): AuxBinding {
+  return { source: 'none', index: -1, threshold: 0.5, invert: false };
+}
+
+/** Is this binding currently on? */
+export function auxActive(
+  b: AuxBinding,
+  axes: readonly number[],
+  buttons: readonly number[],
+): boolean {
+  if (b.source === 'none' || b.index < 0) return false;
+  const raw = b.source === 'axis' ? axes[b.index] : buttons[b.index];
+  if (raw === undefined || !Number.isFinite(raw)) return false;
+  const on = raw > (b.source === 'button' ? 0.5 : b.threshold);
+  return b.invert ? !on : on;
+}
 
 export const CHANNELS = ['throttle', 'roll', 'pitch', 'yaw'] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -46,6 +99,7 @@ export interface Mapping {
   deviceId: string;
   mode: StickMode;
   channels: Record<Channel, AxisMap>;
+  aux: Record<AuxAction, AuxBinding>;
 }
 
 export function defaultAxisMap(): AxisMap {
@@ -112,6 +166,7 @@ export function newMapping(deviceId: string, mode: StickMode = 2): Mapping {
       pitch: defaultAxisMap(),
       yaw: defaultAxisMap(),
     },
+    aux: { arm: defaultAux(), reset: defaultAux() },
   };
   applyModePreset(mapping, mode);
   return mapping;
@@ -195,12 +250,27 @@ function readStore(): Store {
 
 function migrate(stored: Mapping & { version: number }): Mapping | null {
   if (stored.version === STORAGE_VERSION) return stored;
+  if (stored.version === 2 || stored.version === 1) {
+    // v3 added aux bindings. Absent means unbound, which is the same as a fresh
+    // mapping, so an existing pilot keeps their four calibrated channels and
+    // simply has nothing on their switches until they bind one.
+    if (!stored.aux) {
+      stored.aux = { arm: defaultAux(), reset: defaultAux() };
+    }
+    for (const a of AUX_ACTIONS) {
+      stored.aux[a] = { ...defaultAux(), ...stored.aux[a] };
+    }
+  }
   if (stored.version === 1) {
     // No change to the stored values. Version 2 flipped the model's pitch
     // convention *and* the direction of the fix, and the two cancel: a pilot
     // who ticked invert by hand under v1 was compensating for the model, and
     // the same tick is now what the preset would have given them anyway. The
     // bump exists to record that this was considered rather than missed.
+    stored.version = STORAGE_VERSION;
+    return stored;
+  }
+  if (stored.version === 2) {
     stored.version = STORAGE_VERSION;
     return stored;
   }
@@ -217,6 +287,10 @@ export function loadMapping(deviceId: string): Mapping | null {
   for (const ch of CHANNELS) {
     const s = stored.channels?.[ch];
     if (s) mapping.channels[ch] = { ...defaultAxisMap(), ...s };
+  }
+  for (const a of AUX_ACTIONS) {
+    const s = stored.aux?.[a];
+    if (s) mapping.aux[a] = { ...defaultAux(), ...s };
   }
   return mapping;
 }

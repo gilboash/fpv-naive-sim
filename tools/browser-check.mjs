@@ -690,6 +690,101 @@ const main = async () => {
     );
   }
 
+  // The quad instrument. Same pixel-readback technique as the scene check, and
+  // for the same reason: a WebGL view that silently draws nothing looks exactly
+  // like one that works.
+  const quad = await evaluate(`new Promise((resolve) => {
+    // The instruments tab has to be visible or its canvas has no layout size,
+    // and a canvas with no size draws nothing — which would look exactly like a
+    // broken renderer.
+    globalThis.__fpvsim.tabs.show('instruments');
+    requestAnimationFrame(() => {
+    const { flight } = globalThis.__fpvsim;
+    if (!flight.quadView) return resolve({ ok: false, reason: 'no WebGL' });
+    flight.sim.reset(0);
+    flight.sim.pos.z = -20; flight.sim.onGround = false;
+    flight.sim.omega.x = 3;
+    for (let i = 0; i < 200; i++) flight.sim.step({ throttle: 0.5, roll: 0.4, pitch: 0, yaw: 0 });
+    flight.renderQuad(performance.now());
+    const c = flight.quadCanvas ?? document.querySelector('.fl-quad');
+    const off = document.createElement('canvas');
+    off.width = c.width; off.height = c.height;
+    const ctx = off.getContext('2d');
+    ctx.drawImage(c, 0, 0);
+    const d = ctx.getImageData(0, 0, off.width, off.height).data;
+    let min = [255,255,255], max = [0,0,0];
+    for (let i = 0; i < d.length; i += 4 * 31) {
+      for (let k = 0; k < 3; k++) {
+        if (d[i+k] < min[k]) min[k] = d[i+k];
+        if (d[i+k] > max[k]) max[k] = d[i+k];
+      }
+    }
+    resolve({ ok: true, w: c.width, spread: Math.max(max[0]-min[0], max[1]-min[1], max[2]-min[2]) });
+    });
+  })`);
+  check(
+    'the quad instrument draws an airframe',
+    quad.ok === true && quad.spread > 30,
+    quad.ok ? `${quad.w}px wide, channel spread ${quad.spread}` : `no — ${quad.reason}`,
+  );
+
+  // Tabs: the right panel shows, and the physics does not stop when the flying
+  // tab is hidden — that last one matters, because a pilot ducking into
+  // Settings mid-flight must not have the quad freeze and drop.
+  const tabState = await evaluate(`(async () => {
+    const { tabs, flight } = globalThis.__fpvsim;
+    const shown = (id) => !document.getElementById('panel-' + id).hidden;
+    tabs.show('settings');
+    const onSettings = { settings: shown('settings'), fly: shown('fly'), instruments: shown('instruments') };
+    const t0 = flight.sim.time;
+    await new Promise((r) => setTimeout(r, 300));
+    const advanced = flight.sim.time - t0;
+    tabs.show('fly');
+    const onFly = { fly: shown('fly'), settings: shown('settings') };
+    const stored = localStorage.getItem('fpvsim.tab.v1');
+    return { onSettings, onFly, advanced, stored };
+  })()`);
+  check(
+    'switching tabs shows exactly one panel',
+    tabState.onSettings.settings && !tabState.onSettings.fly && !tabState.onSettings.instruments &&
+      tabState.onFly.fly && !tabState.onFly.settings,
+    'settings, then fly',
+  );
+  check(
+    'the physics keeps running while the flying tab is hidden',
+    tabState.advanced > 0.2,
+    `${tabState.advanced.toFixed(3)} s of simulated time in 0.3 s on the settings tab`,
+  );
+  check('the active tab is remembered', tabState.stored === 'fly', `stored "${tabState.stored}"`);
+
+  // Sticks follow the configured mode, and the PID panel reaches the model.
+  const overlay = await evaluate(`(() => {
+    const { scene, tune, flight } = globalThis.__fpvsim;
+    scene.updateSticks({ throttle: 1, roll: 0, pitch: 0, yaw: -1 }, 2);
+    const dots = [...scene.sticks.root.querySelectorAll('.stick-dot')];
+    const left = { cx: +dots[0].getAttribute('cx'), cy: +dots[0].getAttribute('cy') };
+
+    const pidInput = document.querySelector('#pid-panel input[type=number]');
+    const before = flight.sim.controller.profile.roll.p;
+    pidInput.value = '61';
+    pidInput.dispatchEvent(new Event('input', { bubbles: true }));
+    return { left, before, typed: 61 };
+  })()`);
+  check(
+    'stick overlay follows throttle and yaw on mode 2',
+    // Throttle full up puts the left dot at the top; yaw left puts it left.
+    overlay.left.cy < 10 && overlay.left.cx < 20,
+    `left gimbal at (${overlay.left.cx}, ${overlay.left.cy}) for full throttle, full left yaw`,
+  );
+
+  await sleep(1200); // the PID apply is debounced
+  const pidApplied = await evaluate('globalThis.__fpvsim.flight.sim.controller.profile.roll.p');
+  check(
+    'a PID edit reaches the flight model, after the debounce',
+    pidApplied === 61,
+    `roll P ${overlay.before} -> ${pidApplied}`,
+  );
+
   // Everything a pilot sets must survive a reload, or they re-enter it on every
   // visit and stop bothering to report anything else.
   const persisted = await evaluate(`(() => {
@@ -748,7 +843,11 @@ const main = async () => {
       flight.sim.onGround = false;
       scene.render();
     })()`);
-    await evaluate(`document.querySelector('#${process.env.SHOT_SECTION || 'scene'}').scrollIntoView()`);
+    if (process.env.SHOT_TAB) {
+      await evaluate(`globalThis.__fpvsim.tabs.show('${process.env.SHOT_TAB}')`);
+      await sleep(300);
+    }
+    await evaluate(`document.querySelector('#${process.env.SHOT_SECTION || 'scene'}')?.scrollIntoView()`);
     await sleep(400);
     const shot = await send(ws, 'Page.captureScreenshot', { format: 'png' }, sessionId);
     const { writeFileSync } = await import('node:fs');

@@ -15,6 +15,26 @@
     <div id="notice" class="notice" hidden></div>
 
     <main>
+      <nav class="tabs" role="tablist">
+        <button id="tab-fly" class="tab" type="button" role="tab" aria-selected="true">Go fly</button>
+        <button id="tab-settings" class="tab" type="button" role="tab" aria-selected="false">Settings</button>
+        <button id="tab-instruments" class="tab" type="button" role="tab" aria-selected="false">Instruments</button>
+      </nav>
+
+      <div id="panel-fly" class="panel" role="tabpanel">
+      <section id="scene">
+        <h2>FPV view</h2>
+        <p class="hint">
+          Rate mode, camera tilted up as on a real quad. Arm with <strong>A</strong>
+          (throttle down first), <strong>D</strong> to disarm, <strong>R</strong> to reset.
+          The physics is unchanged by any of this — the scene reads simulator state and
+          never writes it, except to place the quad on the start line.
+        </p>
+        <div id="scene-view"></div>
+      </section>
+      </div>
+
+      <div id="panel-settings" class="panel" role="tabpanel" hidden>
       <p class="startup">
         <strong>New here?</strong> Put the radio in USB Joystick mode, plug it in, and
         <strong>move a stick</strong> — browsers hide gamepads until they see activity.
@@ -59,21 +79,21 @@
           particular: forward stick must fly you <em>forward</em>.
         </p>
         <div id="channel-rows" class="channels"></div>
-      </section>
 
-      <section id="scene">
-        <h2>3 · FPV view</h2>
+        <h3 class="sub-head">Switches</h3>
         <p class="hint">
-          Rate mode, camera tilted up as on a real quad. Arm with <strong>A</strong>
-          (throttle down first), <strong>D</strong> to disarm, <strong>R</strong> to reset.
-          The physics is unchanged by any of this — the scene reads simulator state and
-          never writes it, except to place the quad on the start line.
+          Bind arm and reset to switches and the whole session runs from the radio.
+          <strong>Arm is held on</strong>, exactly as on a flight controller — flick it off in
+          the air and you disarm in the air. Reset fires once on the flick, so holding it does
+          not respawn over and over. A switch that is already on when the page loads will not
+          arm until you flick it off once, which is the same guard a real quad has.
         </p>
-        <div id="scene-view"></div>
+        <div id="aux-rows" class="channels"></div>
+        <p class="hint" id="bind-message"></p>
       </section>
 
       <section id="tune">
-        <h2>4 · Rates and tune</h2>
+        <h2>3 · Rates</h2>
         <p class="hint">
           The rate curve is most of what makes muscle memory transfer, so it has to be
           <em>your</em> curve. Every value here lives in the header of any Blackbox log —
@@ -81,17 +101,6 @@
           retyped from a configurator. Saved in this browser.
         </p>
         <div id="tune-panel"></div>
-      </section>
-
-      <section id="flight">
-        <h2>5 · Instruments</h2>
-        <p class="hint">
-          1 kHz rate-mode flight model: blade-element rotors, brushless motors with
-          battery sag, and a Betaflight-scaled PID loop. The physics step runs inside
-          the same tick as the gamepad poll, not in <code>requestAnimationFrame</code>.
-          Acceptance tests for it run headless — <code>npm run check:flight</code>.
-        </p>
-        <div id="flight-panel"></div>
       </section>
 
       <details class="diagnostics">
@@ -131,6 +140,31 @@
           <div id="jitter-results"></div>
         </section>
       </details>
+      </div>
+
+      <div id="panel-instruments" class="panel" role="tabpanel" hidden>
+      <section id="flight">
+        <h2>1 · Flight instruments</h2>
+        <p class="hint">
+          1 kHz rate-mode flight model: blade-element rotors, brushless motors with
+          battery sag, and a Betaflight-scaled PID loop. The physics step runs inside
+          the same tick as the gamepad poll, not in <code>requestAnimationFrame</code>.
+          Acceptance tests for it run headless — <code>npm run check:flight</code>.
+        </p>
+        <div id="flight-panel"></div>
+      </section>
+
+        <section id="pids">
+          <h2>2 · PIDs and filters</h2>
+          <p class="hint">
+            The gains the model flies on. Loading a Blackbox log in <em>Settings → Rates</em>
+            brings these across too, which is the reliable way to fly your own tune. Changes
+            apply about a second after you stop typing — sooner would rebuild the controller on
+            every keystroke and jolt the quad mid-air.
+          </p>
+          <div id="pid-panel"></div>
+        </section>
+      </div>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

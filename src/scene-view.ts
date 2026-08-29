@@ -10,6 +10,8 @@ import type { FlightSim } from './flight/sim.ts';
 import { Renderer } from './render/renderer.ts';
 import { TRACKS, type Track } from './render/track.ts';
 import { clearance } from './flight/collision.ts';
+import { StickView } from './stick-view.ts';
+import type { Commands, StickMode } from './mapping.ts';
 
 const STORAGE_KEY = 'fpvsim.scene.v1';
 
@@ -36,6 +38,8 @@ export class SceneView {
   private sim: FlightSim;
   private statusEl: HTMLElement;
   private crashEl: HTMLElement;
+  readonly stage: HTMLElement;
+  readonly sticks: StickView;
   resetMode: 'inPlace' | 'start' = 'inPlace';
   /**
    * Camera settings live here as well as on the renderer, because the controls
@@ -50,8 +54,15 @@ export class SceneView {
   constructor(root: HTMLElement, sim: FlightSim) {
     this.sim = sim;
     this.loadSettings();
+    // The canvas and its overlays share a positioned wrapper, which is also
+    // what goes fullscreen — the sticks belong on the view, not beside it.
+    this.stage = el('div', 'fpv-stage');
     this.canvas = el<HTMLCanvasElement>('canvas', 'fpv-canvas');
-    root.appendChild(this.canvas);
+    this.stage.appendChild(this.canvas);
+    const overlay = el('div', 'fpv-overlay');
+    this.sticks = new StickView(overlay);
+    this.stage.appendChild(overlay);
+    root.appendChild(this.stage);
 
     const row = el('div', 'row');
 
@@ -125,6 +136,12 @@ export class SceneView {
     const ml = el('label', undefined, 'Reset to ');
     ml.appendChild(modeSel);
     row.appendChild(ml);
+
+    const full = el<HTMLButtonElement>('button');
+    full.type = 'button';
+    full.textContent = 'Fullscreen';
+    full.onclick = () => void this.toggleFullscreen();
+    row.appendChild(full);
 
     const restart = el<HTMLButtonElement>('button');
     restart.type = 'button';
@@ -236,6 +253,18 @@ export class SceneView {
     this.sim.reset(yaw);
     this.sim.pos.x = spot.north;
     this.sim.pos.y = spot.east;
+  }
+
+  /** Stick positions, from the 30 Hz loop. Cheap, and not in the render path. */
+  updateSticks(cmd: Commands, mode: StickMode): void {
+    this.sticks.setMode(mode);
+    this.sticks.update(cmd);
+  }
+
+  /** Go fullscreen on the view itself, sticks included. */
+  async toggleFullscreen(): Promise<void> {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await this.stage.requestFullscreen();
   }
 
   render(): void {

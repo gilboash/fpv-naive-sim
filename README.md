@@ -725,6 +725,62 @@ mesh, so the circuit's 76 volumes cannot drift from what is drawn.
   it recovers when the sticks centre, but the peak is higher than a real quad
   reaches and is worth revisiting once there is a log to compare against.
 
+## Flying it without the keyboard
+
+**Arm and reset bind to switches** (Settings → Channel mapping → Switches), so a
+session runs entirely from the radio.
+
+The two behave differently on purpose. **Arm is a level**, held on to fly, which
+is what a flight controller does — flick it off in the air and you disarm in the
+air, and that reflex is the point. **Reset is an edge**, fired once per flick,
+because on a level it would respawn every tick.
+
+A switch that is already on when the page loads **will not arm** until it has
+been seen off once. Real flight controllers refuse for the same reason: nobody
+wants a quad spooling up because a browser tab finished loading. Losing the
+radio drops both the arm level and that guard, so a reconnection has to earn it
+again.
+
+Bindings read axes or buttons. Axes matter more: EdgeTX in USB Joystick mode
+puts switches on the spare axes, so a TX16S reports eight and the four beyond
+AETR are usually where the switches live.
+
+## Three tabs
+
+**Go fly** is the FPV view, with the two sticks drawn over the bottom-right
+corner and a fullscreen button. The stick display follows the configured stick
+mode rather than assuming mode 2 — the mode presets are already known to be
+unreliable, and a display that lies about which stick is which is worse than
+none.
+
+**Settings** is device, channel mapping, rates and diagnostics. **Instruments**
+is the 3D quad, the numbers, rate tracking, motors, the recorder, and PID and
+filter editing.
+
+Only the visible tab renders, so two WebGL contexts are not drawing frames
+nobody can see. **The physics does not care**: it runs on the worker ticker, not
+`requestAnimationFrame`, so ducking into Settings mid-flight does not freeze the
+quad — there is a test asserting exactly that.
+
+## The quad instrument
+
+An artificial horizon is an aeroplane instrument. What a rate-mode pilot wants
+is the airframe: which way it is actually pointing and which motors are working.
+So the horizon is now a small 3D quad, sharing `MeshBuilder` and the matrix
+helpers with the scene renderer rather than introducing a second way of drawing
+things.
+
+**Prop spin is scaled down about 34×, deliberately.** A rotor at 10 000 rpm
+turns 167 times a second; at 60 fps that is nearly three revolutions per frame,
+which aliases into a disc that appears to crawl, stop, or run backwards
+depending on throttle. Scaled, it reads as "that motor is working harder than
+that one", which is the only thing the view is for.
+
+Editing PIDs applies about a second after the last keystroke. `applyTune()`
+rebuilds the controller and so restarts the I-terms and filters; doing that per
+keystroke would jolt the quad mid-air and would apply 1, then 12, then 120 while
+someone typed "120".
+
 ## What a visiting pilot sees
 
 Five sections, in the order they need them: pick the radio, map the channels,
