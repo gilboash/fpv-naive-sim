@@ -52,15 +52,29 @@ export function defaultAxisMap(): AxisMap {
  *
  * Physical axes assumed: 0 = left X, 1 = left Y, 2 = right X, 3 = right Y.
  */
+/**
+ * Pitch is inverted in every preset, for the same reason throttle is: a stick
+ * axis reads negative when pushed away from the pilot, and this model's
+ * positive pitch is nose-up, which is the stick pulled *back*.
+ *
+ * It was `false` until a pilot on a Radiomaster reported having to tick invert
+ * by hand to stop forward stick flying backwards. That is one radio rather than
+ * a survey, but it is the ecosystem most of them will be on, and it is at least
+ * consistent with throttle on the same hardware. The presets have always been a
+ * guess — EdgeTX applies the stick mode in the radio and emits AETR, so the
+ * axis numbers below are frequently wrong too — and Detect remains the thing
+ * that is actually authoritative, because it reads the direction the pilot
+ * moved rather than assuming one.
+ */
 const MODE_PRESETS: Record<StickMode, Record<Channel, { axis: number; invert: boolean }>> = {
   // Mode 1: right = throttle/roll, left = pitch/yaw
-  1: { throttle: { axis: 3, invert: true }, roll: { axis: 2, invert: false }, pitch: { axis: 1, invert: false }, yaw: { axis: 0, invert: false } },
+  1: { throttle: { axis: 3, invert: true }, roll: { axis: 2, invert: false }, pitch: { axis: 1, invert: true }, yaw: { axis: 0, invert: false } },
   // Mode 2: left = throttle/yaw, right = pitch/roll  (the common one)
-  2: { throttle: { axis: 1, invert: true }, roll: { axis: 2, invert: false }, pitch: { axis: 3, invert: false }, yaw: { axis: 0, invert: false } },
+  2: { throttle: { axis: 1, invert: true }, roll: { axis: 2, invert: false }, pitch: { axis: 3, invert: true }, yaw: { axis: 0, invert: false } },
   // Mode 3: right = throttle/yaw, left = pitch/roll
-  3: { throttle: { axis: 3, invert: true }, roll: { axis: 0, invert: false }, pitch: { axis: 1, invert: false }, yaw: { axis: 2, invert: false } },
+  3: { throttle: { axis: 3, invert: true }, roll: { axis: 0, invert: false }, pitch: { axis: 1, invert: true }, yaw: { axis: 2, invert: false } },
   // Mode 4: left = throttle/roll, right = pitch/yaw
-  4: { throttle: { axis: 1, invert: true }, roll: { axis: 0, invert: false }, pitch: { axis: 3, invert: false }, yaw: { axis: 2, invert: false } },
+  4: { throttle: { axis: 1, invert: true }, roll: { axis: 0, invert: false }, pitch: { axis: 3, invert: true }, yaw: { axis: 2, invert: false } },
 };
 
 export function applyModePreset(mapping: Mapping, mode: StickMode): void {

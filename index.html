@@ -52,9 +52,11 @@
           <span id="save-state" class="dim"></span>
         </div>
         <p class="hint" id="mapping-hint">
-          Mode presets assume raw stick axes. EdgeTX in USB Joystick mode usually applies the mode
-          in the radio and emits AETR, so the preset may be a no-op — use <em>Detect</em> per
-          channel if the presets do not match your radio.
+          The presets are a guess and often a wrong one: EdgeTX applies the stick mode in the
+          radio and emits AETR, so both the axis numbers and the invert flags may not match
+          yours. <strong>Use <em>Detect</em> per channel</strong> — it reads the direction you
+          actually moved, which is the only thing that is reliably right. Check pitch in
+          particular: forward stick must fly you <em>forward</em>.
         </p>
         <div id="channel-rows" class="channels"></div>
       </section>

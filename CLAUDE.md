@@ -420,6 +420,21 @@ Also removed: a `console.log` that dumped the whole jitter result on every run.
 `__fpvsim` was already compiled out of production by `import.meta.env.DEV`,
 confirmed by grepping the built bundle for it.
 
+## Stick presets are a guess (2026-08-29)
+
+Gilboa had to tick invert on pitch by hand or forward stick flew him backwards.
+The flight model is not at fault and is self-consistent — positive pitch command
+is nose-up, asserted by a test, and the pitch negation in `logio.ts` is
+reader-only and never touches live input. The **mode presets** were wrong:
+pitch had `invert: false` where a stick axis reads negative pushed away, exactly
+as throttle does, and throttle had always been `invert: true`.
+
+Flipped in all four modes. That is one Radiomaster rather than a survey, so if
+another radio contradicts it, believe the radio: `Detect` reads the direction
+the pilot actually moved and is the only authoritative thing here. EdgeTX
+applies the stick mode in the radio and emits AETR, so the preset axis *numbers*
+are frequently wrong too.
+
 ## Hosting for other pilots (2026-08-29)
 
 Gilboa wanted 2-3 pilots to try it remotely. It is entirely client-side —
