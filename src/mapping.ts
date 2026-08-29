@@ -6,6 +6,14 @@
  * command out, deterministically.
  */
 
+/**
+ * Storage version. Bumped to 2 when the model adopted Betaflight's pitch
+ * convention (positive is nose-down). See migrate(): the stored values did not
+ * need changing, and the bump is there so the question is answered in code
+ * rather than left to be re-derived.
+ */
+const STORAGE_VERSION = 2;
+
 export const CHANNELS = ['throttle', 'roll', 'pitch', 'yaw'] as const;
 export type Channel = (typeof CHANNELS)[number];
 
@@ -33,7 +41,8 @@ export interface AxisMap {
 export type StickMode = 1 | 2 | 3 | 4;
 
 export interface Mapping {
-  version: 1;
+  /** See STORAGE_VERSION. Old values are migrated on load, not rejected. */
+  version: number;
   deviceId: string;
   mode: StickMode;
   channels: Record<Channel, AxisMap>;
@@ -53,18 +62,22 @@ export function defaultAxisMap(): AxisMap {
  * Physical axes assumed: 0 = left X, 1 = left Y, 2 = right X, 3 = right Y.
  */
 /**
- * Pitch is inverted in every preset, for the same reason throttle is: a stick
- * axis reads negative when pushed away from the pilot, and this model's
- * positive pitch is nose-up, which is the stick pulled *back*.
+ * Pitch is inverted, like throttle, and for the same reason.
  *
- * It was `false` until a pilot on a Radiomaster reported having to tick invert
- * by hand to stop forward stick flying backwards. That is one radio rather than
- * a survey, but it is the ecosystem most of them will be on, and it is at least
- * consistent with throttle on the same hardware. The presets have always been a
- * guess — EdgeTX applies the stick mode in the radio and emits AETR, so the
- * axis numbers below are frequently wrong too — and Detect remains the thing
- * that is actually authoritative, because it reads the direction the pilot
- * moved rather than assuming one.
+ * A stick axis reads **negative** when pushed away from the pilot. Forward
+ * stick must give a *positive* pitch command, because positive pitch is
+ * nose-down. Negative axis to positive command is an inversion.
+ *
+ * I talked myself out of this once by reasoning that "stick away is negative
+ * and nose-down is positive, so they already agree" — which has the arithmetic
+ * exactly backwards and produced a default that flew you backwards. The check
+ * that settles it is not a chain of reasoning: drive an axis to -1 through
+ * computeCommands and fly the result, which tools/flight-check.ts now does.
+ *
+ * The presets are a guess in general: EdgeTX applies the stick mode in the
+ * radio and emits AETR, so the axis numbers are frequently wrong too, and
+ * Detect is the authoritative thing because it reads the direction the pilot
+ * actually moved rather than assuming one.
  */
 const MODE_PRESETS: Record<StickMode, Record<Channel, { axis: number; invert: boolean }>> = {
   // Mode 1: right = throttle/roll, left = pitch/yaw
@@ -90,7 +103,7 @@ export function applyModePreset(mapping: Mapping, mode: StickMode): void {
 
 export function newMapping(deviceId: string, mode: StickMode = 2): Mapping {
   const mapping: Mapping = {
-    version: 1,
+    version: STORAGE_VERSION,
     deviceId,
     mode,
     channels: {
@@ -179,9 +192,26 @@ function readStore(): Store {
   }
 }
 
+
+function migrate(stored: Mapping & { version: number }): Mapping | null {
+  if (stored.version === STORAGE_VERSION) return stored;
+  if (stored.version === 1) {
+    // No change to the stored values. Version 2 flipped the model's pitch
+    // convention *and* the direction of the fix, and the two cancel: a pilot
+    // who ticked invert by hand under v1 was compensating for the model, and
+    // the same tick is now what the preset would have given them anyway. The
+    // bump exists to record that this was considered rather than missed.
+    stored.version = STORAGE_VERSION;
+    return stored;
+  }
+  return null;
+}
+
 export function loadMapping(deviceId: string): Mapping | null {
-  const stored = readStore()[deviceId];
-  if (!stored || stored.version !== 1) return null;
+  const raw = readStore()[deviceId];
+  if (!raw) return null;
+  const stored = migrate(raw as Mapping & { version: number });
+  if (!stored) return null;
   // Fill any gaps rather than trusting the stored shape blindly.
   const mapping = newMapping(deviceId, stored.mode ?? 2);
   for (const ch of CHANNELS) {

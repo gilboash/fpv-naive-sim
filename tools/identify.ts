@@ -54,15 +54,9 @@ const poles = Number(H.get('motor_poles') ?? 14);
 const time = col('time')!;
 const N = time.length;
 const acc = [col('accSmooth[0]')!, col('accSmooth[1]')!, col('accSmooth[2]')!];
-// Pitch negated: Betaflight logs pitch positive nose-down. See logio.ts for how
-// that was established — briefly, the eRPM-derived thrust differential
-// correlates -0.50 with Betaflight's pitch while roll gives +0.49, and thrust
-// has no controller in the loop to confuse the sign.
-const gyro = [
-  col('gyroADC[0]')!,
-  Float64Array.from(col('gyroADC[1]')!, (v) => -v),
-  col('gyroADC[2]')!,
-];
+// No negation: this model shares Betaflight's pitch convention, so the log's
+// axes are already in our units.
+const gyro = [col('gyroADC[0]')!, col('gyroADC[1]')!, col('gyroADC[2]')!];
 const rpm = [0, 1, 2, 3].map((m) => {
   const e = col(`eRPM[${m}]`);
   return e ? Float64Array.from(e, (v) => (v * 100) / (poles / 2)) : undefined;

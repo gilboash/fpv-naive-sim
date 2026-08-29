@@ -15,8 +15,22 @@ import { kronos, racer5 } from '../src/flight/airframe.ts';
 import { defaultRates, applyRates, AXIS_ROLL, RATE_FIELDS, type RateProfile } from '../src/flight/rates.ts';
 import { defaultPids } from '../src/flight/pid.ts';
 import { Mixer } from '../src/flight/mixer.ts';
+import { newMapping, computeCommands } from '../src/mapping.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
+
+// mapping.ts persists to localStorage, which does not exist under Node. The
+// tests only need the pure mapping maths, so a stub is enough.
+if (typeof globalThis.localStorage === 'undefined') {
+  (globalThis as unknown as { localStorage: Storage }).localStorage = {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+    clear: () => {},
+    key: () => null,
+    length: 0,
+  } as Storage;
+}
 
 let passed = 0;
 let failed = 0;
@@ -175,7 +189,8 @@ section('Control: every axis moves the way the stick says');
 {
   const cases: { name: string; input: StickInput; read: (s: FlightSim) => number }[] = [
     { name: 'roll right', input: sticks({ roll: 0.5 }), read: (s) => s.telemetry.gyro.x },
-    { name: 'pitch up', input: sticks({ pitch: 0.5 }), read: (s) => s.telemetry.gyro.y },
+    // Positive pitch is nose-DOWN, Betaflight's convention and the pilot's.
+    { name: 'pitch forward (nose down)', input: sticks({ pitch: 0.5 }), read: (s) => s.telemetry.gyro.y },
     { name: 'yaw right', input: sticks({ yaw: 0.5 }), read: (s) => s.telemetry.gyro.z },
   ];
   for (const c of cases) {
@@ -199,6 +214,95 @@ section('Control: every axis moves the way the stick says');
   run(sim, sticks({ throttle: 0.35 }), 0.5);
   run(sim, sticks({ throttle: 0.35, roll: -0.5 }), 0.6);
   ok('roll left produces negative rate', sim.telemetry.gyro.x < 0, `${sim.telemetry.gyro.x.toFixed(1)} deg/s`);
+}
+
+// ------------------------------------------------- what the pilot actually feels
+
+section('Control: the sign a pilot cares about, checked against the world');
+{
+  // Every sign test above compares a rate against a setpoint, which passes
+  // whether or not the convention matches what pilots expect — a whole-model
+  // sign flip leaves all of them green. These check the attitude the quad ends
+  // up in and the direction it travels, which is what a pilot is actually
+  // reporting when they say the pitch is backwards.
+  const fly = (pitch: number): { pitchDeg: number; north: number } => {
+    const sim = new FlightSim({ airframe: kronos() });
+    sim.reset(0);
+    sim.arm(sticks());
+    sim.pos.z = -120;
+    sim.onGround = false;
+    run(sim, sticks({ throttle: 0.35, pitch }), 0.7);
+    const pitchDeg = sim.telemetry.attitude.pitch;
+    run(sim, sticks({ throttle: 0.6 }), 1.4);
+    return { pitchDeg, north: sim.pos.x };
+  };
+
+  const fwd = fly(0.5);
+  ok(
+    'forward stick drops the nose',
+    fwd.pitchDeg < -10,
+    `attitude ${fwd.pitchDeg.toFixed(1)}° (negative is nose-down)`,
+  );
+  ok(
+    'and flies the quad forward',
+    fwd.north > 2,
+    `travelled ${fwd.north.toFixed(1)} m north, having started facing north`,
+  );
+
+  const back = fly(-0.5);
+  ok(
+    'back stick raises the nose',
+    back.pitchDeg > 10,
+    `attitude ${back.pitchDeg.toFixed(1)}°`,
+  );
+  ok(
+    'and flies it backward',
+    back.north < -2,
+    `travelled ${back.north.toFixed(1)} m north`,
+  );
+}
+
+// ------------------------------------------- the whole path, stick to motion
+
+section('Control: a raw stick axis, through the mapping, to where the quad goes');
+{
+  // The check that would have caught the pitch inversion pilots reported, and
+  // that none of the sign tests above could: they all start from a command
+  // value, so they are blind to the mapping that produces it. This starts from
+  // the raw axis a radio actually reports.
+  //
+  // A stick pushed away from the pilot reads -1. That must fly the quad
+  // forward. Reasoning about the two sign conventions in the middle is exactly
+  // how this got shipped backwards twice; flying it settles it.
+  const throughMapping = (rawAxis: number): { cmd: number; noseDown: boolean; north: number } => {
+    const m = newMapping('test-radio', 2);
+    const axes = new Array<number>(8).fill(0);
+    axes[m.channels.pitch.axis] = rawAxis;
+    const cmd = computeCommands(m, axes).pitch;
+
+    const sim = new FlightSim({ airframe: kronos() });
+    sim.reset(0);
+    sim.arm(sticks());
+    sim.pos.z = -120;
+    sim.onGround = false;
+    run(sim, sticks({ throttle: 0.35, pitch: cmd }), 0.7);
+    const noseDown = sim.telemetry.attitude.pitch < 0;
+    run(sim, sticks({ throttle: 0.6 }), 1.4);
+    return { cmd, noseDown, north: sim.pos.x };
+  };
+
+  const fwd = throughMapping(-1);
+  ok(
+    'stick pushed forward flies the quad forward',
+    fwd.north > 0.3 && fwd.noseDown,
+    `axis -1 -> command ${fwd.cmd.toFixed(2)}, nose down, ${fwd.north.toFixed(1)} m north`,
+  );
+  const back = throughMapping(1);
+  ok(
+    'and pulled back flies it backward',
+    back.north < -0.3 && !back.noseDown,
+    `axis +1 -> command ${back.cmd.toFixed(2)}, nose up, ${back.north.toFixed(1)} m north`,
+  );
 }
 
 // ------------------------------------------------------------ rate tracking

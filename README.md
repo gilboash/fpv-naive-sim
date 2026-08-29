@@ -161,6 +161,25 @@ directory, because strip-only mode cannot compile them.
 | `airframe.ts` | mass, inertia, geometry — the 5" 6S racer |
 | `sim.ts` | the 6-DOF body that ties it together |
 
+### Pitch convention
+
+**Positive pitch is nose-down**, throughout the control path: stick, setpoint,
+gyro, mixer. That is Betaflight's convention and every FPV pilot's, so forward
+stick drops the nose and flies you forward, and a Blackbox log needs no sign
+correction to be compared against.
+
+The rigid body underneath keeps the standard FRD frame, where positive about +y
+is nose-up, because the cross products and quaternion integration depend on it.
+`sim.ts` converts once, where the gyro enters the controller. `attitude.pitch`
+is also nose-up positive, since that is what an artificial horizon means by it.
+
+The model shipped with the aviation convention first and every pilot who flew it
+had to invert pitch by hand. Two things follow from that. The convention is the
+domain's to choose, not the physics'. And the sign tests that all passed
+throughout were comparing achieved rate against setpoint, which is blind to a
+whole-model flip — the tests that matter fly the quad from a raw stick axis and
+check which way it goes.
+
 ### Frames
 
 Body is FRD (x forward, y right, z down), world is NED. Gravity is +z. This is

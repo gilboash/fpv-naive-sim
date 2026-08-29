@@ -420,6 +420,44 @@ Also removed: a `console.log` that dumped the whole jitter result on every run.
 `__fpvsim` was already compiled out of production by `import.meta.env.DEV`,
 confirmed by grepping the built bundle for it.
 
+## Pitch is nose-down positive (2026-08-29)
+
+Every pilot in the feedback round had to invert pitch by hand. That settles it
+as a **convention** error rather than a preset one: the model used the aviation
+convention, positive nose-up, where Betaflight and therefore every FPV pilot's
+muscle memory has positive nose-down.
+
+The control path — stick, setpoint, gyro, mixer — now runs in the pilot's
+convention. The rigid body underneath keeps standard FRD, because every cross
+product and quaternion integration depends on it, and `sim.ts` converts once
+where the gyro enters the controller. `attitude.pitch` stays nose-up positive,
+because that is what an artificial horizon means.
+
+**Both negations are load-bearing.** The gyro negation in sim.ts and the mixer's
+negative pitch coefficient close the same loop; removing either alone makes the
+pitch axis diverge — 1894 deg/s replay error, and I tried it. Removing both
+restores the old convention. There is no middle position.
+
+Three things this cost, each worth remembering:
+
+- **The sign tests could not catch it.** They all compare an achieved rate
+  against a setpoint, which passes under a whole-model flip. There are now
+  tests that fly the quad and check *where it goes* — and one that starts from a
+  raw axis value of -1 and goes through `computeCommands`, which is the only
+  kind that could have caught the original report.
+- **`tools/replay.ts` seeds `sim.omega` directly from the log**, and omega is
+  FRD (nose-up positive) while a gyro channel is nose-down positive. Missing
+  that flip doubled the pitch replay error while leaving roll and yaw untouched,
+  which is exactly the signature to look for.
+- **I flipped the mapping preset twice**, once by reasoning "stick away is
+  negative and nose-down is positive, so they agree" — which has the arithmetic
+  backwards. Forward stick reads -1 and must produce a *positive* command, so
+  pitch is inverted, like throttle. Fly it; do not reason about it.
+
+Storage bumped to v2 with a no-op migration: the flip in the model and the flip
+in the fix cancel, so a pilot's hand-set invert is still correct. The bump
+records that this was checked.
+
 ## Stick presets are a guess (2026-08-29)
 
 Gilboa had to tick invert on pitch by hand or forward stick flew him backwards.

@@ -2,13 +2,12 @@
  * Quad X mixer with Betaflight's airmode behaviour.
  *
  * The mix coefficients are derived from the geometry rather than copied, and
- * they differ from Betaflight's published QUADX table in the sign of pitch.
- * That is deliberate and it is a convention difference, not a disagreement:
- * this model defines positive pitch as nose-up throughout, matching the Euler
- * angles in math.ts, so a positive pitch command has to raise the front
- * motors. The PID gains are sign-agnostic, so a real tune still transfers.
- * The rate-tracking tests in tools/flight-check.ts assert every one of these
- * signs, which is the only reason to trust the paragraph you are reading.
+ * they agree with Betaflight's published QUADX table on every axis. Pitch is
+ * negative here because the whole control path — stick, setpoint, gyro, mixer —
+ * runs in the pilot's convention, where positive pitch is nose-down. The rigid
+ * body underneath keeps the standard FRD frame; sim.ts converts once, at the
+ * gyro. The rate-tracking tests in tools/flight-check.ts assert every one of
+ * these signs, which is the only reason to trust this paragraph.
  *
  * Airmode is the part that matters for feel. Without it, a mix that would push
  * a motor below zero simply clips, the quad silently loses roll authority at
@@ -37,8 +36,16 @@ export function mixFromGeometry(mounts: MotorMount[]): MixCoeffs[] {
     // Roll moment from a motor is -y*T, so the left side (negative y) is the
     // side that rolls the quad right.
     roll: maxY > 0 ? -m.pos.y / maxY : 0,
-    // Pitch moment is +x*T: the front raises the nose.
-    pitch: maxX > 0 ? m.pos.x / maxX : 0,
+    // Negative, and it must be: the controller is fed a gyro in the pilot's
+    // convention (positive = nose down, see sim.ts), so the mixer that closes
+    // that loop has to answer in the same convention or the feedback is
+    // positive and the pitch axis diverges. Both negations are load-bearing;
+    // removing either one alone makes the model unflyable, which is worth
+    // knowing before "simplifying" this.
+    //
+    // This matches Betaflight's published QUADX table, where the rear motors
+    // carry pitch +1.
+    pitch: maxX > 0 ? -m.pos.x / maxX : 0,
     // Reaction torque yaws opposite the rotor, so a CCW rotor yaws nose-right.
     yaw: m.spin,
   }));

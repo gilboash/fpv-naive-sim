@@ -130,8 +130,13 @@ function seedState(sim: FlightSim, i: number): void {
 
   const DEG_TO_RAD = Math.PI / 180;
   const g = [log.get('gyroADC[0]'), log.get('gyroADC[1]'), log.get('gyroADC[2]')];
+  // sim.omega is the FRD body rate — positive about +y is nose-UP — while a
+  // gyro channel, ours or Betaflight's, is positive nose-DOWN. Seeding it
+  // without the flip installs a backwards initial condition on every window,
+  // which showed up as the pitch error roughly doubling while roll and yaw did
+  // not move at all.
   sim.omega.x = (g[0]?.[i] ?? 0) * DEG_TO_RAD;
-  sim.omega.y = (g[1]?.[i] ?? 0) * DEG_TO_RAD;
+  sim.omega.y = -(g[1]?.[i] ?? 0) * DEG_TO_RAD;
   sim.omega.z = (g[2]?.[i] ?? 0) * DEG_TO_RAD;
 
   for (let m = 0; m < sim.motors.length; m++) {
@@ -165,6 +170,10 @@ function seedState(sim: FlightSim, i: number): void {
   // Attitude. Not for gravity — that produces no torque — but because the
   // rotors see velocity in the body frame, and world velocity plus the wrong
   // attitude is the wrong inflow, which is the wrong thrust on every arm.
+  // attitude.pitch is nose-up positive in both our recordings and the sim, so
+  // unlike the gyro above it needs no flip. The two conventions coexisting is
+  // the price of matching Betaflight on the control path and an artificial
+  // horizon on the display; both are labelled where they are defined.
   const r = log.get('roll')?.[i];
   const p = log.get('pitch')?.[i];
   const y = log.get('yaw')?.[i];
@@ -209,7 +218,7 @@ function seedWithWarmup(sim: FlightSim, start: number, warmupSteps: number): voi
 
     // Pin to the reference so the filters charge on real history.
     sim.omega.x = (g[0]?.[i + 1] ?? 0) * DEG_TO_RAD;
-    sim.omega.y = (g[1]?.[i + 1] ?? 0) * DEG_TO_RAD;
+    sim.omega.y = -(g[1]?.[i + 1] ?? 0) * DEG_TO_RAD; // gyro is nose-down positive
     sim.omega.z = (g[2]?.[i + 1] ?? 0) * DEG_TO_RAD;
     for (let m = 0; m < sim.motors.length; m++) {
       const rpm = log.get(`rpm[${m}]`)?.[i + 1];

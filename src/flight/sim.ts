@@ -84,7 +84,13 @@ export interface Telemetry {
   rcRoll: number;
   rcPitch: number;
   rcYaw: number;
-  /** deg/s, body axes. */
+  /**
+   * deg/s. Roll and yaw are body axes; **pitch is positive nose-down**, the
+   * pilot's and Betaflight's convention, so it compares with a Blackbox log
+   * directly and reads the way a pilot expects. `attitude.pitch` below is the
+   * other way round, positive nose-up, because that is what an artificial
+   * horizon means by it.
+   */
   gyro: Vec3;
   /** deg/s, what the PID was asked for. */
   setpoint: Vec3;
@@ -384,7 +390,13 @@ export class FlightSim {
     const gyro = this.gyroDeg;
     const lim = GYRO_LIMIT_DPS;
     gyro.x = this.gyroFilter[0].apply(clamp(this.omega.x * RAD, -lim, lim));
-    gyro.y = this.gyroFilter[1].apply(clamp(this.omega.y * RAD, -lim, lim));
+    // Negated: the rigid body keeps the standard FRD frame, where a positive
+    // rate about +y is nose-up, because every cross product and quaternion
+    // integration in this file depends on it. The *control* channel is
+    // Betaflight's, where positive pitch is nose-down. One negation here is the
+    // whole of the difference, and it is also how Betaflight is arranged — its
+    // gyro is a physical sensor and its mixer signs carry the convention.
+    gyro.y = this.gyroFilter[1].apply(clamp(-this.omega.y * RAD, -lim, lim));
     gyro.z = this.gyroFilter[2].apply(clamp(this.omega.z * RAD, -lim, lim));
 
     // ---- rate setpoints
