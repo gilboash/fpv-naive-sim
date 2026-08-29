@@ -11,6 +11,16 @@ import { Renderer } from './render/renderer.ts';
 import { TRACKS, type Track } from './render/track.ts';
 import { clearance } from './flight/collision.ts';
 
+const STORAGE_KEY = 'fpvsim.scene.v1';
+
+interface StoredScene {
+  version: 1;
+  fovDeg: number;
+  tiltDeg: number;
+  track: number;
+  resetMode: 'inPlace' | 'start';
+}
+
 const el = <T extends HTMLElement>(tag: string, cls?: string, text?: string): T => {
   const n = document.createElement(tag) as T;
   if (cls) n.className = cls;
@@ -27,9 +37,19 @@ export class SceneView {
   private statusEl: HTMLElement;
   private crashEl: HTMLElement;
   resetMode: 'inPlace' | 'start' = 'inPlace';
+  /**
+   * Camera settings live here as well as on the renderer, because the controls
+   * are built before the renderer exists and because they have to survive a
+   * reload. Camera tilt especially: pilots have firm preferences about it, and
+   * re-entering a personal number on every visit is the kind of friction that
+   * gets a tool abandoned rather than reported.
+   */
+  private fovDeg = 75;
+  private tiltDeg = 25;
 
   constructor(root: HTMLElement, sim: FlightSim) {
     this.sim = sim;
+    this.loadSettings();
     this.canvas = el<HTMLCanvasElement>('canvas', 'fpv-canvas');
     root.appendChild(this.canvas);
 
@@ -43,7 +63,10 @@ export class SceneView {
       trackSel.appendChild(o);
     });
     trackSel.value = String(Math.max(0, TRACKS.indexOf(this.track)));
-    trackSel.onchange = () => this.loadTrack(TRACKS[Number(trackSel.value)] ?? TRACKS[0]!);
+    trackSel.onchange = () => {
+      this.loadTrack(TRACKS[Number(trackSel.value)] ?? TRACKS[0]!);
+      this.saveSettings();
+    };
     const trackLabel = el('label', undefined, 'Map ');
     trackLabel.appendChild(trackSel);
     row.appendChild(trackLabel);
@@ -70,11 +93,15 @@ export class SceneView {
       wrap.appendChild(document.createTextNode('°'));
       row.appendChild(wrap);
     };
-    num('FOV', 75, 50, 130, (v) => {
+    num('FOV', this.fovDeg, 50, 130, (v) => {
+      this.fovDeg = v;
       if (this.renderer) this.renderer.camera.fovDeg = v;
+      this.saveSettings();
     });
-    num('Cam tilt', 25, 0, 60, (v) => {
+    num('Cam tilt', this.tiltDeg, 0, 60, (v) => {
+      this.tiltDeg = v;
       if (this.renderer) this.renderer.camera.tiltDeg = v;
+      this.saveSettings();
     });
 
     // Where a reset puts you. In place by default: sending a pilot back to the
@@ -90,8 +117,10 @@ export class SceneView {
       o.textContent = label;
       modeSel.appendChild(o);
     }
+    modeSel.value = this.resetMode;
     modeSel.onchange = () => {
       this.resetMode = modeSel.value === 'start' ? 'start' : 'inPlace';
+      this.saveSettings();
     };
     const ml = el('label', undefined, 'Reset to ');
     ml.appendChild(modeSel);
@@ -112,6 +141,10 @@ export class SceneView {
 
     try {
       this.renderer = new Renderer(this.canvas);
+      // The renderer is built after the controls, so the stored camera has to
+      // be pushed into it here rather than by the control callbacks.
+      this.renderer.camera.fovDeg = this.fovDeg;
+      this.renderer.camera.tiltDeg = this.tiltDeg;
       this.loadTrack(this.track);
     } catch (e) {
       this.failure = e instanceof Error ? e.message : String(e);
@@ -122,6 +155,37 @@ export class SceneView {
         `No 3D view: ${this.failure}. The flight model and the instruments below are unaffected.`,
       );
       root.appendChild(warn);
+    }
+  }
+
+  private loadSettings(): void {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const st = JSON.parse(raw) as StoredScene;
+      if (st.version !== 1) return;
+      if (Number.isFinite(st.fovDeg)) this.fovDeg = Math.max(50, Math.min(130, st.fovDeg));
+      if (Number.isFinite(st.tiltDeg)) this.tiltDeg = Math.max(0, Math.min(60, st.tiltDeg));
+      if (st.resetMode === 'start' || st.resetMode === 'inPlace') this.resetMode = st.resetMode;
+      const t = TRACKS[st.track];
+      if (t) this.track = t;
+    } catch {
+      // A corrupt stored setting should cost the defaults, not the page.
+    }
+  }
+
+  private saveSettings(): void {
+    try {
+      const st: StoredScene = {
+        version: 1,
+        fovDeg: this.fovDeg,
+        tiltDeg: this.tiltDeg,
+        track: Math.max(0, TRACKS.indexOf(this.track)),
+        resetMode: this.resetMode,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
+    } catch {
+      /* private mode, quota — not worth failing over */
     }
   }
 

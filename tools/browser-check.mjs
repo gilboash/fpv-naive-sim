@@ -690,6 +690,47 @@ const main = async () => {
     );
   }
 
+  // Everything a pilot sets must survive a reload, or they re-enter it on every
+  // visit and stop bothering to report anything else.
+  const persisted = await evaluate(`(() => {
+    const { scene } = globalThis.__fpvsim;
+    const panel = document.querySelector('#scene-view');
+    const nums = [...panel.querySelectorAll('input[type=number]')];
+    const [fov, tilt] = nums;
+    fov.value = '96'; fov.dispatchEvent(new Event('input', { bubbles: true }));
+    tilt.value = '38'; tilt.dispatchEvent(new Event('input', { bubbles: true }));
+    const sels = [...panel.querySelectorAll('select')];
+    const modeSel = sels[sels.length - 1];
+    modeSel.value = 'start'; modeSel.dispatchEvent(new Event('change', { bubbles: true }));
+    const stored = JSON.parse(localStorage.getItem('fpvsim.scene.v1') || '{}');
+    return {
+      stored,
+      live: { fov: scene.renderer?.camera.fovDeg, tilt: scene.renderer?.camera.tiltDeg, mode: scene.resetMode },
+      keys: Object.keys(localStorage).filter((k) => k.startsWith('fpvsim.')).sort(),
+    };
+  })()`);
+
+  check(
+    'camera and reset mode reach the renderer',
+    persisted.live.fov === 96 && persisted.live.tilt === 38 && persisted.live.mode === 'start',
+    `fov ${persisted.live.fov}, tilt ${persisted.live.tilt}, reset ${persisted.live.mode}`,
+  );
+  check(
+    'and are written to localStorage',
+    persisted.stored.fovDeg === 96 && persisted.stored.tiltDeg === 38 && persisted.stored.resetMode === 'start',
+    JSON.stringify(persisted.stored),
+  );
+  // The mapping key is written when a radio is actually mapped, so a fresh
+  // profile that has never had one legitimately does not have it yet.
+  check(
+    'scene and tune are stored',
+    ['fpvsim.scene.v1', 'fpvsim.tune.v1'].every((k) => persisted.keys.includes(k)),
+    persisted.keys.join(', ') +
+      (persisted.keys.includes('fpvsim.mappings.v1')
+        ? ''
+        : ' — no mapping stored yet, which is expected until a radio is mapped'),
+  );
+
   // Let it run a while longer to catch anything that only shows up over time.
   await sleep(2000);
 

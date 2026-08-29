@@ -789,6 +789,24 @@ without `preview.allowedHosts` every request returns
 which Vite's own docs flag as inviting DNS rebinding onto whatever network the
 machine is sitting on.
 
+### What each pilot's browser remembers
+
+Everything a pilot sets is kept in their own browser, under three keys:
+
+| key | holds |
+|---|---|
+| `fpvsim.mappings.v1` | channel mapping and calibration, **per device id** |
+| `fpvsim.tune.v1` | rate curve, PIDs, filters |
+| `fpvsim.scene.v1` | FOV, camera tilt, map, reset mode |
+
+Nothing is sent anywhere, and nothing is shared between pilots — the host has no
+idea any of it exists.
+
+**`localStorage` is per origin**, which is the part that catches people out. A
+pilot who maps their radio at `http://192.168.7.54:5180` and then opens the
+Cloudflare address is a different origin and starts from scratch. For a feedback
+round, give everyone the final URL first and let them set up once.
+
 ### What it costs to run
 
 Measured against the deployed instance, with a headless browser flying it for

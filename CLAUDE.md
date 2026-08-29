@@ -495,6 +495,14 @@ The server process runs as **python3.13**, not `python.exe` — `tasklist` and
 `Get-Process python` both miss it. Find it via
 `Get-NetTCPConnection -LocalPort 5180`.
 
+**Per-pilot state** lives in three localStorage keys: `fpvsim.mappings.v1`
+(per device id), `fpvsim.tune.v1`, and `fpvsim.scene.v1` (FOV, camera tilt, map,
+reset mode). The last of those was added 2026-08-29 — camera tilt and FOV were
+being reset on every reload, which is exactly the kind of friction that gets a
+tool abandoned rather than reported. Note that localStorage is **per origin**,
+so a pilot who sets up on the LAN address and then moves to the Cloudflare one
+starts over.
+
 **Measured load**, 30 s with a headless client flying: server 0.016 CPU-seconds
 (0.05% of one core) and 25.7 MB; client 1.8% of a core in script, 6.1% across
 all tasks, 2.6 MB heap. The server does nothing per visitor beyond handing over
