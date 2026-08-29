@@ -86,6 +86,20 @@ function cleanup(code) {
 }
 
 const main = async () => {
+  // Fail on an empty port rather than reporting four puzzling check failures.
+  // The default target used to be a permanent dev server; it is now whatever
+  // happens to be on 5180, which may be nothing, or a tunnel to somewhere else.
+  try {
+    const probe = await fetch(URL_TO_CHECK, { redirect: 'manual' });
+    if (!probe.ok && probe.status >= 500) throw new Error(`HTTP ${probe.status}`);
+  } catch (e) {
+    console.error(
+      `\nnothing usable at ${URL_TO_CHECK} — ${e instanceof Error ? e.message : e}` +
+        `\nstart one with \`npm run dev\`, or pass a URL: browser-check.mjs <url>\n`,
+    );
+    cleanup(2);
+  }
+
   const wsUrl = await browserWs();
   const ws = new WebSocket(wsUrl);
   await new Promise((r) => (ws.onopen = r));
@@ -190,6 +204,22 @@ const main = async () => {
   if (!hasHandle) {
     console.log(`  \x1b[33mnote\x1b[0m  no debug handle — production build, running smoke checks only`);
 
+    // A trustworthy origin is the precondition for everything else: without it
+    // the browser ignores COOP/COEP no matter what the host sends, and hides
+    // the Gamepad API, so the page can be looked at but not flown.
+    const ctx = await evaluate(`(() => ({
+      secure: globalThis.isSecureContext === true,
+      gamepads: typeof navigator.getGamepads === 'function',
+    }))()`);
+    warn(
+      'trustworthy origin',
+      ctx.secure,
+      ctx.secure
+        ? 'yes — isolation honoured and radios visible'
+        : 'no — plain http to a non-localhost origin, so COOP/COEP are ignored and ' +
+          `the Gamepad API is ${ctx.gamepads ? 'present but inert' : 'hidden'}. Look, do not fly.`,
+    );
+
     const notice = await evaluate(`(() => {
       const n = document.querySelector('#notice');
       return { hidden: n?.hidden !== false, text: (n?.textContent || '').slice(0, 90) };
@@ -199,6 +229,13 @@ const main = async () => {
       isolated ? notice.hidden === true : notice.hidden === false,
       isolated ? 'isolated, so no notice shown' : `notice shown: "${notice.text}"`,
     );
+    if (!ctx.secure) {
+      check(
+        'and blames the origin rather than the host',
+        /http|https/i.test(notice.text ?? ''),
+        `"${(notice.text ?? '').slice(0, 80)}…"`,
+      );
+    }
 
     // Read inside an animation frame. The drawing buffer is cleared at
     // composite, so a readback outside the frame the app drew in sees nothing —
@@ -227,8 +264,25 @@ const main = async () => {
     );
 
     await sleep(1500);
-    check('no page errors', problems.length === 0, problems.length === 0 ? 'clean' : `${problems.length} problem(s)`);
-    for (const p of problems) console.log(`      ${p}`);
+    // On an untrustworthy origin Chrome logs an error saying it ignored
+    // COOP. That is the browser correctly describing the environment, and the
+    // page already says the same thing in words — counting it as a defect would
+    // mean this check can never pass over plain http, which is a real way to
+    // deploy even if it is not a good one.
+    const expected = (m) =>
+      !ctx.secure && /Cross-Origin-(Opener|Embedder)-Policy/i.test(m) && /untrustworthy|https/i.test(m);
+    const real = problems.filter((m) => !expected(m));
+    const excused = problems.length - real.length;
+    check(
+      'no page errors',
+      real.length === 0,
+      real.length === 0
+        ? excused > 0
+          ? `clean (${excused} expected on an insecure origin)`
+          : 'clean'
+        : `${real.length} problem(s)`,
+    );
+    for (const p of real) console.log(`      ${p}`);
     const tail = warned > 0 ? ` (${warned} warning${warned === 1 ? '' : 's'})` : '';
     console.log(
       failed === 0

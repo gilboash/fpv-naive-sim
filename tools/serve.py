@@ -10,9 +10,10 @@ a tunnel trips over.
 
     python serve.py [--port 5180] [--root dist] [--host 127.0.0.1]
 
-Binds to localhost by default. The intended path to the outside is a Cloudflare
-tunnel, which connects locally; binding 0.0.0.0 would additionally expose it to
-the whole LAN for no benefit.
+Defaults to 0.0.0.0 so the machine is reachable from the LAN, which is what you
+want while testing from another device in the house. A Cloudflare tunnel does
+not need that — it connects locally — so pass --host 127.0.0.1 once the tunnel
+is the only way in and there is no reason to answer the rest of the network.
 """
 
 import argparse
@@ -68,7 +69,7 @@ class Server(socketserver.ThreadingTCPServer):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=5180)
-    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--root", default="dist")
     args = ap.parse_args()
 

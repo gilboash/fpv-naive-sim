@@ -355,6 +355,18 @@ function renderNotice(isolated: boolean): void {
       'gamepads over HTTPS, and this page was served over plain http. Ask ' +
       'whoever sent you the link for an https:// one — everything else works, ' +
       'but nothing can be flown without it.';
+  } else if (!globalThis.isSecureContext) {
+    // Distinct from the case below, and the distinction matters: over an
+    // untrustworthy origin the browser *ignores* COOP/COEP rather than the host
+    // failing to send them, so "your host is misconfigured" would send someone
+    // to fix the wrong thing. Chrome says as much in the console.
+    html =
+      '<strong>This page was served over plain http, so a lot of it is ' +
+      'switched off.</strong> Browsers only expose gamepads, and only honour ' +
+      'the isolation headers, on a trustworthy origin. Over http to an IP ' +
+      'address you can look around but not fly. Ask for an https:// link, or ' +
+      'open it on the machine hosting it as http://localhost — localhost counts ' +
+      'as trustworthy and everything works there.';
   } else if (!isolated) {
     cls = 'notice warn';
     html =

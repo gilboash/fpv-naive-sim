@@ -483,6 +483,23 @@ Verified end to end by tunnelling `ssh -L 5181:127.0.0.1:5180` and running
 `node tools/browser-check.mjs http://127.0.0.1:5181/` against the live
 instance: isolated, atomics ticker, scene drawing, no page errors.
 
+Now binds **0.0.0.0** so the LAN can reach it, with a firewall rule
+`fpvsim 5180`. But a LAN address is not a trustworthy origin: gamepads are inert
+and COOP/COEP are *ignored regardless of what the server sends*, so it is for
+looking at, not flying. The page's warning blames the origin rather than the
+host for exactly that reason. `localhost` is trustworthy, so
+`ssh -L 5180:127.0.0.1:5180` gives a fully working page where the LAN address
+does not.
+
+The server process runs as **python3.13**, not `python.exe` — `tasklist` and
+`Get-Process python` both miss it. Find it via
+`Get-NetTCPConnection -LocalPort 5180`.
+
+**Measured load**, 30 s with a headless client flying: server 0.016 CPU-seconds
+(0.05% of one core) and 25.7 MB; client 1.8% of a core in script, 6.1% across
+all tasks, 2.6 MB heap. The server does nothing per visitor beyond handing over
+80 KB once.
+
 **Known limitation:** it is a bare background process, so it does not survive a
 reboot. A Scheduled Task or the Docker path would fix that when it matters.
 

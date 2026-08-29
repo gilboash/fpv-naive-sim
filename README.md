@@ -15,7 +15,7 @@ any art exists, and the instrument panel is how you judge it in the meantime.
 
 ```
 npm install
-npm run dev            # http://localhost:5180 (or whatever Vite prints)
+npm run dev            # http://localhost:5180
 npm run build          # typecheck + production build
 
 npm run check:flight   # physical acceptance tests for the model, headless
@@ -733,11 +733,21 @@ or three hundred is the same load.
 
 Two things the host must get right, both of which fail quietly:
 
-### HTTPS, or there is no radio at all
+### HTTPS, or the page is for looking at, not flying
 
-Browsers expose the Gamepad API only in a secure context. Over plain `http://`
-to anything but localhost the API is simply absent, and the page will say so
-rather than looking broken.
+On an origin the browser does not trust — plain `http://` to anything but
+localhost — two things switch off at once. Gamepads are hidden or inert, and
+**COOP/COEP are ignored no matter what the host sends**, so cross-origin
+isolation is lost and the ticker falls back. Chrome says as much in the console:
+*"the Cross-Origin-Opener-Policy header has been ignored, because the URL's
+origin was untrustworthy"*.
+
+That distinction matters when reading the page's own warning. It blames the
+origin rather than the host, because "your server is not sending the headers"
+would send someone to fix a thing that is not broken.
+
+`localhost` counts as trustworthy, so an SSH tunnel to the serving machine works
+fully where its LAN address does not.
 
 ### COOP/COEP, or the 1 kHz ticker degrades
 
@@ -778,6 +788,27 @@ without `preview.allowedHosts` every request returns
 `FPVSIM_ALLOWED_HOSTS` for a domain of your own. It is deliberately not `true`,
 which Vite's own docs flag as inviting DNS rebinding onto whatever network the
 machine is sitting on.
+
+### What it costs to run
+
+Measured against the deployed instance, with a headless browser flying it for
+30 s:
+
+| | |
+|---|---|
+| **server** CPU | 0.016 s over 30 s — **0.05% of one core** |
+| **server** memory | 25.7 MB, all of it the Python interpreter |
+| **client** script | 1.8% of one core |
+| **client** all tasks | 6.1% of one core, including compositing |
+| **client** JS heap | 2.6 MB |
+
+The asymmetry is the design. The server hands over four files and then does
+nothing at all; a second visitor costs it another 80 KB and no more. The client
+runs a 1 kHz flight model and a renderer for about 6% of one core.
+
+Serving over plain http to a LAN address costs the client *less* — 5.6% against
+6.1% — which is not good news: the ticker has fallen back to a timer there and
+is doing less work than it should.
 
 ### Checking a deployment
 
