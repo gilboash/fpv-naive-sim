@@ -94,13 +94,21 @@ export class FlightPanel {
   private recDuration: HTMLInputElement;
   private recRate: HTMLSelectElement;
 
-  constructor(root: HTMLElement) {
-    const grid = el('div', 'fl-grid');
+  /**
+   * Two hosts, because the panel serves two different moments.
+   *
+   * `live` is what a pilot watches while flying — battery, altitude, speed,
+   * arm and reset, the recorder. `diag` is what they look at while setting up:
+   * the airframe model, rate tracking, motor outputs. They were one wall of
+   * numbers, which meant the flying numbers were buried among the tuning ones.
+   */
+  constructor(live: HTMLElement, diag: HTMLElement, quadHost: HTMLElement) {
+    const root = live;
+    const grid = el('div', 'fl-grid one-col');
 
     // ---- left: the airframe itself, and the headline numbers
-    const left = el('div', 'fl-col');
-    this.quadCanvas = el<HTMLCanvasElement>('canvas', 'fl-quad');
-    left.appendChild(this.quadCanvas);
+    this.quadCanvas = el<HTMLCanvasElement>('canvas', 'fl-quad wide');
+    quadHost.appendChild(this.quadCanvas);
 
     const nums = el('div', 'fl-nums');
     for (const [key, label] of [
@@ -116,8 +124,7 @@ export class FlightPanel {
       this.readouts[key] = v;
       nums.appendChild(cell);
     }
-    left.appendChild(nums);
-    grid.appendChild(left);
+    live.appendChild(nums);
 
     // ---- right: what the controller is doing
     const right = el('div', 'fl-col');
@@ -151,7 +158,7 @@ export class FlightPanel {
     right.appendChild(att);
     grid.appendChild(right);
 
-    root.appendChild(grid);
+    diag.appendChild(grid);
 
     // ---- controls
     const bar = el('div', 'row');
@@ -423,11 +430,15 @@ export class FlightPanel {
   }
 
   /**
-   * The 3D quad, drawn every animation frame rather than at the panel's 30 Hz,
-   * because a spinning prop at 30 Hz looks like a strobe.
+   * The mapping-check quad, drawn every animation frame rather than at the
+   * panel's 30 Hz, because a spinning prop stepped at 30 Hz strobes.
+   *
+   * Takes the pilot's sticks rather than simulator state: it exists to show
+   * that the channels are mapped the right way round, and pointing it at the
+   * flight model would only repeat what the FPV view already says.
    */
-  renderQuad(nowMs: number): void {
-    this.quadView?.render(this.sim.telemetry, nowMs);
+  renderQuad(cmd: Commands, nowMs: number): void {
+    this.quadView?.render(cmd, nowMs);
   }
 
   /** Called from the 30 Hz render loop. Never from the tick. */

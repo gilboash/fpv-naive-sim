@@ -31,6 +31,7 @@
           never writes it, except to place the quad on the start line.
         </p>
         <div id="scene-view"></div>
+        <div id="flight-live"></div>
       </section>
       </div>
 
@@ -92,16 +93,6 @@
         <p class="hint" id="bind-message"></p>
       </section>
 
-      <section id="tune">
-        <h2>3 · Rates</h2>
-        <p class="hint">
-          The rate curve is most of what makes muscle memory transfer, so it has to be
-          <em>your</em> curve. Every value here lives in the header of any Blackbox log —
-          load one and it comes across, PIDs and filters included, rather than being
-          retyped from a configurator. Saved in this browser.
-        </p>
-        <div id="tune-panel"></div>
-      </section>
 
       <details class="diagnostics">
         <summary>Diagnostics — raw axes and loop timing</summary>
@@ -144,18 +135,29 @@
 
       <div id="panel-instruments" class="panel" role="tabpanel" hidden>
       <section id="flight">
-        <h2>1 · Flight instruments</h2>
+        <h2>1 · Stick check</h2>
         <p class="hint">
-          1 kHz rate-mode flight model: blade-element rotors, brushless motors with
-          battery sag, and a Betaflight-scaled PID loop. The physics step runs inside
-          the same tick as the gamepad poll, not in <code>requestAnimationFrame</code>.
-          Acceptance tests for it run headless — <code>npm run check:flight</code>.
+          Driven by your sticks, not by the flight model, so it answers one question:
+          are the channels mapped the right way round? Push right and it should bank right;
+          push forward and the nose should drop. Throttle does not move it — it hangs in
+          space — but it does spin the props, so that channel can be checked too.
         </p>
-        <div id="flight-panel"></div>
+        <div id="quad-check"></div>
       </section>
 
+        <section id="tune">
+          <h2>2 · Rates</h2>
+          <p class="hint">
+            The rate curve is most of what makes muscle memory transfer, so it has to be
+            <em>your</em> curve. Every value here lives in the header of any Blackbox log —
+            load one and it comes across, PIDs and filters included, rather than being
+            retyped from a configurator. Saved in this browser.
+          </p>
+          <div id="tune-panel"></div>
+        </section>
+
         <section id="pids">
-          <h2>2 · PIDs and filters</h2>
+          <h2>3 · PIDs and filters</h2>
           <p class="hint">
             The gains the model flies on. Loading a Blackbox log in <em>Settings → Rates</em>
             brings these across too, which is the reliable way to fly your own tune. Changes
@@ -163,6 +165,16 @@
             every keystroke and jolt the quad mid-air.
           </p>
           <div id="pid-panel"></div>
+        </section>
+
+        <section id="response">
+          <h2>4 · Response</h2>
+          <p class="hint">
+            What the controller is doing with those gains: commanded rate against achieved
+            rate, and the motor outputs the mixer is asking for. The gap between the two is
+            the tune.
+          </p>
+          <div id="flight-panel"></div>
         </section>
       </div>
     </main>

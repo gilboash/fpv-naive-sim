@@ -103,7 +103,7 @@ function setTicking(on: boolean): void {
 // ticks only arrive via a message event, so module evaluation has always
 // finished by then, but relying on that would make the ordering a trap for
 // whoever moves this next.
-const flight = new FlightPanel($('flight-panel'));
+const flight = new FlightPanel($('flight-live'), $('flight-panel'), $('quad-check'));
 const auxControl = new AuxControl();
 const switchDetector = new SwitchDetector(poller);
 const scene = new SceneView($('scene-view'), flight.sim);
@@ -553,7 +553,7 @@ function render(tNow: number): void {
   // on the worker ticker, so the quad keeps flying while you are in Settings.
   if (tabs.visible('fly')) scene.render();
   // The quad model draws every frame too: a prop stepped at 30 Hz strobes.
-  if (tabs.visible('instruments')) flight.renderQuad(tNow);
+  if (tabs.visible('instruments')) flight.renderQuad(commands, tNow);
 
   if (tNow - lastRender < 33) return; // 30 Hz is plenty for text
   lastRender = tNow;

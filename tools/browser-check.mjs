@@ -193,8 +193,8 @@ const main = async () => {
   );
   judge('ticker backend', /atomics/.test(backend), backend);
 
-  const hasPanel = await evaluate(`!!document.querySelector('#flight-panel .fl-grid')`);
-  check('flight panel rendered', hasPanel, hasPanel ? 'present' : 'missing');
+  const hasPanel = await evaluate(`!!document.querySelector('#flight-panel .fl-grid') && !!document.querySelector('#flight-live .fl-nums')`);
+  check('flight panels rendered', hasPanel, hasPanel ? 'live and diagnostic hosts both present' : 'missing');
 
   // The deep checks reach into the page through a debug handle that only exists
   // in a dev build, on purpose — a production bundle should not carry a
@@ -462,7 +462,7 @@ const main = async () => {
   // The button path: duration, auto-stop, and the download links appearing.
   const uiRec = await evaluate(`(async () => {
     const { flight } = globalThis.__fpvsim;
-    const panel = document.querySelector('#flight-panel');
+    const panel = document.querySelector('#flight-live');
     const dur = panel.querySelector('input[type=number]');
     const btn = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Record flight');
     dur.value = '5';
@@ -617,11 +617,11 @@ const main = async () => {
     const crashedIntoPost = sim.crashed;
     const speed = sim.crashSpeed;
     // Arming must be refused while wrecked, and the button must say why.
-    const armBtn = [...document.querySelectorAll('#flight-panel button')]
+    const armBtn = [...document.querySelectorAll('#flight-live button')]
       .find((b) => b.textContent === 'Arm');
     armBtn?.click();
     const armedWhileCrashed = sim.armed;
-    const refusalText = document.querySelector('#flight-panel .dim')?.textContent ?? '';
+    const refusalText = document.querySelector('#flight-live .dim')?.textContent ?? '';
 
     // Reset must clear it, put the quad back on the start line, and — since the
     // pilot was flying when it crashed and the throttle is down — hand it back
@@ -633,7 +633,7 @@ const main = async () => {
     flight.step({ throttle: 0, roll: 0, pitch: 0, yaw: 0 }, true);
     flight.reset();
     const rearmed = sim.armed;
-    const afterResetText = document.querySelector('#flight-panel .dim')?.textContent ?? '';
+    const afterResetText = document.querySelector('#flight-live .dim')?.textContent ?? '';
     // And it has to survive being left alone: a respawn that drops and
     // re-crashes leaves the pilot unable to fly at all.
     for (let i = 0; i < 3000; i++) sim.step({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
@@ -701,11 +701,8 @@ const main = async () => {
     requestAnimationFrame(() => {
     const { flight } = globalThis.__fpvsim;
     if (!flight.quadView) return resolve({ ok: false, reason: 'no WebGL' });
-    flight.sim.reset(0);
-    flight.sim.pos.z = -20; flight.sim.onGround = false;
-    flight.sim.omega.x = 3;
-    for (let i = 0; i < 200; i++) flight.sim.step({ throttle: 0.5, roll: 0.4, pitch: 0, yaw: 0 });
-    flight.renderQuad(performance.now());
+    // Stick-driven now, not attitude-driven: this is the mapping check.
+    flight.renderQuad({ throttle: 0.6, roll: 0.7, pitch: -0.4, yaw: 0.2 }, performance.now());
     const c = flight.quadCanvas ?? document.querySelector('.fl-quad');
     const off = document.createElement('canvas');
     off.width = c.width; off.height = c.height;
@@ -722,6 +719,37 @@ const main = async () => {
     resolve({ ok: true, w: c.width, spread: Math.max(max[0]-min[0], max[1]-min[1], max[2]-min[2]) });
     });
   })`);
+  const quadSticks = await evaluate(`(() => {
+    const { flight } = globalThis.__fpvsim;
+    if (!flight.quadView) return { ok: false };
+    const shot = (cmd) => {
+      flight.renderQuad(cmd, performance.now());
+      const c = flight.quadCanvas;
+      const off = document.createElement('canvas');
+      off.width = c.width; off.height = c.height;
+      off.getContext('2d').drawImage(c, 0, 0);
+      return off.toDataURL().length;
+    };
+    const level = shot({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
+    const rolled = shot({ throttle: 0, roll: 1, pitch: 0, yaw: 0 });
+    const again = shot({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
+    // Not pixel-identical on the way back: the props keep turning between
+    // frames, on purpose. So compare how far each one moved instead.
+    return {
+      ok: true,
+      moved: Math.abs(rolled - level),
+      returned: Math.abs(again - level),
+    };
+  })()`);
+  check(
+    'the stick check follows the sticks and springs back to level',
+    quadSticks.ok && quadSticks.returned * 4 < quadSticks.moved,
+    quadSticks.ok
+      ? `full roll moves the image by ${quadSticks.moved}; centring leaves ${quadSticks.returned} ` +
+        `(prop rotation, not attitude)`
+      : 'no WebGL',
+  );
+
   check(
     'the quad instrument draws an airframe',
     quad.ok === true && quad.spread > 30,

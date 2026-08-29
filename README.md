@@ -745,36 +745,48 @@ Bindings read axes or buttons. Axes matter more: EdgeTX in USB Joystick mode
 puts switches on the spare axes, so a TX16S reports eight and the four beyond
 AETR are usually where the switches live.
 
-## Three tabs
+## Three tabs, split by moment rather than by subject
 
-**Go fly** is the FPV view, with the two sticks drawn over the bottom-right
-corner and a fullscreen button. The stick display follows the configured stick
-mode rather than assuming mode 2 — the mode presets are already known to be
-unreliable, and a display that lies about which stick is which is worse than
-none.
+**Go fly** is everything live: the FPV view with the sticks drawn over the
+bottom-right corner, fullscreen, arm and reset, and the battery, altitude, speed
+and current readouts. If you need it while flying, it is here.
 
-**Settings** is device, channel mapping, rates and diagnostics. **Instruments**
-is the 3D quad, the numbers, rate tracking, motors, the recorder, and PID and
-filter editing.
+**Settings** is what you do before flying: device, channel mapping and switch
+bindings, and the diagnostics.
+
+**Instruments** is for checking and tuning: the stick check, rates, PIDs and
+filters, and the response bars. Nothing here is needed in the air.
+
+The stick display follows the configured stick mode rather than assuming mode 2
+— the mode presets are already known to be unreliable, and a display that lies
+about which stick is which is worse than none.
 
 Only the visible tab renders, so two WebGL contexts are not drawing frames
 nobody can see. **The physics does not care**: it runs on the worker ticker, not
 `requestAnimationFrame`, so ducking into Settings mid-flight does not freeze the
 quad — there is a test asserting exactly that.
 
-## The quad instrument
+## The stick check
 
-An artificial horizon is an aeroplane instrument. What a rate-mode pilot wants
-is the airframe: which way it is actually pointing and which motors are working.
-So the horizon is now a small 3D quad, sharing `MeshBuilder` and the matrix
-helpers with the scene renderer rather than introducing a second way of drawing
-things.
+Where the artificial horizon used to be. A horizon is an aeroplane instrument
+and reads wrong for a quad, but the more useful point is that pointing an
+instrument at the flight model only repeats what the FPV view already says.
 
-**Prop spin is scaled down about 34×, deliberately.** A rotor at 10 000 rpm
-turns 167 times a second; at 60 fps that is nearly three revolutions per frame,
-which aliases into a disc that appears to crawl, stop, or run backwards
-depending on throttle. Scaled, it reads as "that motor is working harder than
-that one", which is the only thing the view is for.
+So the 3D quad is driven by **the sticks**, not the simulator, and answers one
+question: did the channel mapping come out right? Push right, it banks right.
+Push forward, the nose drops. If either is backwards you see it in a second
+rather than discovering it on takeoff — which is exactly how the pitch
+convention bug was found, by a pilot, after everyone had already flown it.
+
+Deflection is proportional and springs back to level rather than integrating.
+An integrated model would keep rolling while the stick was held and lose its
+reference, which is what makes a mis-detected inversion hard to spot.
+
+Throttle does not move it — there is no thrust and it hangs in space — but it
+does drive the prop speed, so that channel can be checked in the same glance.
+
+It shares `MeshBuilder` and the matrix helpers with the scene renderer rather
+than introducing a second way of drawing things.
 
 Editing PIDs applies about a second after the last keystroke. `applyTune()`
 rebuilds the controller and so restarts the I-terms and filters; doing that per

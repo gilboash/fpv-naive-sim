@@ -372,17 +372,27 @@ link loss drops both the level and that guard — a reconnection re-earns it.
 Storage is v3; the migration adds unbound aux and touches nothing else, with a
 test asserting a v2 mapping keeps its endpoints, centre and inversion.
 
-**Three tabs** (`src/tabs.ts`): go fly, settings, instruments. Only the visible
+**Three tabs** (`src/tabs.ts`), split by *moment* rather than by subject: go fly
+is everything live (view, sticks, arm/reset, battery/altitude/speed/current,
+recorder), settings is pre-flight setup, instruments is checking and tuning
+(stick check, rates, PIDs, response bars). `FlightPanel` takes three hosts for
+this reason — the flying numbers were previously buried among the tuning ones. Only the visible
 tab renders — two GL contexts drawing invisible frames is pure waste — but the
 physics is deliberately unaffected, because it runs on the worker ticker rather
 than rAF. There is a test that the quad keeps flying while the fly tab is
 hidden, since freezing it would be the obvious wrong fix.
 
-**The quad instrument** (`src/render/quad-view.ts`) replaces the artificial
-horizon, which is an aeroplane instrument and reads wrong for a quad. Shares the
-MeshBuilder and matrix helpers with the scene renderer; five draws (airframe
-plus four props) with the model transform folded into the MVP, so the shader
-needed no model matrix.
+**The stick check** (`src/render/quad-view.ts`) replaces the artificial horizon.
+It is driven by the *sticks*, not by simulator state — Gilboa's point, and the
+right one: an instrument pointed at the flight model just repeats the FPV view,
+whereas a stick-driven model verifies the channel mapping, which is where the
+real bugs have been. Deflection is proportional and springs back rather than
+integrating, so a mis-detected inversion is instantly visible. Throttle drives
+prop speed only, so that channel is checkable too without the quad moving.
+
+Shares the MeshBuilder and matrix helpers with the scene renderer; five draws
+(airframe plus four props) with the model transform folded into the MVP, so the
+shader needed no model matrix.
 
 Two things worth keeping from building it:
 
@@ -390,10 +400,10 @@ Two things worth keeping from building it:
   renderer's basis bug — the quad rendered mostly off the bottom of the frame.
   There is now an orthonormality test for this camera too. A wrong basis draws a
   picture; it just shears it.
-- **Prop spin is scaled ~34x down on purpose.** 10 000 rpm is 167 rev/s, which
-  at 60 fps aliases into a wagon-wheel that crawls or reverses with throttle. It
-  is an indicator, not a measurement, and it is commented as such so nobody
-  "fixes" it.
+- **Prop spin is a fixed idle-plus-throttle rate, not a rotor speed.** Driving
+  it from real rpm aliased badly — 10 000 rpm is 167 rev/s, nearly three
+  revolutions per frame at 60 fps, a wagon-wheel that crawls or reverses with
+  throttle. It is an indicator and is commented as such.
 
 **Stick overlay** (`src/stick-view.ts`) sits on the FPV view and follows
 `mapping.mode`, because hard-coding mode 2 would lie to anyone else — and the

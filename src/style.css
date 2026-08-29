@@ -451,3 +451,10 @@ tbody tr:hover { background: var(--panel-2); }
 .pid-grid {
   grid-template-columns: 52px repeat(5, 68px);
 }
+
+.fl-grid.one-col { grid-template-columns: 1fr; }
+
+.fl-quad.wide {
+  aspect-ratio: 16 / 7;
+  max-height: 260px;
+}

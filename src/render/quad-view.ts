@@ -1,9 +1,20 @@
 /**
- * A small 3D quad, showing what the airframe is actually doing.
+ * A small 3D quad that answers one question: did the channel mapping come out
+ * right?
  *
- * Replaces an artificial horizon, which is an aeroplane instrument and reads
- * wrong for a quad: a pilot judging a rate-mode machine wants to see the
- * airframe's attitude and which motors are working, not a pitch ladder.
+ * It is driven by the sticks, not by the simulator, and it is deliberately
+ * *not* a repeat of the FPV view — pointing two things at the same state would
+ * only tell a pilot the same thing twice. Push right, the quad banks right.
+ * Push forward, the nose drops. If either is backwards, the mapping is wrong
+ * and it takes a second to see rather than a takeoff to discover.
+ *
+ * Deflection is proportional and springs back to level, not integrated. An
+ * integrated model would keep rolling while the stick was held and lose its
+ * reference, which is exactly what makes a mis-detected inversion hard to spot.
+ *
+ * Throttle does not move it — there is no thrust here and it hangs in space —
+ * but it does drive the prop speed, so the throttle channel can be checked in
+ * the same glance.
  *
  * Deliberately reuses the scene renderer's shader and MeshBuilder rather than
  * introducing a second way of drawing things. The shader takes one combined
@@ -15,7 +26,7 @@
 import { MeshBuilder, FLOATS_PER_VERTEX, type MeshData } from './mesh.ts';
 import { mat4, multiply, perspective, viewFromBasis, type Mat4 } from './mat4.ts';
 import type { Airframe } from '../flight/airframe.ts';
-import type { Telemetry } from '../flight/sim.ts';
+import type { Commands } from '../mapping.ts';
 
 const VERT = `#version 300 es
 precision highp float;
@@ -42,17 +53,6 @@ void main() {
   float lambert = max(dot(normalize(vNormal), uLightDir), 0.0);
   outColor = vec4(vColor * (0.42 + 0.58 * lambert), uAlpha);
 }`;
-
-/**
- * Rotor speed is scaled down, hard, and this is not a bug.
- *
- * A rotor at 10 000 rpm turns 167 times a second. At 60 frames a second that is
- * nearly three revolutions per frame, which aliases into a disc that appears to
- * crawl, stop, or run backwards depending on throttle — the wagon-wheel effect,
- * and actively misleading. Scaled down it reads as "that motor is working
- * harder than that one", which is the only thing this view is for.
- */
-const SPIN_SCALE = 1 / 34;
 
 interface Batch {
   vao: WebGLVertexArrayObject;
@@ -240,7 +240,14 @@ export class QuadView {
     m[15] = 1;
   }
 
-  render(t: Telemetry, nowMs: number): void {
+  /**
+   * Full stick gives this much bank. Enough to read at a glance, short of the
+   * angle where the model turns edge-on and stops being legible.
+   */
+  private static readonly MAX_TILT_DEG = 55;
+  private static readonly MAX_YAW_DEG = 80;
+
+  render(cmd: Commands, nowMs: number): void {
     const gl = this.gl;
     const canvas = this.canvas;
     const dt = this.lastFrame ? Math.min(0.1, (nowMs - this.lastFrame) / 1000) : 0;
@@ -290,7 +297,15 @@ export class QuadView {
     );
     multiply(this.vp, this.proj, this.view);
 
-    this.setModel(t.attitude.roll, t.attitude.pitch, t.attitude.yaw);
+    // Sticks straight to attitude. Pitch is negated on the way in because a
+    // positive pitch command is nose-DOWN in this model, while setModel takes
+    // the artificial-horizon sense where positive is nose-up.
+    const clamp1 = (v: number): number => (v < -1 ? -1 : v > 1 ? 1 : v);
+    this.setModel(
+      clamp1(cmd.roll) * QuadView.MAX_TILT_DEG,
+      -clamp1(cmd.pitch) * QuadView.MAX_TILT_DEG,
+      clamp1(cmd.yaw) * QuadView.MAX_YAW_DEG,
+    );
     multiply(this.mvp, this.vp, this.model);
 
     gl.useProgram(this.program);
@@ -305,8 +320,11 @@ export class QuadView {
     gl.bindVertexArray(this.prop.vao);
     for (let i = 0; i < this.mounts.length; i++) {
       const mount = this.mounts[i]!;
-      const rpm = t.motorRpm[i] ?? 0;
-      const rate = (rpm / 60) * Math.PI * 2 * SPIN_SCALE;
+      // Idle plus throttle, so the props turn even at rest — a still disc reads
+      // as broken — and speed up with the throttle channel, which is the only
+      // thing throttle does here. Radians per second, already legible, so this
+      // one needs no scaling: it is not pretending to be a rotor speed.
+      const rate = 2.5 + Math.max(0, Math.min(1, cmd.throttle)) * 26;
       this.spin[i] = (this.spin[i]! + rate * dt * (mount.ccw ? 1 : -1)) % (Math.PI * 2);
       const ca = Math.cos(this.spin[i]!);
       const sa = Math.sin(this.spin[i]!);
