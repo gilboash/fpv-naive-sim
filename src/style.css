@@ -503,3 +503,62 @@ tbody tr:hover { background: var(--panel-2); }
 .race-table td.best { color: #35c46b; font-weight: 600; }
 .race-table td.laptime { color: #4a9eff; font-weight: 600; }
 .race-table tr.invalid td { color: #5c6675; text-decoration: line-through; }
+
+/* -------------------------------------------------------------------- OSD */
+
+.osd {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  /* Outline rather than a panel: an OSD sits on the picture, and a box would
+     hide more of the course than the numbers are worth. */
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.95), 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.osd-tl {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-start;
+}
+
+.osd-bl {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.osd-clock {
+  font-size: 30px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.05;
+}
+
+.osd-lap { font-size: 14px; font-weight: 700; color: #f4b400; letter-spacing: 0.06em; }
+.osd-next { font-size: 13px; font-weight: 700; color: #35e07a; letter-spacing: 0.05em; }
+.osd-last { font-size: 12px; color: #dbe3ee; letter-spacing: 0.04em; }
+.osd-item { font-size: 13px; font-weight: 600; color: #dbe3ee; }
+
+.osd-count {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 96px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.fpv-stage:fullscreen .osd-clock { font-size: 46px; }
+.fpv-stage:fullscreen .osd-lap { font-size: 20px; }
+.fpv-stage:fullscreen .osd-next { font-size: 18px; }
+.fpv-stage:fullscreen .osd-item { font-size: 18px; }

@@ -453,6 +453,23 @@ netting +174 deg from a 300 deg turn. Wrong-way turning now costs only the
 progress made. Still not gameable: the sweep has to be continuous and inside the
 radius, and there are tests for all three refusals.
 
+**Race OSD and next-gate marker (2026-08-30)**, all three from Gilboa flying it:
+
+- **Timing had to be on the video.** In fullscreen the picture is all there is,
+  so a lap time in a panel underneath does not exist. `src/osd.ts` overlays
+  clock, lap, next checkpoint, last lap, battery, altitude and speed on the
+  stage — which is also what goes fullscreen, so it comes along.
+- **Nothing said which gate was next.** `Renderer.setMarker()` draws a floating
+  arrowhead above the active checkpoint, unlit and with the depth test off so it
+  shows through the gate's own bar. Deliberate cheat: a HUD element in world
+  space.
+- **The stick check now turns at the pilot's real rate curve** rather than a
+  made-up constant, with deg/s and rpm beside it, so it verifies the rates too.
+
+That last one exposed a real bug: `level()` reset the matrix but not the frame
+clock, so returning to the Instruments tab snapped the model through a large
+rotation on the first frame. Caught because the rate test was not monotonic.
+
 **Next, roughly in order:**
 
 1. **Map generation** — the half of "laps and maps" still outstanding. Race mode

@@ -740,6 +740,18 @@ How a checkpoint is taken is shown rather than explained: chevrons on the ground
 point the way through each gate, blocks beside it count out its number, and the
 markers round the flag grow taller the way you are meant to turn.
 
+**Which** checkpoint is next is a floating green arrowhead above it, drawn unlit
+and with the depth test off so it shows through the gate's own bar and through
+anything in the way. That is a deliberate cheat: it is a HUD element that
+happens to live in world space, and a marker you cannot see is not a marker. On
+a course where gates are visible from other gates it is the difference between
+racing and guessing.
+
+**Timing is on the video**, not beside it — clock, lap, next checkpoint and last
+lap time top-left, battery, altitude and speed bottom-left, scaled up in
+fullscreen. A pilot racing is looking at the picture, and in fullscreen the
+picture is all there is.
+
 ### What it measures
 
 | | |
@@ -828,6 +840,11 @@ question: did the channel mapping come out right? Push right, it banks right.
 Push forward, the nose drops. If either is backwards you see it in a second
 rather than discovering it on takeoff — which is exactly how the pitch
 convention bug was found, by a pilot, after everyone had already flown it.
+
+**It turns at your own rate curve.** Full stick rotates the model at exactly the
+figure the rates panel quotes, in deg/s and rpm beside it, so a curve that is
+wrong reads as a model that is too lazy or too frantic. An earlier version used
+a made-up constant, which showed the direction and nothing else.
 
 **It integrates, like acro.** Hold a stick and it keeps rotating; centre it and
 it stays where it is. A first version sprang back to level, which is angle mode

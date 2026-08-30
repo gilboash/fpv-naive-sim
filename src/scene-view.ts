@@ -11,6 +11,7 @@ import { Renderer } from './render/renderer.ts';
 import { TRACKS, type Track } from './render/track.ts';
 import { clearance } from './flight/collision.ts';
 import { StickView } from './stick-view.ts';
+import { Osd } from './osd.ts';
 import type { Commands, StickMode } from './mapping.ts';
 
 const STORAGE_KEY = 'fpvsim.scene.v1';
@@ -40,6 +41,7 @@ export class SceneView {
   private crashEl: HTMLElement;
   readonly stage: HTMLElement;
   readonly sticks: StickView;
+  readonly osd: Osd;
   resetMode: 'inPlace' | 'start' = 'inPlace';
   /**
    * Camera settings live here as well as on the renderer, because the controls
@@ -59,6 +61,8 @@ export class SceneView {
     this.stage = el('div', 'fpv-stage');
     this.canvas = el<HTMLCanvasElement>('canvas', 'fpv-canvas');
     this.stage.appendChild(this.canvas);
+    // The OSD goes on the stage, so it survives fullscreen along with the view.
+    this.osd = new Osd(this.stage);
     const overlay = el('div', 'fpv-overlay');
     this.sticks = new StickView(overlay);
     this.stage.appendChild(overlay);
@@ -265,6 +269,20 @@ export class SceneView {
   async toggleFullscreen(): Promise<void> {
     if (document.fullscreenElement) await document.exitFullscreen();
     else await this.stage.requestFullscreen();
+  }
+
+  /**
+   * Show where the next checkpoint is, or hide the marker with null.
+   * The height offset puts it above a gate rather than inside it.
+   */
+  setNextCheckpoint(cp: { north: number; east: number; up?: number; height?: number } | null): void {
+    if (!this.renderer) return;
+    if (!cp) {
+      this.renderer.setMarker(null);
+      return;
+    }
+    const up = (cp.up ?? cp.height ?? 2) + (cp.up !== undefined ? 1.9 : 2.6);
+    this.renderer.setMarker(cp.north, cp.east, up);
   }
 
   render(): void {

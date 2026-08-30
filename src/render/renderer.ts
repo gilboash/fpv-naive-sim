@@ -113,6 +113,12 @@ export class Renderer {
   private uUnlit: WebGLUniformLocation;
   private scene: Batch | null = null;
   private sky: Batch;
+  private marker: Batch;
+  /** Where the next checkpoint marker floats, render space. Null hides it. */
+  private markerAt: { x: number; y: number; z: number } | null = null;
+  private markerSpin = 0;
+  private markerMvp: Mat4 = mat4();
+  private markerModel: Mat4 = mat4();
 
   private proj: Mat4 = mat4();
   private view: Mat4 = mat4();
@@ -156,6 +162,20 @@ export class Renderer {
     gl.clearColor(SKY_HORIZON[0], SKY_HORIZON[1], SKY_HORIZON[2], 1);
 
     this.sky = this.upload(buildSky());
+    this.marker = this.upload(buildMarker());
+  }
+
+  /**
+   * Point the pilot at the next checkpoint.
+   *
+   * Chevrons on the ground say which way a gate is taken, but nothing said
+   * *which* gate — and on a course where gates are visible from other gates,
+   * that is the difference between racing and guessing. Takes NED because that
+   * is what the race logic speaks; the conversion to render space happens here,
+   * with the rest of it.
+   */
+  setMarker(north: number | null, east = 0, up = 0): void {
+    this.markerAt = north === null ? null : { x: east, y: up, z: -north };
   }
 
   private upload(data: MeshData): Batch {
@@ -277,11 +297,64 @@ export class Renderer {
       gl.bindVertexArray(this.scene.vao);
       gl.drawElements(gl.TRIANGLES, this.scene.count, gl.UNSIGNED_INT, 0);
     }
+
+    // The next-checkpoint marker, folded into its own matrix. Unlit and drawn
+    // without fog so it stays readable from the far end of the course, which is
+    // exactly where a pilot needs it.
+    if (this.markerAt) {
+      this.markerSpin = (this.markerSpin + 0.03) % (Math.PI * 2);
+      const bob = Math.sin(this.markerSpin * 2) * 0.25;
+      const c = Math.cos(this.markerSpin);
+      const s2 = Math.sin(this.markerSpin);
+      const m = this.markerModel;
+      m[0] = c; m[1] = 0; m[2] = -s2; m[3] = 0;
+      m[4] = 0; m[5] = 1; m[6] = 0; m[7] = 0;
+      m[8] = s2; m[9] = 0; m[10] = c; m[11] = 0;
+      m[12] = this.markerAt.x;
+      m[13] = this.markerAt.y + bob;
+      m[14] = this.markerAt.z;
+      m[15] = 1;
+      multiply(this.markerMvp, this.viewProj, m);
+      gl.uniformMatrix4fv(this.uViewProj, false, this.markerMvp);
+      gl.uniform1f(this.uUnlit, 1);
+      gl.disable(gl.DEPTH_TEST);
+      gl.bindVertexArray(this.marker.vao);
+      gl.drawElements(gl.TRIANGLES, this.marker.count, gl.UNSIGNED_INT, 0);
+      gl.enable(gl.DEPTH_TEST);
+    }
     gl.bindVertexArray(null);
 
     const dt = performance.now() - t0;
     this.frameCostMs += (dt - this.frameCostMs) * 0.05;
   }
+}
+
+/**
+ * The next-checkpoint marker: a downward arrowhead, floating and turning.
+ *
+ * Drawn unlit and with the depth test off, so it shows through a gate's own
+ * bar and through anything between the pilot and it. That is a deliberate
+ * cheat — it is a HUD element that happens to live in world space, and a marker
+ * you cannot see is not a marker.
+ */
+function buildMarker(): MeshData {
+  const m = new MeshBuilder();
+  const c: [number, number, number] = [0.15, 0.95, 0.45];
+  const dim: [number, number, number] = [0.08, 0.62, 0.3];
+  const r = 0.55;
+  const h = 0.9;
+  const seg = 4;
+  for (let i = 0; i < seg; i++) {
+    const a0 = (i / seg) * Math.PI * 2 + Math.PI / 4;
+    const a1 = ((i + 1) / seg) * Math.PI * 2 + Math.PI / 4;
+    const p0: [number, number, number] = [Math.cos(a0) * r, h, Math.sin(a0) * r];
+    const p1: [number, number, number] = [Math.cos(a1) * r, h, Math.sin(a1) * r];
+    // Sides down to the point.
+    m.quadColored(p0, p1, [0, 0, 0], [0, 0, 0], c, c, dim, dim);
+    // Cap, so it reads as solid from above too.
+    m.quadColored([0, h, 0], p0, p1, [0, h, 0], dim, c, c, dim);
+  }
+  return m.build();
 }
 
 /**

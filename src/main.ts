@@ -30,6 +30,7 @@ import { FlightPanel } from './flight-panel.ts';
 import { AuxControl } from './aux-control.ts';
 import { Tabs } from './tabs.ts';
 import { RacePanel } from './race-panel.ts';
+import { applyRates, AXIS_ROLL, AXIS_PITCH, AXIS_YAW } from './flight/rates.ts';
 import { SceneView } from './scene-view.ts';
 import { TunePanel } from './tune-panel.ts';
 import TickerWorker from './ticker.worker.ts?worker';
@@ -567,13 +568,30 @@ function render(tNow: number): void {
   // on the worker ticker, so the quad keeps flying while you are in Settings.
   if (tabs.visible('fly')) scene.render();
   // The quad model draws every frame too: a prop stepped at 30 Hz strobes.
-  if (tabs.visible('instruments')) flight.renderQuad(commands, tNow);
+  if (tabs.visible('instruments')) {
+    // The pilot's own rate curve drives the model, so the stick check verifies
+    // the rates as well as the channel directions.
+    flight.renderQuad(
+      commands,
+      [
+        applyRates(flight.sim.rates, AXIS_ROLL, commands.roll),
+        applyRates(flight.sim.rates, AXIS_PITCH, commands.pitch),
+        applyRates(flight.sim.rates, AXIS_YAW, commands.yaw),
+      ],
+      tNow,
+    );
+  }
 
   if (tNow - lastRender < 33) return; // 30 Hz is plenty for text
   lastRender = tNow;
 
   flight.render();
   racePanel.render();
+
+  // Point the pilot at the next checkpoint while a race is on.
+  const active = racePanel.race.state === 'running' ? racePanel.race.activeCheckpoint : null;
+  scene.setNextCheckpoint(active);
+  scene.osd.render(racePanel.race, flight.sim);
   if (tabs.visible('fly')) scene.updateSticks(commands, mapping.mode);
 
   // pills

@@ -702,7 +702,7 @@ const main = async () => {
     const { flight } = globalThis.__fpvsim;
     if (!flight.quadView) return resolve({ ok: false, reason: 'no WebGL' });
     // Stick-driven now, not attitude-driven: this is the mapping check.
-    flight.renderQuad({ throttle: 0.6, roll: 0.7, pitch: -0.4, yaw: 0.2 }, performance.now());
+    flight.renderQuad({ throttle: 0.6, roll: 0.7, pitch: -0.4, yaw: 0.2 }, [400, -220, 90], performance.now());
     const c = flight.quadCanvas ?? document.querySelector('.fl-quad');
     const off = document.createElement('canvas');
     off.width = c.width; off.height = c.height;
@@ -722,8 +722,8 @@ const main = async () => {
   const quadSticks = await evaluate(`(() => {
     const { flight } = globalThis.__fpvsim;
     if (!flight.quadView) return { ok: false };
-    const shot = (cmd) => {
-      flight.renderQuad(cmd, performance.now());
+    const shot = (cmd, rate) => {
+      flight.renderQuad(cmd, rate ?? [cmd.roll * 500, cmd.pitch * 500, cmd.yaw * 500], performance.now());
       const c = flight.quadCanvas;
       const off = document.createElement('canvas');
       off.width = c.width; off.height = c.height;
@@ -781,6 +781,35 @@ const main = async () => {
     quadSticks.ok && quadSticks.rightY < -0.2,
     `right-axis y ${quadSticks.rightY} (negative is down)`,
   );
+  // The rate curve drives it, so a faster rate turns further in the same time.
+  const rateDriven = await evaluate(`(() => {
+    const { flight } = globalThis.__fpvsim;
+    if (!flight.quadView) return { ok: false };
+    // Short window on purpose: 600 deg/s over half a second is 288 degrees,
+    // which sails past vertical and makes the tilt non-monotonic. Six frames
+    // keeps both cases well inside a quarter turn.
+    const turn = (dps) => {
+      flight.quadView.level();
+      const t0 = performance.now();
+      flight.renderQuad({ throttle: 0, roll: 1, pitch: 0, yaw: 0 }, [dps, 0, 0], t0);
+      for (let i = 1; i <= 6; i++) {
+        flight.renderQuad({ throttle: 0, roll: 1, pitch: 0, yaw: 0 }, [dps, 0, 0], t0 + i * 16);
+      }
+      return Math.abs([...flight.quadView.modelMatrix][1]);
+    };
+    const slow = turn(100);
+    const fast = turn(600);
+    flight.quadView.level();
+    return { ok: true, slow, fast };
+  })()`);
+  check(
+    'a faster rate curve turns the model further',
+    rateDriven.ok && rateDriven.fast > rateDriven.slow * 2,
+    rateDriven.ok
+      ? `100 deg/s tilts ${rateDriven.slow.toFixed(3)}, 600 deg/s tilts ${rateDriven.fast.toFixed(3)}`
+      : 'no WebGL',
+  );
+
   check(
     'yaw right swings the nose right',
     quadSticks.ok && quadSticks.noseX > 0.2,
@@ -970,6 +999,19 @@ const main = async () => {
         sel.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
       await sleep(400);
+    }
+    if (process.env.SHOT_RACE) {
+      await evaluate(`(() => {
+        const { racePanel, scene } = globalThis.__fpvsim;
+        racePanel.race.laps = 3;
+        racePanel.race.start(0);
+        const dt = 0.001;
+        racePanel.race.setDt(dt);
+        // Cross gate 1 so the clock and the lap counter have something to show.
+        for (let i = 0; i < 400; i++) racePanel.race.step(-25 + i * 0.03, 0, 2.2, dt);
+        racePanel.render();
+      })()`);
+      await sleep(200);
     }
     // Put the quad somewhere worth photographing. SHOT_POS is NED.
     const pos = process.env.SHOT_POS || '-14,0,-4.2';

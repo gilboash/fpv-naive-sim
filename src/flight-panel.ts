@@ -109,6 +109,23 @@ export class FlightPanel {
     // ---- left: the airframe itself, and the headline numbers
     this.quadCanvas = el<HTMLCanvasElement>('canvas', 'fl-quad wide');
     quadHost.appendChild(this.quadCanvas);
+    // Commanded rate per axis, beside the model. Degrees per second is how a
+    // tune is written; rpm is what the rotation you are watching actually is.
+    const rates = el('div', 'fl-nums');
+    for (const [key, label] of [
+      ['rateRoll', 'roll'],
+      ['ratePitch', 'pitch'],
+      ['rateYaw', 'yaw'],
+    ] as const) {
+      const cell = el('div', 'fl-num');
+      cell.appendChild(el('span', 'fl-num-label', label));
+      const v = el('span', 'fl-num-val', '—');
+      cell.appendChild(v);
+      this.readouts[key] = v;
+      rates.appendChild(cell);
+    }
+    quadHost.appendChild(rates);
+
     const levelRow = el('div', 'row');
     const levelBtn = el<HTMLButtonElement>('button');
     levelBtn.type = 'button';
@@ -449,8 +466,19 @@ export class FlightPanel {
    * that the channels are mapped the right way round, and pointing it at the
    * flight model would only repeat what the FPV view already says.
    */
-  renderQuad(cmd: Commands, nowMs: number): void {
-    this.quadView?.render(cmd, nowMs);
+  renderQuad(cmd: Commands, rateDps: [number, number, number], nowMs: number): void {
+    if (!this.quadView) return;
+    this.quadView.rateDps = rateDps;
+    this.quadView.render(cmd, nowMs);
+    // The rate the sticks are asking for, in both the units a tune is written
+    // in and the ones the rotation is actually visible at.
+    const names = ['rateRoll', 'ratePitch', 'rateYaw'] as const;
+    for (let i = 0; i < 3; i++) {
+      const cell = this.readouts[names[i]!];
+      if (!cell) continue;
+      const dps = rateDps[i]!;
+      cell.textContent = `${dps.toFixed(0)}°/s · ${(dps / 6).toFixed(0)} rpm`;
+    }
   }
 
   /** Called from the 30 Hz render loop. Never from the tick. */

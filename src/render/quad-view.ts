@@ -275,17 +275,29 @@ export class QuadView {
     return this.model;
   }
 
-  /** Back to level, for when acro has left it somewhere unreadable. */
+  /**
+   * Back to level, for when acro has left it somewhere unreadable.
+   *
+   * Also forgets the frame clock. Without that the next frame's dt is measured
+   * from whenever this last drew — which after a tab switch is a long time, and
+   * the model would snap through a large rotation the instant it came back.
+   */
   level(): void {
     this.model.fill(0);
     this.model[0] = this.model[5] = this.model[10] = this.model[15] = 1;
+    this.lastFrame = 0;
   }
 
   /**
-   * Full stick, radians per second. Slower than a real rate profile on purpose:
-   * this is for reading a direction, and 800 deg/s is a blur.
+   * The rate the sticks are asking for, deg/s per axis, from the pilot's own
+   * rate curve. Set by the owner each frame.
+   *
+   * An earlier version turned at a made-up constant, which showed the direction
+   * and nothing else. Using the real curve makes this a check of the rates too:
+   * full stick here turns at exactly the figure the rates panel quotes, so a
+   * curve that is wrong is visible as a model that is too lazy or too frantic.
    */
-  private static readonly MAX_RATE = 2.6;
+  rateDps: [number, number, number] = [0, 0, 0];
 
   render(cmd: Commands, nowMs: number): void {
     const gl = this.gl;
@@ -340,9 +352,8 @@ export class QuadView {
     // Sticks are rates, not angles. No sign flips: the integrator's pitch is
     // nose-down positive and so is a pitch command, so they already agree —
     // negating on top of that was the reversal a pilot reported.
-    const clamp1 = (v: number): number => (v < -1 ? -1 : v > 1 ? 1 : v);
-    const R = QuadView.MAX_RATE;
-    this.integrate(clamp1(cmd.roll) * R, clamp1(cmd.pitch) * R, clamp1(cmd.yaw) * R, dt);
+    const D = Math.PI / 180;
+    this.integrate(this.rateDps[0] * D, this.rateDps[1] * D, this.rateDps[2] * D, dt);
     multiply(this.mvp, this.vp, this.model);
 
     gl.useProgram(this.program);
@@ -357,7 +368,7 @@ export class QuadView {
     gl.bindVertexArray(this.prop.vao);
     for (let i = 0; i < this.mounts.length; i++) {
       const mount = this.mounts[i]!;
-      // Idle plus throttle, so the props turn even at rest — a still disc reads
+  // Idle plus throttle, so the props turn even at rest — a still disc reads
       // as broken — and speed up with the throttle channel, which is the only
       // thing throttle does here. Radians per second, already legible, so this
       // one needs no scaling: it is not pretending to be a rotor speed.
