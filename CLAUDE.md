@@ -386,8 +386,9 @@ hidden, since freezing it would be the obvious wrong fix.
 It is driven by the *sticks*, not by simulator state — Gilboa's point, and the
 right one: an instrument pointed at the flight model just repeats the FPV view,
 whereas a stick-driven model verifies the channel mapping, which is where the
-real bugs have been. Deflection is proportional and springs back rather than
-integrating, so a mis-detected inversion is instantly visible. Throttle drives
+real bugs have been. It integrates like acro — sprang back to level
+in a first version, which is angle mode and the one thing this simulator is not.
+A `Level it` button covers getting lost. Throttle drives
 prop speed only, so that channel is checkable too without the quad moving.
 
 Shares the MeshBuilder and matrix helpers with the scene renderer; five draws
@@ -415,6 +416,17 @@ but `TunePanel` still owns both and both DOM trees: they are one tune and one
 storage key, and two panels writing `fpvsim.tune.v1` would race and would leave
 the Blackbox import updating only half. Applying is debounced ~700 ms because
 `applyTune()` rebuilds the controller, restarting I-terms and filters.
+
+**Two sign bugs in the stick check, both found by a pilot rather than by 94
+tests (2026-08-30):** it sprang back to level (angle mode), and pitch was
+reversed. The pitch one is instructive — `setModel`'s pitch argument was
+nose-DOWN positive because the nose is drawn at -z, while its own comment
+claimed nose-up, so I negated a command that already agreed. **Derive the sign
+from the geometry, not from a comment.** There are now direction tests reading
+the model matrix for all three axes.
+
+Also: attitude and physics-cost readouts moved to the flying tab, since they
+describe the live flight — the same rule that put battery and speed there.
 
 **Next, roughly in order:**
 

@@ -730,24 +730,61 @@ const main = async () => {
       off.getContext('2d').drawImage(c, 0, 0);
       return off.toDataURL().length;
     };
-    const level = shot({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
-    const rolled = shot({ throttle: 0, roll: 1, pitch: 0, yaw: 0 });
-    const again = shot({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
-    // Not pixel-identical on the way back: the props keep turning between
-    // frames, on purpose. So compare how far each one moved instead.
-    return {
-      ok: true,
-      moved: Math.abs(rolled - level),
-      returned: Math.abs(again - level),
-    };
+    // Acro, so hold-and-release must NOT return to level. Read the model
+    // matrix rather than pixels: it is the thing under test, and it does not
+    // wobble with prop rotation.
+    const col = () => [...flight.quadView.modelMatrix].slice(0, 3).map((v) => +v.toFixed(3));
+    flight.quadView.level();
+    const start = col();
+    for (let i = 0; i < 40; i++) shot({ throttle: 0, roll: 1, pitch: 0, yaw: 0 });
+    const rolled = col();
+    for (let i = 0; i < 40; i++) shot({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
+    const held = col();
+    flight.quadView.level();
+    const levelled = col();
+
+    // Pitch forward has to drop the nose. The model's forward axis is -z, so
+    // its y component going negative is the nose going down.
+    flight.quadView.level();
+    for (let i = 0; i < 40; i++) shot({ throttle: 0, roll: 0, pitch: 1, yaw: 0 });
+    const fwd = [...flight.quadView.modelMatrix].slice(8, 11).map((v) => +v.toFixed(3));
+    // Roll right must drop the right wingtip. The model's right axis is +x, so
+    // its y component going negative is that wingtip going down.
+    flight.quadView.level();
+    for (let i = 0; i < 40; i++) shot({ throttle: 0, roll: 1, pitch: 0, yaw: 0 });
+    const rightY = +[...flight.quadView.modelMatrix][1].toFixed(3);
+
+    // Yaw right must swing the nose toward +x.
+    flight.quadView.level();
+    for (let i = 0; i < 40; i++) shot({ throttle: 0, roll: 0, pitch: 0, yaw: 1 });
+    const noseX = -[...flight.quadView.modelMatrix][8];
+
+    flight.quadView.level();
+    return { ok: true, start, rolled, held, levelled, noseY: -fwd[1], rightY, noseX };
   })()`);
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 0.02);
   check(
-    'the stick check follows the sticks and springs back to level',
-    quadSticks.ok && quadSticks.returned * 4 < quadSticks.moved,
+    'the stick check integrates like acro, and holds when centred',
+    quadSticks.ok && !near(quadSticks.start, quadSticks.rolled) &&
+      near(quadSticks.rolled, quadSticks.held) && near(quadSticks.levelled, quadSticks.start),
     quadSticks.ok
-      ? `full roll moves the image by ${quadSticks.moved}; centring leaves ${quadSticks.returned} ` +
-        `(prop rotation, not attitude)`
+      ? `rolled to [${quadSticks.rolled}], stayed there when centred, Level restored it`
       : 'no WebGL',
+  );
+  check(
+    'pitch forward drops the nose',
+    quadSticks.ok && quadSticks.noseY < -0.2,
+    `nose y ${quadSticks.noseY} after holding forward pitch (negative is down)`,
+  );
+  check(
+    'roll right drops the right wingtip',
+    quadSticks.ok && quadSticks.rightY < -0.2,
+    `right-axis y ${quadSticks.rightY} (negative is down)`,
+  );
+  check(
+    'yaw right swings the nose right',
+    quadSticks.ok && quadSticks.noseX > 0.2,
+    `nose x ${quadSticks.noseX.toFixed(3)}`,
   );
 
   check(

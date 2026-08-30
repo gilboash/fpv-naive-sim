@@ -8,9 +8,11 @@
  * Push forward, the nose drops. If either is backwards, the mapping is wrong
  * and it takes a second to see rather than a takeoff to discover.
  *
- * Deflection is proportional and springs back to level, not integrated. An
- * integrated model would keep rolling while the stick was held and lose its
- * reference, which is exactly what makes a mis-detected inversion hard to spot.
+ * It integrates, like acro. Hold the stick and it keeps rolling; centre the
+ * stick and it stays where it is. An earlier version sprang back to level,
+ * which is angle mode — the one thing this simulator is not — and a stick check
+ * behaving like a mode the pilot never flies checks the wrong thing. The Level
+ * button is there for when it ends up somewhere unreadable.
  *
  * Throttle does not move it — there is no thrust here and it hangs in space —
  * but it does drive the prop speed, so the throttle channel can be checked in
@@ -211,41 +213,79 @@ export class QuadView {
     return { vao, count: data.indices.length };
   }
 
-  /** Rotation from the quad's Euler attitude, in render axes. */
-  private setModel(rollDeg: number, pitchDeg: number, yawDeg: number): void {
-    const D = Math.PI / 180;
-    // Render space: yaw about +y, pitch about +x, roll about +z. attitude.pitch
-    // is nose-up positive; nose-up is a negative rotation about render +x.
-    const cr = Math.cos(rollDeg * D);
-    const sr = Math.sin(rollDeg * D);
-    const cp = Math.cos(-pitchDeg * D);
-    const sp = Math.sin(-pitchDeg * D);
-    const cy = Math.cos(-yawDeg * D);
-    const sy = Math.sin(-yawDeg * D);
-    const m = this.model;
-    // R = Ry(yaw) * Rx(pitch) * Rz(roll), column-major.
-    m[0] = cy * cr + sy * sp * sr;
-    m[1] = cp * sr;
-    m[2] = -sy * cr + cy * sp * sr;
-    m[3] = 0;
-    m[4] = -cy * sr + sy * sp * cr;
-    m[5] = cp * cr;
-    m[6] = sy * sr + cy * sp * cr;
-    m[7] = 0;
-    m[8] = sy * cp;
-    m[9] = -sp;
-    m[10] = cy * cp;
-    m[11] = 0;
-    m[12] = m[13] = m[14] = 0;
-    m[15] = 1;
+  /**
+   * Integrate the model's attitude by a body-frame rate, the way an aircraft
+   * actually rotates: post-multiply the current orientation by a small local
+   * rotation. Gimbal-lock free, and no Euler angles at all — which matters
+   * because a quad in acro spends real time inverted.
+   *
+   * Signs, derived from the geometry rather than guessed. The nose is drawn at
+   * -z and the camera sits at +z looking at it, so we watch from behind:
+   *
+   *   roll right     right wingtip drops, +x toward -y: negative about +z
+   *   pitch forward  nose drops, and the nose is at -z:  negative about +x
+   *   yaw right      nose swings toward +x:              negative about +y
+   *
+   * All three come out negative, which is a property of this view's axes and
+   * not a rule worth generalising.
+   */
+  private integrate(rollRate: number, pitchRate: number, yawRate: number, dt: number): void {
+    const rx = -pitchRate * dt;
+    const ry = -yawRate * dt;
+    const rz = -rollRate * dt;
+
+    const inc = mat4();
+    inc[0] = 1; inc[1] = rz; inc[2] = -ry; inc[3] = 0;
+    inc[4] = -rz; inc[5] = 1; inc[6] = rx; inc[7] = 0;
+    inc[8] = ry; inc[9] = -rx; inc[10] = 1; inc[11] = 0;
+    inc[12] = inc[13] = inc[14] = 0; inc[15] = 1;
+
+    const out = mat4();
+    multiply(out, this.model, inc);
+    this.model.set(out);
+    this.orthonormalise();
   }
 
   /**
-   * Full stick gives this much bank. Enough to read at a glance, short of the
-   * angle where the model turns edge-on and stops being legible.
+   * Gram-Schmidt. A small-angle increment is not exactly a rotation, so without
+   * this the model slowly shears — the same failure as a bad camera basis, and
+   * just as easy to mistake for something else.
    */
-  private static readonly MAX_TILT_DEG = 55;
-  private static readonly MAX_YAW_DEG = 80;
+  private orthonormalise(): void {
+    const m = this.model;
+    const norm = (i: number): void => {
+      const l = Math.hypot(m[i]!, m[i + 1]!, m[i + 2]!) || 1;
+      m[i] = m[i]! / l;
+      m[i + 1] = m[i + 1]! / l;
+      m[i + 2] = m[i + 2]! / l;
+    };
+    norm(0);
+    const d = m[0]! * m[4]! + m[1]! * m[5]! + m[2]! * m[6]!;
+    m[4] = m[4]! - d * m[0]!;
+    m[5] = m[5]! - d * m[1]!;
+    m[6] = m[6]! - d * m[2]!;
+    norm(4);
+    m[8] = m[1]! * m[6]! - m[2]! * m[5]!;
+    m[9] = m[2]! * m[4]! - m[0]! * m[6]!;
+    m[10] = m[0]! * m[5]! - m[1]! * m[4]!;
+  }
+
+  /** The current orientation, for tests that need the state and not the pixels. */
+  get modelMatrix(): Mat4 {
+    return this.model;
+  }
+
+  /** Back to level, for when acro has left it somewhere unreadable. */
+  level(): void {
+    this.model.fill(0);
+    this.model[0] = this.model[5] = this.model[10] = this.model[15] = 1;
+  }
+
+  /**
+   * Full stick, radians per second. Slower than a real rate profile on purpose:
+   * this is for reading a direction, and 800 deg/s is a blur.
+   */
+  private static readonly MAX_RATE = 2.6;
 
   render(cmd: Commands, nowMs: number): void {
     const gl = this.gl;
@@ -297,15 +337,12 @@ export class QuadView {
     );
     multiply(this.vp, this.proj, this.view);
 
-    // Sticks straight to attitude. Pitch is negated on the way in because a
-    // positive pitch command is nose-DOWN in this model, while setModel takes
-    // the artificial-horizon sense where positive is nose-up.
+    // Sticks are rates, not angles. No sign flips: the integrator's pitch is
+    // nose-down positive and so is a pitch command, so they already agree —
+    // negating on top of that was the reversal a pilot reported.
     const clamp1 = (v: number): number => (v < -1 ? -1 : v > 1 ? 1 : v);
-    this.setModel(
-      clamp1(cmd.roll) * QuadView.MAX_TILT_DEG,
-      -clamp1(cmd.pitch) * QuadView.MAX_TILT_DEG,
-      clamp1(cmd.yaw) * QuadView.MAX_YAW_DEG,
-    );
+    const R = QuadView.MAX_RATE;
+    this.integrate(clamp1(cmd.roll) * R, clamp1(cmd.pitch) * R, clamp1(cmd.yaw) * R, dt);
     multiply(this.mvp, this.vp, this.model);
 
     gl.useProgram(this.program);

@@ -778,9 +778,16 @@ Push forward, the nose drops. If either is backwards you see it in a second
 rather than discovering it on takeoff — which is exactly how the pitch
 convention bug was found, by a pilot, after everyone had already flown it.
 
-Deflection is proportional and springs back to level rather than integrating.
-An integrated model would keep rolling while the stick was held and lose its
-reference, which is what makes a mis-detected inversion hard to spot.
+**It integrates, like acro.** Hold a stick and it keeps rotating; centre it and
+it stays where it is. A first version sprang back to level, which is angle mode
+— the one thing this simulator is not — and a stick check that behaves like a
+mode the pilot never flies is checking the wrong thing. A *Level it* button
+resets it when acro has left it somewhere unreadable.
+
+There is a test for each direction: forward pitch drops the nose, right roll
+drops the right wingtip, right yaw swings the nose right. Those read the model
+matrix rather than the pixels, because the direction is the thing under test and
+the pixels wobble with the prop rotation.
 
 Throttle does not move it — there is no thrust and it hangs in space — but it
 does drive the prop speed, so that channel can be checked in the same glance.

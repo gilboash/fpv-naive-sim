@@ -109,6 +109,16 @@ export class FlightPanel {
     // ---- left: the airframe itself, and the headline numbers
     this.quadCanvas = el<HTMLCanvasElement>('canvas', 'fl-quad wide');
     quadHost.appendChild(this.quadCanvas);
+    const levelRow = el('div', 'row');
+    const levelBtn = el<HTMLButtonElement>('button');
+    levelBtn.type = 'button';
+    levelBtn.textContent = 'Level it';
+    levelBtn.onclick = () => this.quadView?.level();
+    levelRow.appendChild(levelBtn);
+    levelRow.appendChild(
+      el('span', 'dim', 'It integrates, like acro — hold a stick and it keeps rotating.'),
+    );
+    quadHost.appendChild(levelRow);
 
     const nums = el('div', 'fl-nums');
     for (const [key, label] of [
@@ -141,6 +151,8 @@ export class FlightPanel {
     ];
     for (const b of this.motorBars) right.appendChild(b.root);
 
+    // Attitude reads the flight model, so by the same rule as battery and speed
+    // it belongs on the flying tab, not among the tuning numbers.
     const att = el('div', 'fl-nums');
     for (const [key, label] of [
       ['roll', 'roll'],
@@ -155,7 +167,7 @@ export class FlightPanel {
       this.readouts[key] = v;
       att.appendChild(cell);
     }
-    right.appendChild(att);
+    live.appendChild(att);
     grid.appendChild(right);
 
     diag.appendChild(grid);
