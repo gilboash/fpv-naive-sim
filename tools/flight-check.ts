@@ -17,6 +17,8 @@ import { defaultPids } from '../src/flight/pid.ts';
 import { Mixer } from '../src/flight/mixer.ts';
 import { newMapping, computeCommands, loadMapping, type Mapping } from '../src/mapping.ts';
 import { AuxControl } from '../src/aux-control.ts';
+import { Race } from '../src/race/race.ts';
+import { sixGateCourse, type Course } from '../src/race/course.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
 
@@ -920,6 +922,203 @@ section('Collision: the ground and the things standing on it');
   hard.reset(0);
   ok('reset clears the crash', !hard.crashed && hard.crashSpeed === 0, 'back to intact');
   ok('and arming works again afterwards', hard.arm(sticks()) === true, 'armed');
+}
+
+// ------------------------------------------------------------------- race
+
+section('Race: gates, direction, and the clock');
+{
+  const dt = 0.001;
+  const course: Course = {
+    name: 'test',
+    start: { north: 0, east: 0, yawDeg: 0 },
+    defaultLaps: 2,
+    checkpoints: [
+      { kind: 'gate', north: 10, east: 0, up: 2, dirN: 1, dirE: 0, halfWidth: 1.5, halfHeight: 1.2 },
+      { kind: 'gate', north: 20, east: 0, up: 2, dirN: 1, dirE: 0, halfWidth: 1.5, halfHeight: 1.2 },
+    ],
+  };
+  const fly = (r: Race, from: [number, number], to: [number, number], speed: number, up = 2): void => {
+    const d = Math.hypot(to[0] - from[0], to[1] - from[1]);
+    const steps = Math.max(1, Math.round(d / speed / dt));
+    for (let i = 1; i <= steps; i++) {
+      const f = i / steps;
+      r.setDt(dt);
+      r.step(from[0] + (to[0] - from[0]) * f, from[1] + (to[1] - from[1]) * f, up, dt);
+    }
+  };
+  const fresh = (): Race => {
+    const r = new Race(course);
+    r.laps = 2;
+    r.start(0);
+    r.setDt(dt);
+    r.step(0, 0, 2, dt);
+    return r;
+  };
+
+  // Timing is interpolated, not sampled, so this must be exact rather than
+  // within a tick: 10 m at 10 m/s is one second.
+  const r = fresh();
+  fly(r, [0, 0], [25, 0], 10);
+  ok(
+    'hole shot is timed to the crossing, not the tick',
+    Math.abs((r.holeShot ?? 0) - 1) < 1e-6,
+    `${(r.holeShot ?? 0).toFixed(6)} s for 10 m at 10 m/s`,
+  );
+  ok('and a lap completes', r.lap === 1, `lap ${r.lap}`);
+
+  // A gate flown backwards is not a gate flown.
+  const back = fresh();
+  fly(back, [0, 0], [25, 0], 10);
+  const beforeBack = back.next;
+  fly(back, [25, 0], [5, 0], 10);
+  ok('flying back through a gate does not count', back.next === beforeBack, 'sequence unchanged');
+
+  // Missing the aperture, sideways and vertically.
+  const side = fresh();
+  fly(side, [0, 5], [25, 5], 10);
+  ok('passing beside a gate misses it', side.next === 0, 'no checkpoint');
+  const high = fresh();
+  fly(high, [0, 0], [25, 0], 10, 9);
+  ok('passing above a gate misses it', high.next === 0, 'no checkpoint');
+
+  // A respawn voids the lap, or a reset at the right moment is a shortcut.
+  const void_ = fresh();
+  fly(void_, [0, 0], [12, 0], 10);
+  void_.invalidateLap();
+  fly(void_, [12, 0], [25, 0], 10);
+  ok(
+    'a respawn voids the lap it happened in',
+    void_.completed[0]?.invalid === true,
+    'marked invalid',
+  );
+  ok(
+    'and an invalid lap is excluded from the best',
+    void_.result().best === null,
+    'no valid lap yet',
+  );
+}
+
+section('Race: circling a flag');
+{
+  const dt = 0.001;
+  const mk = (dir: 1 | -1): Course => ({
+    name: 'f',
+    start: { north: 0, east: 0, yawDeg: 0 },
+    defaultLaps: 1,
+    checkpoints: [
+      { kind: 'flag', north: 0, east: 0, height: 6, radius: 9, direction: dir, sweep: (270 * Math.PI) / 180 },
+    ],
+  });
+  const arc = (r: Race, radius: number, fromDeg: number, toDeg: number): void => {
+    const from = (fromDeg * Math.PI) / 180;
+    const to = (toDeg * Math.PI) / 180;
+    const steps = Math.max(2, Math.round((Math.abs(to - from) * radius) / 12 / dt));
+    for (let i = 0; i <= steps; i++) {
+      const a = from + (to - from) * (i / steps);
+      r.setDt(dt);
+      r.step(Math.cos(a) * radius, Math.sin(a) * radius, 3, dt);
+    }
+  };
+  const fresh = (dir: 1 | -1): Race => {
+    const r = new Race(mk(dir));
+    r.laps = 1;
+    r.start(0);
+    r.setDt(dt);
+    r.step(100, 100, 3, dt);
+    return r;
+  };
+
+  const good = fresh(1);
+  arc(good, 5, 0, 300);
+  ok('300 degrees the right way rounds the flag', good.lap === 1, 'complete');
+
+  const short = fresh(1);
+  arc(short, 5, 0, 200);
+  ok('200 degrees does not', short.lap === 0, 'still waiting');
+
+  const wrong = fresh(1);
+  arc(wrong, 5, 0, -300);
+  ok('and neither does the wrong direction', wrong.lap === 0, 'still waiting');
+
+  // Progress cannot be banked across separate visits.
+  const split = fresh(1);
+  arc(split, 5, 0, 150);
+  for (let i = 0; i < 300; i++) {
+    split.setDt(dt);
+    split.step(60, 60, 3, dt);
+  }
+  arc(split, 5, 150, 300);
+  ok('two half-turns with a gap do not add up', split.lap === 0, 'the turn has to be continuous');
+
+  // But an approach that curves the wrong way must not dig a hole: it resets
+  // progress to zero rather than subtracting from it.
+  const approach = fresh(1);
+  arc(approach, 5, 126, 0);
+  arc(approach, 5, 0, 300);
+  ok(
+    'an approach curving the wrong way costs nothing but the progress made',
+    approach.lap === 1,
+    'still completes after turning 300 degrees the right way',
+  );
+}
+
+section('Race: the shipped course can actually be flown');
+{
+  // Not a physics test — a course-design one. If the six-gate layout cannot be
+  // completed by a sane line, the sequencing is unusable and no amount of
+  // flying skill fixes it.
+  const dt = 0.001;
+  const r = new Race(sixGateCourse);
+  r.laps = 2;
+  r.start(0);
+  let n = sixGateCourse.start.north;
+  let e = sixGateCourse.start.east;
+  let u = 1.5;
+  r.setDt(dt);
+  r.step(n, e, u, dt);
+  const goto_ = (tn: number, te: number, tu: number): void => {
+    const d = Math.hypot(tn - n, te - e, tu - u);
+    const steps = Math.max(1, Math.round(d / 14 / dt));
+    const n0 = n;
+    const e0 = e;
+    const u0 = u;
+    for (let i = 1; i <= steps; i++) {
+      const f = i / steps;
+      n = n0 + (tn - n0) * f;
+      e = e0 + (te - e0) * f;
+      u = u0 + (tu - u0) * f;
+      r.setDt(dt);
+      r.step(n, e, u, dt);
+    }
+  };
+  for (let lap = 0; lap < 2; lap++) {
+    for (const cp of sixGateCourse.checkpoints) {
+      if (cp.kind === 'gate') {
+        goto_(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up);
+        goto_(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up);
+      } else {
+        const R = cp.radius * 0.6;
+        goto_(cp.north + R, cp.east, 4);
+        for (let i = 1; i <= 340; i++) {
+          const a = cp.direction * (i / 340) * ((300 * Math.PI) / 180);
+          goto_(cp.north + Math.cos(a) * R, cp.east + Math.sin(a) * R, 4);
+        }
+      }
+    }
+  }
+  const res = r.result();
+  ok('the six-gate course completes', r.state === 'finished', `${res.laps.length} laps`);
+  ok(
+    'and every checkpoint produces a split',
+    res.laps[0]?.splits.length === sixGateCourse.checkpoints.length,
+    `${res.laps[0]?.splits.length} splits for ${sixGateCourse.checkpoints.length} checkpoints`,
+  );
+  ok(
+    'best-of-three needs three laps',
+    res.bestThree === null,
+    'two laps flown, so no three-lap figure',
+  );
 }
 
 // ----------------------------------------------------------- aux switches

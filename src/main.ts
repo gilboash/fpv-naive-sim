@@ -29,6 +29,7 @@ import { JitterRun, type RunResult, type Stats } from './jitter.ts';
 import { FlightPanel } from './flight-panel.ts';
 import { AuxControl } from './aux-control.ts';
 import { Tabs } from './tabs.ts';
+import { RacePanel } from './race-panel.ts';
 import { SceneView } from './scene-view.ts';
 import { TunePanel } from './tune-panel.ts';
 import TickerWorker from './ticker.worker.ts?worker';
@@ -108,9 +109,17 @@ const auxControl = new AuxControl();
 const switchDetector = new SwitchDetector(poller);
 const scene = new SceneView($('scene-view'), flight.sim);
 const tune = new TunePanel($('tune-panel'), flight.sim, $('pid-panel'));
+const racePanel = new RacePanel($('race-panel'), flight.sim);
+racePanel.onArmAtStart = () => {
+  scene.placeAtStart();
+  flight.reset();
+};
 // The scene owns where the quad belongs once a track is loaded, and which of
 // the reset modes is in force.
-flight.onReset = () => scene.reset();
+flight.onReset = () => {
+  scene.reset();
+  racePanel.race.invalidateLap();
+};
 flight.onArmed = () => {
   hasArmed = true;
 };
@@ -190,6 +199,11 @@ function onTick(fired: number, scheduled: number): void {
   // The physics step, in the tick and immediately after the poll — the position
   // M0 existed to make safe. It costs a few microseconds of a 1000 us budget.
   flight.step(commands, poller.connected);
+
+  // Race timing runs in the tick too. Read off the 30 Hz render loop instead
+  // and every split would be quantised to 33 ms, which is most of the gap
+  // between a good lap and a bad one.
+  racePanel.step(flight.sim.dt);
 
   if (run?.running) {
     run.recordTick(fired, scheduled);
@@ -559,6 +573,7 @@ function render(tNow: number): void {
   lastRender = tNow;
 
   flight.render();
+  racePanel.render();
   if (tabs.visible('fly')) scene.updateSticks(commands, mapping.mode);
 
   // pills
@@ -825,7 +840,7 @@ $('jitter-start').onclick = startRun;
 // model without a radio attached. Stripped from a production build by the
 // import.meta.env.DEV guard, so it cannot become a load-bearing API.
 if (import.meta.env.DEV) {
-  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl };
+  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl, racePanel };
 }
 
 globalThis.addEventListener('gamepadconnected', refreshDevices);

@@ -725,6 +725,57 @@ mesh, so the circuit's 76 volumes cannot drift from what is drawn.
   it recovers when the sticks centre, but the peak is higher than a real quad
   reaches and is worth revisiting once there is a log to compare against.
 
+## Race mode
+
+The **Race — six gates** map carries a course: six gates in order, then a flag
+to circle. Set the lap count, press *Start race*, and the clock starts after a
+three-second countdown.
+
+**The course is drawn from the checkpoint list the timer uses** — `sixGateCourse`
+in `src/race/course.ts` is the single source, so a gate cannot be drawn
+somewhere the timer will not accept it. That is the whole class of bug that
+makes a race feel broken rather than hard.
+
+How a checkpoint is taken is shown rather than explained: chevrons on the ground
+point the way through each gate, blocks beside it count out its number, and the
+markers round the flag grow taller the way you are meant to turn.
+
+### What it measures
+
+| | |
+|---|---|
+| hole shot | start to the first gate |
+| lap time | gate 1 to gate 1, through everything |
+| best lap | fastest valid lap |
+| best 3 consecutive | the figure racers actually quote; an invalid lap breaks the run rather than being skipped |
+| splits | every checkpoint-to-checkpoint segment, with the fastest of each highlighted |
+
+The splits are the point. A total time tells a pilot they were slow; the splits
+tell them **where**, which is the difference between a stopwatch and a training
+tool.
+
+**Timing runs in the 1 kHz tick, and is interpolated rather than sampled.** At
+25 m/s a tick moves 25 mm, so the quad is never exactly on the gate plane when
+the tick fires — taking the tick time would add up to a millisecond of jitter
+per gate for nothing. Reading it off the 30 Hz render loop instead would
+quantise every split to 33 ms, which is most of the gap between a good lap and
+a bad one.
+
+**A respawn voids the lap it happened in**, marked ✗ and struck through. Without
+that, a reset at the right moment is a shortcut and the timing measures nothing.
+
+### The flag
+
+Circling is a swept angle: stay inside the radius and turn 270° the right way.
+Three things it deliberately refuses — turning the wrong way, leaving the radius
+and coming back to bank the rest of the turn, and stopping short.
+
+One thing it deliberately forgives: **an approach that curves the wrong way
+costs only the progress made, not more.** Progress is clamped at zero rather
+than going negative. The first version subtracted it, and a line that visibly
+went right round the flag was rejected for having arrived from the far side —
+which is the kind of rule that makes a game feel arbitrary.
+
 ## Flying it without the keyboard
 
 **Arm and reset bind to switches** (Settings → Channel mapping → Switches), so a

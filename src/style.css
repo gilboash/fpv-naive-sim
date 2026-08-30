@@ -458,3 +458,48 @@ tbody tr:hover { background: var(--panel-2); }
   aspect-ratio: 16 / 7;
   max-height: 260px;
 }
+
+/* ------------------------------------------------------------------- race */
+
+.race-live {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: #7d8899;
+}
+
+.race-live.count { color: #f4b400; font-weight: 600; font-size: 15px; }
+.race-live.running { color: #dbe3ee; font-weight: 600; }
+.race-live.done { color: #35c46b; font-weight: 600; }
+
+.race-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.race-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 8px;
+}
+
+.race-table th {
+  color: #7d8899;
+  font-weight: 600;
+  text-align: right;
+  padding: 3px 10px 3px 0;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.race-table td {
+  text-align: right;
+  padding: 3px 10px 3px 0;
+  color: #dbe3ee;
+}
+
+.race-table td.best { color: #35c46b; font-weight: 600; }
+.race-table td.laptime { color: #4a9eff; font-weight: 600; }
+.race-table tr.invalid td { color: #5c6675; text-decoration: line-through; }

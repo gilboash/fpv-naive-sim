@@ -793,6 +793,74 @@ const main = async () => {
     quad.ok ? `${quad.w}px wide, channel spread ${quad.spread}` : `no — ${quad.reason}`,
   );
 
+  // The race, end to end through the real page: select the course, start it,
+  // fly the checkpoints, and read the results table out of the DOM.
+  const race = await evaluate(`(async () => {
+    const { racePanel, scene, flight, tabs } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const course = racePanel.race.course;
+    scene.loadTrack(scene.constructor === undefined ? null : scene.track);
+    racePanel.race.laps = 3;
+    racePanel.race.start(0);
+
+    // Drive the checkpoints directly. The flight model is tested elsewhere;
+    // this is about the sequencing and the timing reaching the page.
+    const dt = 0.001;
+    let n = course.start.north, e = course.start.east, u = 1.5;
+    const go = (tn, te, tu) => {
+      const d = Math.hypot(tn - n, te - e, tu - u);
+      const steps = Math.max(1, Math.round(d / 14 / dt));
+      const n0 = n, e0 = e, u0 = u;
+      for (let i = 1; i <= steps; i++) {
+        const f = i / steps;
+        n = n0 + (tn - n0) * f; e = e0 + (te - e0) * f; u = u0 + (tu - u0) * f;
+        racePanel.race.setDt(dt);
+        racePanel.race.step(n, e, u, dt);
+      }
+    };
+    racePanel.race.setDt(dt); racePanel.race.step(n, e, u, dt);
+    for (let lap = 0; lap < 3; lap++) {
+      for (const cp of course.checkpoints) {
+        if (cp.kind === 'gate') {
+          go(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up);
+          go(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up);
+        } else {
+          const R = cp.radius * 0.6;
+          go(cp.north + R, cp.east, 4);
+          for (let i = 1; i <= 340; i++) {
+            const a = cp.direction * (i / 340) * (300 * Math.PI / 180);
+            go(cp.north + Math.cos(a) * R, cp.east + Math.sin(a) * R, 4);
+          }
+        }
+      }
+    }
+    racePanel.render();
+    const table = document.querySelector('#race-panel .race-table');
+    return {
+      state: racePanel.race.state,
+      laps: racePanel.race.completed.length,
+      rows: table ? table.querySelectorAll('tr').length : 0,
+      cols: table ? table.querySelectorAll('tr')[0].children.length : 0,
+      checkpoints: course.checkpoints.length,
+      summary: [...document.querySelectorAll('#race-panel .race-summary .fl-num-val')].map((x) => x.textContent),
+    };
+  })()`);
+  check(
+    'a race runs to completion through the page',
+    race.state === 'finished' && race.laps === 3,
+    `${race.laps} laps, state ${race.state}`,
+  );
+  check(
+    'the results table has a column per checkpoint',
+    race.cols === race.checkpoints + 2 && race.rows === 4,
+    `${race.rows - 1} lap rows, ${race.cols} columns for ${race.checkpoints} checkpoints plus lap and total`,
+  );
+  check(
+    'and reports hole shot, best lap, best three and total',
+    race.summary.length === 4 && race.summary.every((v) => v && v !== '—'),
+    race.summary.join(' | '),
+  );
+
   // Tabs: the right panel shows, and the physics does not stop when the flying
   // tab is hidden — that last one matters, because a pilot ducking into
   // Settings mid-flight must not have the quad freeze and drop.
@@ -895,16 +963,21 @@ const main = async () => {
   await sleep(2000);
 
   if (process.env.SCREENSHOT) {
-    // Put the quad somewhere worth photographing: airborne on the gate run,
-    // looking down the line.
+    if (process.env.SHOT_MAP) {
+      await evaluate(`(() => {
+        const sel = document.querySelector('#scene-view select');
+        sel.value = '${process.env.SHOT_MAP}';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      })()`);
+      await sleep(400);
+    }
+    // Put the quad somewhere worth photographing. SHOT_POS is NED.
+    const pos = process.env.SHOT_POS || '-14,0,-4.2';
     await evaluate(`(() => {
       const { scene, flight } = globalThis.__fpvsim;
-      if (scene.available) {
-        const t = (scene.constructor, null);
-        scene.loadTrack(scene.track);
-      }
+      const p = '${pos}'.split(',').map(Number);
       flight.sim.reset(0);
-      flight.sim.pos.x = -14; flight.sim.pos.y = 0; flight.sim.pos.z = -4.2;
+      flight.sim.pos.x = p[0]; flight.sim.pos.y = p[1]; flight.sim.pos.z = p[2];
       flight.sim.onGround = false;
       scene.render();
     })()`);

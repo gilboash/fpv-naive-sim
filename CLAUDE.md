@@ -428,12 +428,35 @@ the model matrix for all three axes.
 Also: attitude and physics-cost readouts moved to the flying tab, since they
 describe the live flight — the same rule that put battery and speed there.
 
+## Race mode (2026-08-30)
+
+`src/race/course.ts` (what a course is) and `src/race/race.ts` (sequencing and
+timing), stepped from the 1 kHz tick beside the physics. `src/race-panel.ts` is
+the UI, on the flying tab.
+
+**The track is drawn from the checkpoint list the timer uses** — `sixGateCourse`
+is the single source for both, so drawn and timed cannot diverge. Same principle
+as the collision volumes coming from the mesh build.
+
+**Timing is interpolated, not sampled.** The crossing fraction along the segment
+is known, so the split is timed to the crossing rather than to the tick that
+noticed it: exact to 1e-6 s in the tests, against ~1 ms of avoidable jitter.
+
+**A respawn voids its lap** (`race.invalidateLap()`, wired to `flight.onReset`),
+or a reset at the right moment is a shortcut. Invalid laps also break a
+best-of-three run rather than being skipped over.
+
+**The flag's sweep is clamped at zero rather than going negative.** First version
+subtracted the approach arc, so a line that plainly went round the pylon was
+rejected for having entered from the far side — the autopilot test caught it,
+netting +174 deg from a 300 deg turn. Wrong-way turning now costs only the
+progress made. Still not gameable: the sweep has to be continuous and inside the
+radius, and there are tests for all three refusals.
+
 **Next, roughly in order:**
 
-0. **Laps and map generation** — the next conversation, per Gilboa.
-1. **Gate sequencing and lap timing.** The geometry is already there from the
-   collision work; this is what turns flying around into training with a number
-   attached.
+1. **Map generation** — the half of "laps and maps" still outstanding. Race mode
+   landed 2026-08-30 on a hand-built six-gate course.
 2. **Respawn from the last gate passed** — the third variant, and the only one
    still missing. *In place* landed 2026-08-29 and is now the default, ahead of
    the pilot feedback round; *start line* is the selector's other option. The

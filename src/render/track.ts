@@ -11,6 +11,7 @@
 
 import { MeshBuilder } from './mesh.ts';
 import type { Obstacle } from '../flight/collision.ts';
+import { sixGateCourse } from '../race/course.ts';
 
 /**
  * Render space to NED, for collision volumes.
@@ -212,6 +213,116 @@ function squareFrame(
   }
 }
 
+/**
+ * A race gate: posts, a top bar, and a chevron on the ground showing the way
+ * through. The number is spelled out in blocks beside it — a pilot needs to
+ * know which gate is which when they are learning the line.
+ */
+function raceGate(
+  m: MeshBuilder,
+  obs: Obstacle[],
+  cx: number,
+  cz: number,
+  up: number,
+  halfWidth: number,
+  halfHeight: number,
+  along: 'x' | 'z',
+  colour: readonly [number, number, number],
+  number: number,
+): void {
+  const postR = 0.06;
+  const hitR = postR + 0.06;
+  const bar = 0.09;
+  const top = up + halfHeight;
+  const bottom = Math.max(0.05, up - halfHeight);
+
+  if (along === 'x') {
+    m.cylinder(cx - halfWidth, cz, 0, top, postR, 10, ...POST);
+    m.cylinder(cx + halfWidth, cz, 0, top, postR, 10, ...POST);
+    obs.push({ kind: 'cylinder', north: north(cz), east: east(cx - halfWidth), radius: hitR, height: top });
+    obs.push({ kind: 'cylinder', north: north(cz), east: east(cx + halfWidth), radius: hitR, height: top });
+    m.slab(cx - halfWidth - postR, top, cz - bar, cx + halfWidth + postR, top + bar * 2, cz + bar, colour[0]!, colour[1]!, colour[2]!);
+    obs.push({
+      kind: 'box',
+      minNorth: north(cz + bar), maxNorth: north(cz - bar),
+      minEast: east(cx - halfWidth - postR), maxEast: east(cx + halfWidth + postR),
+      minUp: top, maxUp: top + bar * 2,
+    });
+    if (bottom > 0.06) {
+      m.slab(cx - halfWidth, bottom - bar, cz - bar, cx + halfWidth, bottom, cz + bar, colour[0]!, colour[1]!, colour[2]!);
+      obs.push({
+        kind: 'box',
+        minNorth: north(cz + bar), maxNorth: north(cz - bar),
+        minEast: east(cx - halfWidth), maxEast: east(cx + halfWidth),
+        minUp: bottom - bar, maxUp: bottom,
+      });
+    }
+  } else {
+    m.cylinder(cx, cz - halfWidth, 0, top, postR, 10, ...POST);
+    m.cylinder(cx, cz + halfWidth, 0, top, postR, 10, ...POST);
+    obs.push({ kind: 'cylinder', north: north(cz - halfWidth), east: east(cx), radius: hitR, height: top });
+    obs.push({ kind: 'cylinder', north: north(cz + halfWidth), east: east(cx), radius: hitR, height: top });
+    m.slab(cx - bar, top, cz - halfWidth - postR, cx + bar, top + bar * 2, cz + halfWidth + postR, colour[0]!, colour[1]!, colour[2]!);
+    obs.push({
+      kind: 'box',
+      minNorth: north(cz + halfWidth + postR), maxNorth: north(cz - halfWidth - postR),
+      minEast: east(cx - bar), maxEast: east(cx + bar),
+      minUp: top, maxUp: top + bar * 2,
+    });
+  }
+
+  // Direction chevron on the ground, pointing the way through.
+  const cp = sixGateCourse.checkpoints[number - 1];
+  const dx = cp && cp.kind === 'gate' ? cp.dirE : 0;
+  const dz = cp && cp.kind === 'gate' ? -cp.dirN : -1;
+  for (let i = 0; i < 3; i++) {
+    const t = 0.7 + i * 0.75;
+    const px = cx + dx * t;
+    const pz = cz + dz * t;
+    const w = 0.55 - i * 0.1;
+    m.groundQuad(px - w, pz - w, px + w, pz + w, 0.015 + i * 0.001, colour[0]!, colour[1]!, colour[2]!);
+  }
+
+  // Gate number: that many small blocks stacked beside the left post.
+  const bx = along === 'x' ? cx - halfWidth - 0.5 : cx + 0.5;
+  const bz = along === 'x' ? cz + 0.4 : cz - halfWidth - 0.5;
+  for (let i = 0; i < number; i++) {
+    const y = 0.12 + i * 0.28;
+    m.slab(bx - 0.11, y, bz - 0.11, bx + 0.11, y + 0.19, bz + 0.11, 0.95, 0.95, 0.98);
+  }
+}
+
+/**
+ * The flag: a tall pylon with a ring of markers showing the circle to fly, and
+ * a gap in that ring on the side you are meant to enter from.
+ */
+function flagPylon(
+  m: MeshBuilder,
+  obs: Obstacle[],
+  cx: number,
+  cz: number,
+  height: number,
+  radius: number,
+  direction: 1 | -1,
+): void {
+  m.cylinder(cx, cz, 0, height, 0.22, 14, 0.9, 0.25, 0.15);
+  m.cylinder(cx, cz, height * 0.55, height * 0.75, 0.26, 14, 0.98, 0.98, 0.98);
+  obs.push({ kind: 'cylinder', north: north(cz), east: east(cx), radius: 0.3, height });
+
+  // Markers round the turn, spaced so the direction reads: they get taller the
+  // way you are meant to go, which is legible from the air without a legend.
+  const count = 12;
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    const px = cx + Math.cos(a) * radius;
+    const pz = cz + Math.sin(a) * radius;
+    const along = direction > 0 ? i / count : 1 - i / count;
+    const h = 0.25 + along * 0.85;
+    m.cylinder(px, pz, 0, h, 0.07, 6, 0.95, 0.75, 0.15);
+    obs.push({ kind: 'cylinder', north: north(pz), east: east(px), radius: 0.12, height: h });
+  }
+}
+
 function pylon(m: MeshBuilder, obs: Obstacle[], cx: number, cz: number, height: number): void {
   m.cylinder(cx, cz, 0, height, 0.18, 12, 0.9, 0.45, 0.1);
   m.cylinder(cx, cz, height * 0.45, height * 0.55, 0.2, 12, 0.95, 0.95, 0.95);
@@ -315,4 +426,34 @@ export const circuit: Track = {
   },
 };
 
-export const TRACKS: Track[] = [openField, gateRun, circuit];
+/**
+ * The race course, drawn from the same checkpoint list the timer uses.
+ *
+ * Not a second copy of the layout: `sixGateCourse` is the single source, so a
+ * gate cannot be drawn somewhere the timer will not accept, which is the whole
+ * class of bug that makes a race feel broken.
+ */
+export const raceField: Track = {
+  name: 'Race — six gates',
+  start: sixGateCourse.start,
+  build(m, obs) {
+    ground(m);
+    m.groundQuad(-6, -6, 6, 6, 0.02, ...TARMAC);
+
+    sixGateCourse.checkpoints.forEach((cp, i) => {
+      const colour = i % 2 === 0 ? GATE_A : GATE_B;
+      if (cp.kind === 'gate') {
+        // NED to render: x = east, z = -north.
+        const cx = cp.east;
+        const cz = -cp.north;
+        // The gate's direction is horizontal in NED; a gate faces across it.
+        const alongZ = Math.abs(cp.dirN) > Math.abs(cp.dirE);
+        raceGate(m, obs, cx, cz, cp.up, cp.halfWidth, cp.halfHeight, alongZ ? 'x' : 'z', colour, i + 1);
+      } else {
+        flagPylon(m, obs, cp.east, -cp.north, cp.height, cp.radius, cp.direction);
+      }
+    });
+  },
+};
+
+export const TRACKS: Track[] = [raceField, openField, gateRun, circuit];
