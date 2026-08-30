@@ -83,42 +83,38 @@ const g = (
 };
 
 /**
- * A flag standing beside a gate, taken as one element.
+ * A flag pole that *is* one side of a gate.
  *
- * Needs no new kind of checkpoint and no new detector: it is a flag and a gate
- * in sequence, placed so they read as one thing. The pole sits off to one side
- * and must be passed on its *outside*, which puts the quad wide of the gate and
- * makes the gate a cut back rather than a straight line — a jink rather than a
- * corridor, which is the point of the element.
+ * The pole stands exactly where that post would be and carries on well above
+ * the top bar, so the gate and the flag are one piece of scenery rather than
+ * two things near each other. That turns the element into a loop: both share
+ * the same plane, so you cannot take them in one pass. Round the pole — over
+ * the gate, since the pole is attached to it — and come back through the
+ * aperture. Or the reverse, depending on the order.
  *
- * `flagFirst` chooses which way round: pass the pole then take the gate, or
- * take the gate then round the pole on the way out.
+ * It was two separate obstacles at first, a pole a few metres off to the side,
+ * which made a jink rather than a loop and did not read as one element at all.
+ *
+ * No new checkpoint kind and no new detector: it is still a flag and a gate in
+ * sequence. The geometry does the work.
  */
-function flagGate(
-  gate: Gate,
-  flagFirst: boolean,
-  offsetSide: 1 | -1,
-  lateral = 4.5,
-  along = 6,
-): Checkpoint[] {
-  // Across the gate's direction: right of travel is (-dirE, dirN) reversed —
-  // the same convention the detectors use, where positive across is to the
-  // right of the direction of travel.
-  const acrossN = -gate.dirE * lateral * offsetSide;
-  const acrossE = gate.dirN * lateral * offsetSide;
-  // Before the gate if the flag comes first, after it if not.
-  const s = flagFirst ? -1 : 1;
+function flagGate(gate: Gate, flagFirst: boolean, poleSide: 1 | -1): Checkpoint[] {
+  // Right of the direction of travel, which is the convention the detectors
+  // use for "across".
+  const acrossN = -gate.dirE * gate.halfWidth * poleSide;
+  const acrossE = gate.dirN * gate.halfWidth * poleSide;
   const flag: Flag = {
     kind: 'flag',
-    north: gate.north + gate.dirN * along * s + acrossN,
-    east: gate.east + gate.dirE * along * s + acrossE,
-    height: 6,
+    north: gate.north + acrossN,
+    east: gate.east + acrossE,
+    // Tall: it has to be obvious that going over the gate is the way round it.
+    height: gate.up + gate.halfHeight + 4.5,
     dirN: gate.dirN,
     dirE: gate.dirE,
-    // Passed on the outside of the pole, which is the same side it is offset
-    // to: the quad goes wide, then cuts back through the gate.
-    side: offsetSide,
-    passWidth: 6,
+    // Passed on the far side from the gate, so the pole is rounded rather than
+    // clipped along with the aperture.
+    side: poleSide,
+    passWidth: 4,
   };
   return flagFirst ? [flag, gate] : [gate, flag];
 }

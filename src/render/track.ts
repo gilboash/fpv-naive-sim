@@ -235,6 +235,8 @@ function raceGate(
   along: 'x' | 'z',
   colour: readonly [number, number, number],
   number: number,
+  /** +1 or -1 to leave that post out, because a flag pole stands there. */
+  skipSide: 0 | 1 | -1 = 0,
 ): void {
   const postR = 0.06;
   const hitR = postR + 0.06;
@@ -243,10 +245,19 @@ function raceGate(
   const bottom = Math.max(0.05, up - halfHeight);
 
   if (along === 'x') {
-    m.cylinder(cx - halfWidth, cz, 0, top, postR, 10, ...POST);
-    m.cylinder(cx + halfWidth, cz, 0, top, postR, 10, ...POST);
-    obs.push({ kind: 'cylinder', north: north(cz), east: east(cx - halfWidth), radius: hitR, height: top });
-    obs.push({ kind: 'cylinder', north: north(cz), east: east(cx + halfWidth), radius: hitR, height: top });
+    // Render x is east, and across = +east when the gate faces north, so the
+    // +x post is the "right of travel" one for dirN > 0 and the other way for
+    // dirN < 0. Work it out from the checkpoint rather than assuming.
+    const cpForSide = sixGateCourse.checkpoints[number - 1];
+    const flip = cpForSide && cpForSide.kind === 'gate' && cpForSide.dirN < 0 ? -1 : 1;
+    if (skipSide !== -1 * flip) {
+      m.cylinder(cx - halfWidth, cz, 0, top, postR, 10, ...POST);
+      obs.push({ kind: 'cylinder', north: north(cz), east: east(cx - halfWidth), radius: hitR, height: top });
+    }
+    if (skipSide !== 1 * flip) {
+      m.cylinder(cx + halfWidth, cz, 0, top, postR, 10, ...POST);
+      obs.push({ kind: 'cylinder', north: north(cz), east: east(cx + halfWidth), radius: hitR, height: top });
+    }
     m.slab(cx - halfWidth - postR, top, cz - bar, cx + halfWidth + postR, top + bar * 2, cz + bar, colour[0]!, colour[1]!, colour[2]!);
     obs.push({
       kind: 'box',
@@ -331,10 +342,10 @@ function flagPylon(
   const rz = dirE;
   for (let i = 0; i < 5; i++) {
     const t = (i - 2) * 1.5;
-    const off = passWidth * 0.5 * side;
+    const off = passWidth * 0.6 * side;
     const px = cx + rx * off + dx * t;
     const pz = cz + rz * off + dz * t;
-    m.groundQuad(px - 0.4, pz - 0.4, px + 0.4, pz + 0.4, 0.016, 0.95, 0.75, 0.15);
+    m.groundQuad(px - 0.35, pz - 0.35, px + 0.35, pz + 0.35, 0.016, 0.95, 0.75, 0.15);
   }
 }
 
@@ -456,7 +467,8 @@ export const raceField: Track = {
     ground(m);
     m.groundQuad(-6, -6, 6, 6, 0.02, ...TARMAC);
 
-    sixGateCourse.checkpoints.forEach((cp, i) => {
+    const cps = sixGateCourse.checkpoints;
+    cps.forEach((cp, i) => {
       const colour = i % 2 === 0 ? GATE_A : GATE_B;
       if (cp.kind === 'gate') {
         // NED to render: x = east, z = -north.
@@ -464,7 +476,24 @@ export const raceField: Track = {
         const cz = -cp.north;
         // The gate's direction is horizontal in NED; a gate faces across it.
         const alongZ = Math.abs(cp.dirN) > Math.abs(cp.dirE);
-        raceGate(m, obs, cx, cz, cp.up, cp.halfWidth, cp.halfHeight, alongZ ? 'x' : 'z', colour, i + 1);
+        // If a flag stands where one of this gate's posts would be, that post
+        // is the flag pole — skip it here and let the pylon draw it, or the two
+        // end up inside each other.
+        const attached = cps.find(
+          (o) =>
+            o.kind === 'flag' &&
+            Math.hypot(o.north - cp.north, o.east - cp.east) < cp.halfWidth + 0.2,
+        );
+        const skipSide = attached
+          ? // Which post: positive across is right of the direction of travel.
+            -(attached.north - cp.north) * cp.dirE + (attached.east - cp.east) * cp.dirN > 0
+            ? 1
+            : -1
+          : 0;
+        raceGate(
+          m, obs, cx, cz, cp.up, cp.halfWidth, cp.halfHeight,
+          alongZ ? 'x' : 'z', colour, i + 1, skipSide,
+        );
       } else {
         flagPylon(m, obs, cp.east, -cp.north, cp.height, cp.dirN, cp.dirE, cp.side, cp.passWidth);
       }

@@ -767,14 +767,22 @@ thing to want when you are not being timed.
 
 ### Flag and gate
 
-Two of the flags stand beside a gate, taken once before it and once after, so a
-pilot meets both orders on one lap. The pole must be passed on its *outside*,
-which puts the quad wide and makes the gate a cut back rather than a straight
-line — a jink rather than a corridor.
+Two of the poles **are** one side of a gate — standing exactly where that post
+would be, carrying on well above the top bar, one piece of scenery rather than
+two things near each other.
 
-It needs no new kind of checkpoint and no new detector: it is a flag and a gate
-in sequence, placed to read as one element. A test asserts both orders exist and
-that no pole stands close enough to block the gate it is beside.
+That is what makes it an element rather than a jink. The pole and the gate share
+the same line, so they cannot be taken in one pass: go over the gate, round the
+pole, and back through the aperture, or the reverse depending on the order. Both
+orders appear on the course, so a pilot meets each once a lap.
+
+It was a pole a few metres off to the side at first, which made a jink and did
+not read as one obstacle at all. Still no new checkpoint kind and no new
+detector — it is a flag and a gate in sequence, and the geometry does the work.
+
+A test asserts an attached pole sits exactly at the post position, and that a
+free-standing one is well clear of every gate. Those are different invariants
+and the first version of the test only knew about the second.
 
 The **Race — six gates** map carries a course: six gates in order, then a flag
 to circle. Set the lap count, press *Start race*, and the clock starts after a
@@ -790,9 +798,12 @@ point the way through each gate, blocks beside it count out its number, and the
 markers round the flag grow taller the way you are meant to turn.
 
 **Which** checkpoint is next is drawn *on* the checkpoint: a gate has its
-aperture outlined in green with an arrow through it pointing the way, and the
-flag has its circle marked on the ground with chevrons showing the direction to
-turn. Both are unlit and drawn with the depth test off, so they show through the
+aperture outlined, a flag has a small arrow on the side it is passed. The
+outline is **green from the side you take it from and red from the other**, so a
+wrong approach is visible before you commit to it — which is what an arrow
+through the aperture used to say, more loudly and while sitting on top of the
+thing a pilot is trying to aim at. The colour is a draw-time uniform, so saying
+it costs nothing per frame. Both are unlit and drawn with the depth test off, so they show through the
 gate's own bar and through anything in the way — a deliberate cheat, since it is
 a HUD element that happens to live in world space and a marker you cannot see is
 not a marker.

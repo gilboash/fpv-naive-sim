@@ -916,6 +916,53 @@ const main = async () => {
     r.setNextCheckpoint(null);
     return { ok: true, none, gate, ring, cleared: count() };
   })()`);
+  // Green from the side you take it from, red from the other. Rendered rather
+  // than asserted on a variable: the tint is a draw-time uniform, so the only
+  // honest check is what comes out.
+  const tint = await evaluate(`new Promise((resolve) => {
+    const { scene, flight, racePanel } = globalThis.__fpvsim;
+    if (!scene.renderer) return resolve({ ok: false });
+    const gate = racePanel.race.course.checkpoints.find((c) => c.kind === 'gate');
+    const look = (fromBehind) => {
+      // Set the marker inside the frame, immediately before drawing. The page's
+      // own animation loop clears it every frame while no race is running, so
+      // setting it earlier is a race the page usually wins.
+      scene.renderer.setNextCheckpoint(gate);
+      const s = fromBehind ? -8 : 8;
+      flight.sim.reset(0);
+      flight.sim.pos.x = gate.north + gate.dirN * s;
+      flight.sim.pos.y = gate.east + gate.dirE * s;
+      flight.sim.pos.z = -gate.up;
+      flight.sim.onGround = false;
+      scene.render();
+      const c = scene.canvas;
+      const off = document.createElement('canvas');
+      off.width = c.width; off.height = c.height;
+      off.getContext('2d').drawImage(c, 0, 0);
+      const d = off.getContext('2d').getImageData(0, 0, off.width, off.height).data;
+      // The marker is the only saturated green or red in the frame.
+      let g = 0, r = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i+1] > 170 && d[i] < 110 && d[i+2] < 130) g++;
+        if (d[i] > 170 && d[i+1] < 110 && d[i+2] < 110) r++;
+      }
+      return { g, r };
+    };
+    requestAnimationFrame(() => {
+      const behind = look(true);
+      const infront = look(false);
+      scene.renderer.setNextCheckpoint(null);
+      resolve({ ok: true, behind, infront });
+    });
+  })`);
+  check(
+    'the marker is green from the correct side and red from the wrong one',
+    tint.ok && tint.behind.g > tint.behind.r && tint.infront.r > tint.infront.g,
+    tint.ok
+      ? `approaching: ${tint.behind.g} green vs ${tint.behind.r} red; past it: ${tint.infront.r} red vs ${tint.infront.g} green`
+      : 'no renderer',
+  );
+
   check(
     'the next-checkpoint marker is drawn on the checkpoint',
     marker.ok && marker.none === 0 && marker.gate > 0 && marker.ring > 0 &&

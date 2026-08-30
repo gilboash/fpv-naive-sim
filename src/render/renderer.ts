@@ -53,9 +53,10 @@ uniform vec3 uLightDir;
 uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform float uUnlit;
+uniform vec3 uTint;
 out vec4 outColor;
 void main() {
-  vec3 base = vColor;
+  vec3 base = vColor * uTint;
   if (uUnlit < 0.5) {
     float lambert = max(dot(normalize(vNormal), uLightDir), 0.0);
     // Generous ambient: this is a training scene, and unreadable shadow is
@@ -112,6 +113,7 @@ export class Renderer {
   private uFogColor: WebGLUniformLocation;
   private uFogDensity: WebGLUniformLocation;
   private uUnlit: WebGLUniformLocation;
+  private uTint: WebGLUniformLocation;
   private scene: Batch | null = null;
   private sky: Batch;
   /** Index count of the active checkpoint marker; 0 when there is none. */
@@ -124,6 +126,7 @@ export class Renderer {
   private markerVbo: WebGLBuffer | null = null;
   private markerEbo: WebGLBuffer | null = null;
   private markerKey = '';
+  private markerCp: Checkpoint | null = null;
 
   private proj: Mat4 = mat4();
   private view: Mat4 = mat4();
@@ -162,6 +165,7 @@ export class Renderer {
     this.uFogColor = need('uFogColor');
     this.uFogDensity = need('uFogDensity');
     this.uUnlit = need('uUnlit');
+    this.uTint = need('uTint');
 
     gl.enable(gl.DEPTH_TEST);
     gl.clearColor(SKY_HORIZON[0], SKY_HORIZON[1], SKY_HORIZON[2], 1);
@@ -185,6 +189,7 @@ export class Renderer {
     const key = cp === null ? '' : JSON.stringify(cp);
     if (key === this.markerKey) return;
     this.markerKey = key;
+    this.markerCp = cp;
     if (cp === null) {
       this.marker = null;
       return;
@@ -332,6 +337,7 @@ export class Renderer {
     gl.uniform3f(this.uLightDir, 0.42, 0.82, 0.39);
     gl.uniform3f(this.uFogColor, SKY_HORIZON[0], SKY_HORIZON[1], SKY_HORIZON[2]);
     gl.uniform1f(this.uFogDensity, 0.0035);
+    gl.uniform3f(this.uTint, 1, 1, 1);
 
     // Sky first, unlit and without depth writes, so everything draws over it.
     gl.uniform1f(this.uUnlit, 1);
@@ -350,12 +356,23 @@ export class Renderer {
     // The next-checkpoint marker, folded into its own matrix. Unlit and drawn
     // without fog so it stays readable from the far end of the course, which is
     // exactly where a pilot needs it.
-    if (this.marker && this.marker.count > 0) {
+    if (this.marker && this.marker.count > 0 && this.markerCp) {
+      // Green from the side you are meant to take it from, red from the other.
+      // The marker geometry is drawn in white and tinted here, so telling a
+      // pilot they are on the wrong side costs a uniform rather than a rebuilt
+      // mesh every frame.
+      const cp = this.markerCp;
+      const ahead =
+        (sim.pos.x - cp.north) * cp.dirN + (sim.pos.y - cp.east) * cp.dirE;
+      if (ahead < 0) gl.uniform3f(this.uTint, 0.16, 1.0, 0.42);
+      else gl.uniform3f(this.uTint, 1.0, 0.24, 0.24);
+
       gl.uniform1f(this.uUnlit, 1);
       gl.disable(gl.DEPTH_TEST);
       gl.bindVertexArray(this.marker.vao);
       gl.drawElements(gl.TRIANGLES, this.marker.count, gl.UNSIGNED_INT, 0);
       gl.enable(gl.DEPTH_TEST);
+      gl.uniform3f(this.uTint, 1, 1, 1);
     }
     gl.bindVertexArray(null);
 
@@ -364,8 +381,10 @@ export class Renderer {
   }
 }
 
-const MARK: [number, number, number] = [0.16, 1.0, 0.42];
-const MARK_DIM: [number, number, number] = [0.08, 0.5, 0.24];
+// White, because the colour comes from uTint at draw time — green when the
+// pilot is on the right side of the checkpoint, red when they are not.
+const MARK: [number, number, number] = [1, 1, 1];
+const MARK_DIM: [number, number, number] = [0.55, 0.55, 0.55];
 
 /** A flat bar between two world points, facing the viewer well enough. */
 function bar(
@@ -444,21 +463,10 @@ function buildGateMarker(gate: Gate): MeshData {
   bar(m, corner(-1, -1), corner(-1, 1), t, MARK);
   bar(m, corner(1, -1), corner(1, 1), t, MARK);
 
-  // Arrow through the middle, pointing the way the gate is taken. Render
-  // direction is the NED direction with z negated.
-  const dx = gate.dirE;
-  const dz = -gate.dirN;
-  const tip: [number, number, number] = [cx + dx * 1.8, gate.up, cz + dz * 1.8];
-  const tail: [number, number, number] = [cx - dx * 1.4, gate.up, cz - dz * 1.4];
-  bar(m, tail, tip, 0.055, MARK_DIM);
-  for (const side of [-1, 1]) {
-    const back: [number, number, number] = [
-      tip[0] - dx * 0.75 + ux * 0.55 * side,
-      gate.up,
-      tip[2] - dz * 0.75 + uz * 0.55 * side,
-    ];
-    bar(m, back, tip, 0.055, MARK);
-  }
+  // No arrow. The frame plus its colour says everything the rule cares about —
+  // this is the gate, and green means you are on the side you take it from.
+  // An arrow through the aperture was large, cluttered the thing a pilot is
+  // trying to aim at, and said what the colour now says more quietly.
   return m.build();
 }
 
@@ -479,24 +487,23 @@ function buildFlagMarker(flag: Flag): MeshData {
   // Right of the direction of travel, in render space.
   const rx = flag.dirN;
   const rz = flag.dirE;
-  const off = flag.passWidth * 0.5 * flag.side;
+  const off = flag.passWidth * 0.6 * flag.side;
   const cx = flag.east + rx * off;
   const cz = -flag.north + rz * off;
-  const y = 2.0;
+  const y = Math.max(2.0, flag.height * 0.75);
 
-  const tip: [number, number, number] = [cx + dx * 2.6, y, cz + dz * 2.6];
-  const tail: [number, number, number] = [cx - dx * 2.6, y, cz - dz * 2.6];
-  bar(m, tail, tip, 0.1, MARK);
+  // Small: it marks a side, it is not a runway.
+  const tip: [number, number, number] = [cx + dx * 1.3, y, cz + dz * 1.3];
+  const tail: [number, number, number] = [cx - dx * 1.3, y, cz - dz * 1.3];
+  bar(m, tail, tip, 0.07, MARK_DIM);
   for (const s of [-1, 1]) {
     const back: [number, number, number] = [
-      tip[0] - dx * 1.1 + rx * 0.85 * s,
+      tip[0] - dx * 0.6 + rx * 0.45 * s,
       y,
-      tip[2] - dz * 1.1 + rz * 0.85 * s,
+      tip[2] - dz * 0.6 + rz * 0.45 * s,
     ];
-    bar(m, back, tip, 0.1, MARK);
+    bar(m, back, tip, 0.07, MARK);
   }
-  // A short upright at the arrow, so it reads from a distance and from above.
-  bar(m, [cx, 0.2, cz], [cx, y, cz], 0.07, MARK_DIM);
   return m.build();
 }
 

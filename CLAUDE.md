@@ -476,10 +476,19 @@ availability flickers — and the failsafe disarming on a lost link is correct.
 The check asserts armed *when the link held* and disarmed when it did not,
 which is the actual contract.
 
-**Flag-and-gate elements** are a flag and a gate in sequence, not a new
-checkpoint kind — the pole is passed on its outside, which puts the quad wide
-and makes the gate a cut back. Two on the course, one in each order. Tests
-assert both orders exist and that no pole is close enough to block a gate.
+**Flag-and-gate elements**: the pole *is* one side of the gate, at the post
+position and taller than the top bar. Because pole and gate share a plane they
+cannot be taken in one pass — over the gate, round the pole, back through. Two
+on the course, one in each order. First version put the pole a few metres to the
+side, which made a jink and did not read as one obstacle.
+
+Tests distinguish the two invariants: an attached pole sits exactly at the post
+position (at the aperture edge, deliberately), a free-standing one is well clear
+of every gate.
+
+**Checkpoint markers tint green/red** by which side of the plane the quad is on,
+via a `uTint` uniform rather than a rebuilt mesh. The gate arrow is gone — it sat
+on top of the thing a pilot aims at and said what the colour now says quietly.
 
 **A respawn voids its lap** (`race.invalidateLap()`, wired to `flight.onReset`),
 or a reset at the right moment is a shortcut. Invalid laps also break a
@@ -522,6 +531,13 @@ wide, and backwards.
 That last one exposed a real bug: `level()` reset the matrix but not the frame
 clock, so returning to the Instruments tab snapped the model through a large
 rotation on the first frame. Caught because the rate test was not monotonic.
+
+**Two browser-check flakes worth remembering (2026-08-30):** the page's own rAF
+loop clears the checkpoint marker every frame while no race is running, so a
+test that sets a marker and *then* waits for a frame loses the race — set it
+inside the frame, immediately before drawing. And the failsafe check raced the
+one-second device rescan, since headless here can see a real radio; it now
+deselects repeatedly until the disconnected state is actually observed.
 
 **Next, roughly in order:**
 

@@ -1185,24 +1185,44 @@ section('Race: the drawn gates are the timed gates');
     if (a.kind === 'flag' && b.kind === 'gate') flagBeforeGate++;
     if (a.kind === 'gate' && b.kind === 'flag') gateBeforeFlag++;
   }
+  // Two kinds of pole now, and the invariant differs. An *attached* pole is one
+  // side of a gate, so it stands exactly at the post position — at the aperture
+  // edge, deliberately. A free-standing one must be well clear of every gate.
+  let attachedOffBy = 0;
+  let freeStandingNearest = Infinity;
   for (const cp of cps) {
     if (cp.kind !== 'flag') continue;
+    let nearestGate = Infinity;
+    let nearestHalfWidth = 0;
     for (const other of cps) {
       if (other.kind !== 'gate') continue;
       const d = Math.hypot(cp.north - other.north, cp.east - other.east);
-      // How far the pole sits from the gate's aperture edge.
-      tightest = Math.min(tightest, d - other.halfWidth);
+      if (d < nearestGate) {
+        nearestGate = d;
+        nearestHalfWidth = other.halfWidth;
+      }
+    }
+    if (nearestGate < nearestHalfWidth + 0.2) {
+      attachedOffBy = Math.max(attachedOffBy, Math.abs(nearestGate - nearestHalfWidth));
+    } else {
+      freeStandingNearest = Math.min(freeStandingNearest, nearestGate - nearestHalfWidth);
     }
   }
+  tightest = freeStandingNearest;
   ok(
     'the course has a flag-and-gate element in both orders',
     flagBeforeGate >= 1 && gateBeforeFlag >= 1,
     `${flagBeforeGate} flag-then-gate, ${gateBeforeFlag} gate-then-flag`,
   );
   ok(
-    'and no pole stands close enough to block a gate',
+    'an attached pole stands exactly where the gate post would be',
+    attachedOffBy < 0.02,
+    `off by ${attachedOffBy.toFixed(3)} m — it is one side of the gate, not beside it`,
+  );
+  ok(
+    'and a free-standing pole is well clear of every gate',
     tightest > 2,
-    `nearest pole is ${tightest.toFixed(1)} m outside an aperture edge`,
+    `nearest is ${tightest.toFixed(1)} m outside an aperture edge`,
   );
 
   ok(

@@ -4,11 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%9A%81%3C/text%3E%3C/svg%3E" />
-    <title>fpvsim — FPV trainer</title>
+    <title>naco.fpvsim — FPV trainer</title>
   </head>
   <body>
     <header>
-      <h1>fpvsim <span class="dim">/ trainer</span></h1>
+      <h1>naco.fpvsim <span class="dim">/ trainer</span></h1>
       <div id="status-pills" class="pills"></div>
     </header>
 
@@ -25,13 +25,16 @@
       <section id="scene">
         <h2>FPV view</h2>
         <p class="hint" id="race-hint">
-          On the <strong>Race — six gates</strong> map: nine checkpoints in order. Gates are
-          flown through the way their ground chevrons point, with blocks beside them counting
-          out the number. Flag poles are passed on the side their arrow is on, going the way
-          it points — two of them stand beside a gate, once before and once after, so the
-          element is a jink rather than a straight line. The next checkpoint is outlined in
-          green. Crashing respawns you where you went in so the race can continue, but the
-          lap it happened in does not count.
+          On the <strong>Race — six gates</strong> map: nine checkpoints in order. The next one
+          is outlined <strong>green</strong> when you are on the side you take it from and
+          <strong>red</strong> when you are not, so a wrong approach shows before you commit
+          to it. Gates are flown through the way their ground chevrons point; flag poles are
+          passed on the side their small arrow is on.
+          <br />
+          Two of the poles <em>are</em> one side of a gate. Since they share the same line you
+          cannot take both in one pass — go over the gate, round the pole, and back through
+          the aperture, or the reverse. Crashing respawns you where you went in so the race
+          can continue, but the lap it happened in does not count.
         </p>
         <p class="hint">
           Rate mode, camera tilted up as on a real quad. Arm with <strong>A</strong>
