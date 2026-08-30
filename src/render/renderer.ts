@@ -24,6 +24,7 @@ import { MeshBuilder, FLOATS_PER_VERTEX, type MeshData } from './mesh.ts';
 import { mat4, multiply, perspective, viewFromBasis, type Mat4 } from './mat4.ts';
 import type { Track } from './track.ts';
 import type { Obstacle } from '../flight/collision.ts';
+import type { Checkpoint, Flag, Gate } from '../race/course.ts';
 
 const VERT = `#version 300 es
 precision highp float;
@@ -113,12 +114,16 @@ export class Renderer {
   private uUnlit: WebGLUniformLocation;
   private scene: Batch | null = null;
   private sky: Batch;
-  private marker: Batch;
-  /** Where the next checkpoint marker floats, render space. Null hides it. */
-  private markerAt: { x: number; y: number; z: number } | null = null;
-  private markerSpin = 0;
-  private markerMvp: Mat4 = mat4();
-  private markerModel: Mat4 = mat4();
+  /** Index count of the active checkpoint marker; 0 when there is none. */
+  get markerTriangleCount(): number {
+    return this.marker?.count ?? 0;
+  }
+
+  /** Rebuilt when the active checkpoint changes, not per frame. */
+  private marker: Batch | null = null;
+  private markerVbo: WebGLBuffer | null = null;
+  private markerEbo: WebGLBuffer | null = null;
+  private markerKey = '';
 
   private proj: Mat4 = mat4();
   private view: Mat4 = mat4();
@@ -162,20 +167,64 @@ export class Renderer {
     gl.clearColor(SKY_HORIZON[0], SKY_HORIZON[1], SKY_HORIZON[2], 1);
 
     this.sky = this.upload(buildSky());
-    this.marker = this.upload(buildMarker());
   }
 
   /**
-   * Point the pilot at the next checkpoint.
+   * Mark the next checkpoint, on the checkpoint itself.
    *
-   * Chevrons on the ground say which way a gate is taken, but nothing said
-   * *which* gate — and on a course where gates are visible from other gates,
-   * that is the difference between racing and guessing. Takes NED because that
-   * is what the race logic speaks; the conversion to render space happens here,
-   * with the rest of it.
+   * A first version floated an arrowhead above it, and a pilot's verdict was
+   * that it was unclear — which it was: a shape hanging in the air names no
+   * gate, shows no aperture and gives no direction. This outlines the hole you
+   * are meant to fly through and puts an arrow through it pointing the way,
+   * so the marker *is* the instruction.
+   *
+   * Built in world space, so it needs no model matrix. Rebuilt only when the
+   * checkpoint changes — a few times a lap, not sixty times a second.
    */
-  setMarker(north: number | null, east = 0, up = 0): void {
-    this.markerAt = north === null ? null : { x: east, y: up, z: -north };
+  setNextCheckpoint(cp: Checkpoint | null): void {
+    const key = cp === null ? '' : JSON.stringify(cp);
+    if (key === this.markerKey) return;
+    this.markerKey = key;
+    if (cp === null) {
+      this.marker = null;
+      return;
+    }
+    this.uploadMarker(cp.kind === 'gate' ? buildGateMarker(cp) : buildFlagMarker(cp));
+  }
+
+  /**
+   * One buffer, re-filled. Creating a fresh VAO per checkpoint would leak one
+   * per gate for the length of a session.
+   */
+  private uploadMarker(data: MeshData): void {
+    const gl = this.gl;
+    if (!this.marker) {
+      const vao = gl.createVertexArray();
+      this.markerVbo = gl.createBuffer();
+      this.markerEbo = gl.createBuffer();
+      if (!vao || !this.markerVbo || !this.markerEbo) return;
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.markerVbo);
+      const stride = FLOATS_PER_VERTEX * 4;
+      for (const [loc, size, off] of [
+        [0, 3, 0],
+        [1, 3, 12],
+        [2, 3, 24],
+      ] as [number, number, number][]) {
+        gl.enableVertexAttribArray(loc);
+        gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, off);
+      }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.markerEbo);
+      gl.bindVertexArray(null);
+      this.marker = { vao, count: 0 };
+    }
+    gl.bindVertexArray(this.marker.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.markerVbo);
+    gl.bufferData(gl.ARRAY_BUFFER, data.vertices, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.markerEbo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data.indices, gl.DYNAMIC_DRAW);
+    gl.bindVertexArray(null);
+    this.marker.count = data.indices.length;
   }
 
   private upload(data: MeshData): Batch {
@@ -301,21 +350,7 @@ export class Renderer {
     // The next-checkpoint marker, folded into its own matrix. Unlit and drawn
     // without fog so it stays readable from the far end of the course, which is
     // exactly where a pilot needs it.
-    if (this.markerAt) {
-      this.markerSpin = (this.markerSpin + 0.03) % (Math.PI * 2);
-      const bob = Math.sin(this.markerSpin * 2) * 0.25;
-      const c = Math.cos(this.markerSpin);
-      const s2 = Math.sin(this.markerSpin);
-      const m = this.markerModel;
-      m[0] = c; m[1] = 0; m[2] = -s2; m[3] = 0;
-      m[4] = 0; m[5] = 1; m[6] = 0; m[7] = 0;
-      m[8] = s2; m[9] = 0; m[10] = c; m[11] = 0;
-      m[12] = this.markerAt.x;
-      m[13] = this.markerAt.y + bob;
-      m[14] = this.markerAt.z;
-      m[15] = 1;
-      multiply(this.markerMvp, this.viewProj, m);
-      gl.uniformMatrix4fv(this.uViewProj, false, this.markerMvp);
+    if (this.marker && this.marker.count > 0) {
       gl.uniform1f(this.uUnlit, 1);
       gl.disable(gl.DEPTH_TEST);
       gl.bindVertexArray(this.marker.vao);
@@ -329,30 +364,144 @@ export class Renderer {
   }
 }
 
+const MARK: [number, number, number] = [0.16, 1.0, 0.42];
+const MARK_DIM: [number, number, number] = [0.08, 0.5, 0.24];
+
+/** A flat bar between two world points, facing the viewer well enough. */
+function bar(
+  m: MeshBuilder,
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  w: number,
+  colour: readonly [number, number, number],
+): void {
+  const dx = b[0]! - a[0]!;
+  const dy = b[1]! - a[1]!;
+  const dz = b[2]! - a[2]!;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  // Any perpendicular will do; prefer one that is not nearly parallel to up.
+  let px = -dz / len;
+  let py = 0;
+  let pz = dx / len;
+  if (Math.hypot(px, pz) < 0.1) {
+    px = 1;
+    py = 0;
+    pz = 0;
+  }
+  const nx = px * w;
+  const ny = py * w;
+  const nz = pz * w;
+  m.quadColored(
+    [a[0]! - nx, a[1]! - ny, a[2]! - nz],
+    [b[0]! - nx, b[1]! - ny, b[2]! - nz],
+    [b[0]! + nx, b[1]! + ny, b[2]! + nz],
+    [a[0]! + nx, a[1]! + ny, a[2]! + nz],
+    colour, colour, colour, colour,
+  );
+  // A second quad in the vertical plane, so the bar does not vanish edge-on.
+  m.quadColored(
+    [a[0]!, a[1]! - w, a[2]!],
+    [b[0]!, b[1]! - w, b[2]!],
+    [b[0]!, b[1]! + w, b[2]!],
+    [a[0]!, a[1]! + w, a[2]!],
+    colour, colour, colour, colour,
+  );
+}
+
 /**
- * The next-checkpoint marker: a downward arrowhead, floating and turning.
+ * The gate marker: the aperture outlined, with an arrow through it.
  *
- * Drawn unlit and with the depth test off, so it shows through a gate's own
- * bar and through anything between the pilot and it. That is a deliberate
- * cheat — it is a HUD element that happens to live in world space, and a marker
- * you cannot see is not a marker.
+ * A first version floated an arrowhead above the gate. A pilot's verdict was
+ * that it was unclear, and it was — a shape in the air names no gate, shows no
+ * aperture and gives no direction. This outlines the exact hole the timer will
+ * accept and points an arrow the way it must be taken, so the marker is the
+ * instruction rather than a hint at one.
  */
-function buildMarker(): MeshData {
+function buildGateMarker(gate: Gate): MeshData {
   const m = new MeshBuilder();
-  const c: [number, number, number] = [0.15, 0.95, 0.45];
-  const dim: [number, number, number] = [0.08, 0.62, 0.3];
-  const r = 0.55;
-  const h = 0.9;
-  const seg = 4;
+  // NED to render, and the gate's across-axis in render space.
+  const cx = gate.east;
+  const cz = -gate.north;
+  // Across the aperture: perpendicular to the direction of travel, in the
+  // ground plane. In NED that is (-dirE, dirN); converting to render, where
+  // x = east and z = -north, gives (dirN, dirE). Getting these two the wrong
+  // way round drew the frame across the direction of flight instead of across
+  // the gate, which looked like a skewed sliver rather than a rectangle.
+  const ux = gate.dirN;
+  const uz = gate.dirE;
+  const w = gate.halfWidth;
+  const h = gate.halfHeight;
+  const y0 = gate.up - h;
+  const y1 = gate.up + h;
+  const corner = (sx: number, sy: number): [number, number, number] => [
+    cx + ux * w * sx,
+    sy > 0 ? y1 : y0,
+    cz + uz * w * sx,
+  ];
+  const t = 0.07;
+  bar(m, corner(-1, -1), corner(1, -1), t, MARK);
+  bar(m, corner(-1, 1), corner(1, 1), t, MARK);
+  bar(m, corner(-1, -1), corner(-1, 1), t, MARK);
+  bar(m, corner(1, -1), corner(1, 1), t, MARK);
+
+  // Arrow through the middle, pointing the way the gate is taken. Render
+  // direction is the NED direction with z negated.
+  const dx = gate.dirE;
+  const dz = -gate.dirN;
+  const tip: [number, number, number] = [cx + dx * 1.8, gate.up, cz + dz * 1.8];
+  const tail: [number, number, number] = [cx - dx * 1.4, gate.up, cz - dz * 1.4];
+  bar(m, tail, tip, 0.055, MARK_DIM);
+  for (const side of [-1, 1]) {
+    const back: [number, number, number] = [
+      tip[0] - dx * 0.75 + ux * 0.55 * side,
+      gate.up,
+      tip[2] - dz * 0.75 + uz * 0.55 * side,
+    ];
+    bar(m, back, tip, 0.055, MARK);
+  }
+  return m.build();
+}
+
+/**
+ * The flag marker: the circle to fly, with chevrons round it pointing the way.
+ * Chevrons rather than a plain ring because a ring says where but not which
+ * way, and the direction is half of what makes a pylon turn count.
+ */
+function buildFlagMarker(flag: Flag): MeshData {
+  const m = new MeshBuilder();
+  const cx = flag.east;
+  const cz = -flag.north;
+  const r = flag.radius;
+  const y = 1.4;
+  const seg = 36;
   for (let i = 0; i < seg; i++) {
-    const a0 = (i / seg) * Math.PI * 2 + Math.PI / 4;
-    const a1 = ((i + 1) / seg) * Math.PI * 2 + Math.PI / 4;
-    const p0: [number, number, number] = [Math.cos(a0) * r, h, Math.sin(a0) * r];
-    const p1: [number, number, number] = [Math.cos(a1) * r, h, Math.sin(a1) * r];
-    // Sides down to the point.
-    m.quadColored(p0, p1, [0, 0, 0], [0, 0, 0], c, c, dim, dim);
-    // Cap, so it reads as solid from above too.
-    m.quadColored([0, h, 0], p0, p1, [0, h, 0], dim, c, c, dim);
+    const a0 = (i / seg) * Math.PI * 2;
+    const a1 = ((i + 1) / seg) * Math.PI * 2;
+    // Render turns the other way round from NED, so the drawn sweep is negated
+    // to match the direction the timer wants.
+    const p0: [number, number, number] = [cx + Math.cos(a0) * r, y, cz - Math.sin(a0) * r];
+    const p1: [number, number, number] = [cx + Math.cos(a1) * r, y, cz - Math.sin(a1) * r];
+    bar(m, p0, p1, 0.06, i % 3 === 0 ? MARK : MARK_DIM);
+  }
+  // Chevrons every 45 degrees, tangent to the circle.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const px = cx + Math.cos(a) * r;
+    const pz = cz - Math.sin(a) * r;
+    // Tangent, in the direction of travel.
+    const tx = Math.sin(a) * flag.direction;
+    const tz = Math.cos(a) * flag.direction;
+    const nx = Math.cos(a);
+    const nz = -Math.sin(a);
+    const tip: [number, number, number] = [px + tx * 0.9, y, pz + tz * 0.9];
+    for (const side of [-1, 1]) {
+      const back: [number, number, number] = [
+        tip[0] - tx * 0.8 + nx * 0.5 * side,
+        y,
+        tip[2] - tz * 0.8 + nz * 0.5 * side,
+      ];
+      bar(m, back, tip, 0.06, MARK);
+    }
   }
   return m.build();
 }

@@ -11,6 +11,7 @@ import { Renderer } from './render/renderer.ts';
 import { TRACKS, type Track } from './render/track.ts';
 import { clearance } from './flight/collision.ts';
 import { StickView } from './stick-view.ts';
+import type { Checkpoint } from './race/course.ts';
 import { Osd } from './osd.ts';
 import type { Commands, StickMode } from './mapping.ts';
 
@@ -271,18 +272,9 @@ export class SceneView {
     else await this.stage.requestFullscreen();
   }
 
-  /**
-   * Show where the next checkpoint is, or hide the marker with null.
-   * The height offset puts it above a gate rather than inside it.
-   */
-  setNextCheckpoint(cp: { north: number; east: number; up?: number; height?: number } | null): void {
-    if (!this.renderer) return;
-    if (!cp) {
-      this.renderer.setMarker(null);
-      return;
-    }
-    const up = (cp.up ?? cp.height ?? 2) + (cp.up !== undefined ? 1.9 : 2.6);
-    this.renderer.setMarker(cp.north, cp.east, up);
+  /** Outline the next checkpoint, or clear it with null. */
+  setNextCheckpoint(cp: Checkpoint | null): void {
+    this.renderer?.setNextCheckpoint(cp);
   }
 
   render(): void {

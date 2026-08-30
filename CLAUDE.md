@@ -459,10 +459,17 @@ radius, and there are tests for all three refusals.
   so a lap time in a panel underneath does not exist. `src/osd.ts` overlays
   clock, lap, next checkpoint, last lap, battery, altitude and speed on the
   stage — which is also what goes fullscreen, so it comes along.
-- **Nothing said which gate was next.** `Renderer.setMarker()` draws a floating
-  arrowhead above the active checkpoint, unlit and with the depth test off so it
-  shows through the gate's own bar. Deliberate cheat: a HUD element in world
-  space.
+- **Nothing said which gate was next.** `Renderer.setNextCheckpoint()` outlines
+  the checkpoint itself — a gate's aperture with an arrow through it, a flag's
+  circle with direction chevrons — unlit and depth-test off so it shows through
+  the gate's own bar. Deliberate cheat: a HUD element in world space.
+
+  The first attempt floated an arrowhead *above* the gate and Gilboa's verdict
+  was that it was unclear, which it was: a shape in the air names no gate, shows
+  no aperture and gives no direction. Fixing it also turned up a swapped axis —
+  the across-aperture vector in render space is `(dirN, dirE)`, not
+  `(dirE, dirN)`, and the wrong one drew the frame across the direction of
+  flight, a skewed sliver rather than a rectangle.
 - **The stick check now turns at the pilot's real rate curve** rather than a
   made-up constant, with deg/s and rpm beside it, so it verifies the rates too.
 

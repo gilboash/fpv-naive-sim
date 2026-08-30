@@ -890,6 +890,33 @@ const main = async () => {
     race.summary.join(' | '),
   );
 
+  // The next-checkpoint marker must exist, change with the checkpoint, and go
+  // away when the race ends — a stale marker pointing at gate 3 after the
+  // finish is worse than none.
+  const marker = await evaluate(`(() => {
+    const { scene, racePanel } = globalThis.__fpvsim;
+    if (!scene.renderer) return { ok: false };
+    const r = scene.renderer;
+    const course = racePanel.race.course;
+    const count = () => r.markerTriangleCount;
+    r.setNextCheckpoint(null);
+    const none = count();
+    r.setNextCheckpoint(course.checkpoints[0]);
+    const gate = count();
+    const flag = course.checkpoints.find((c) => c.kind === 'flag');
+    r.setNextCheckpoint(flag);
+    const ring = count();
+    r.setNextCheckpoint(null);
+    return { ok: true, none, gate, ring, cleared: count() };
+  })()`);
+  check(
+    'the next-checkpoint marker is drawn on the checkpoint',
+    marker.ok && marker.none === 0 && marker.gate > 0 && marker.ring > marker.gate && marker.cleared === 0,
+    marker.ok
+      ? `gate outline ${marker.gate} indices, flag circle ${marker.ring}, cleared to ${marker.cleared}`
+      : 'no renderer',
+  );
+
   // Tabs: the right panel shows, and the physics does not stop when the flying
   // tab is hidden — that last one matters, because a pilot ducking into
   // Settings mid-flight must not have the quad freeze and drop.
@@ -1008,7 +1035,11 @@ const main = async () => {
         const dt = 0.001;
         racePanel.race.setDt(dt);
         // Cross gate 1 so the clock and the lap counter have something to show.
-        for (let i = 0; i < 400; i++) racePanel.race.step(-25 + i * 0.03, 0, 2.2, dt);
+        const skip = Number('${process.env.SHOT_RACE}') || 1;
+        // Walk the sequence forward to whichever checkpoint we want to see.
+        racePanel.race.next = skip - 1;
+        racePanel.race.holeShot = 1.2;
+        racePanel.race.time = 12.4;
         racePanel.render();
       })()`);
       await sleep(200);

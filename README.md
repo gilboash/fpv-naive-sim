@@ -740,12 +740,18 @@ How a checkpoint is taken is shown rather than explained: chevrons on the ground
 point the way through each gate, blocks beside it count out its number, and the
 markers round the flag grow taller the way you are meant to turn.
 
-**Which** checkpoint is next is a floating green arrowhead above it, drawn unlit
-and with the depth test off so it shows through the gate's own bar and through
-anything in the way. That is a deliberate cheat: it is a HUD element that
-happens to live in world space, and a marker you cannot see is not a marker. On
-a course where gates are visible from other gates it is the difference between
-racing and guessing.
+**Which** checkpoint is next is drawn *on* the checkpoint: a gate has its
+aperture outlined in green with an arrow through it pointing the way, and the
+flag has its circle marked on the ground with chevrons showing the direction to
+turn. Both are unlit and drawn with the depth test off, so they show through the
+gate's own bar and through anything in the way — a deliberate cheat, since it is
+a HUD element that happens to live in world space and a marker you cannot see is
+not a marker.
+
+The first version floated an arrowhead above the checkpoint, and a pilot's
+verdict was that it was unclear. It was: a shape hanging in the air names no
+gate, shows no aperture and gives no direction. Outlining the exact hole the
+timer will accept makes the marker the instruction rather than a hint at one.
 
 **Timing is on the video**, not beside it — clock, lap, next checkpoint and last
 lap time top-left, battery, altitude and speed bottom-left, scaled up in
