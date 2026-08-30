@@ -1001,67 +1001,79 @@ section('Race: gates, direction, and the clock');
   );
 }
 
-section('Race: circling a flag');
+section('Race: passing a flag');
 {
   const dt = 0.001;
-  const mk = (dir: 1 | -1): Course => ({
+  // Passed heading north, pole kept on the left, so the quad goes by on the
+  // east side: across positive, side +1.
+  const mk = (side: 1 | -1): Course => ({
     name: 'f',
     start: { north: 0, east: 0, yawDeg: 0 },
     defaultLaps: 1,
     checkpoints: [
-      { kind: 'flag', north: 0, east: 0, height: 6, radius: 9, direction: dir, sweep: (270 * Math.PI) / 180 },
+      { kind: 'flag', north: 0, east: 0, height: 7, dirN: 1, dirE: 0, side, passWidth: 7 },
     ],
   });
-  const arc = (r: Race, radius: number, fromDeg: number, toDeg: number): void => {
-    const from = (fromDeg * Math.PI) / 180;
-    const to = (toDeg * Math.PI) / 180;
-    const steps = Math.max(2, Math.round((Math.abs(to - from) * radius) / 12 / dt));
-    for (let i = 0; i <= steps; i++) {
-      const a = from + (to - from) * (i / steps);
+  const pass = (r: Race, east: number): void => {
+    for (let i = 0; i <= 400; i++) {
       r.setDt(dt);
-      r.step(Math.cos(a) * radius, Math.sin(a) * radius, 3, dt);
+      r.step(-10 + i * 0.05, east, 3, dt);
     }
   };
-  const fresh = (dir: 1 | -1): Race => {
-    const r = new Race(mk(dir));
+  const fresh = (side: 1 | -1): Race => {
+    const r = new Race(mk(side));
     r.laps = 1;
     r.start(0);
     r.setDt(dt);
-    r.step(100, 100, 3, dt);
+    r.step(-10, 0, 3, dt);
     return r;
   };
 
-  const good = fresh(1);
-  arc(good, 5, 0, 300);
-  ok('300 degrees the right way rounds the flag', good.lap === 1, 'complete');
-
-  const short = fresh(1);
-  arc(short, 5, 0, 200);
-  ok('200 degrees does not', short.lap === 0, 'still waiting');
+  const right = fresh(1);
+  pass(right, 4);
+  ok('passing on the required side counts', right.lap === 1, 'complete');
 
   const wrong = fresh(1);
-  arc(wrong, 5, 0, -300);
-  ok('and neither does the wrong direction', wrong.lap === 0, 'still waiting');
+  pass(wrong, -4);
+  ok('passing on the other side does not', wrong.lap === 0, 'still waiting');
 
-  // Progress cannot be banked across separate visits.
-  const split = fresh(1);
-  arc(split, 5, 0, 150);
-  for (let i = 0; i < 300; i++) {
-    split.setDt(dt);
-    split.step(60, 60, 3, dt);
+  const far = fresh(1);
+  pass(far, 20);
+  ok('and neither does passing far too wide', far.lap === 0, `20 m out, limit is 7`);
+
+  const backwards = new Race(mk(1));
+  backwards.laps = 1;
+  backwards.start(0);
+  backwards.setDt(dt);
+  backwards.step(10, 4, 3, dt);
+  for (let i = 0; i <= 400; i++) {
+    backwards.setDt(dt);
+    backwards.step(10 - i * 0.05, 4, 3, dt);
   }
-  arc(split, 5, 150, 300);
-  ok('two half-turns with a gap do not add up', split.lap === 0, 'the turn has to be continuous');
+  ok('nor going past it the wrong way', backwards.lap === 0, 'direction still matters');
 
-  // But an approach that curves the wrong way must not dig a hole: it resets
-  // progress to zero rather than subtracting from it.
-  const approach = fresh(1);
-  arc(approach, 5, 126, 0);
-  arc(approach, 5, 0, 300);
+  // The failure that prompted the rewrite was a pilot circling the pole and
+  // never completing it. A circle now completes it — provided the circle goes
+  // round the way that takes the quad past on the required side, which is the
+  // rule doing its job rather than an edge case.
+  const circleGood = fresh(1);
+  for (let i = 0; i <= 1200; i++) {
+    const a = -(i / 1200) * Math.PI * 2;
+    circleGood.setDt(dt);
+    circleGood.step(Math.cos(a) * 5, Math.sin(a) * 5, 3, dt);
+  }
+  ok('circling it the right way round completes it', circleGood.lap === 1, 'the circle contains a pass');
+
+  const circleBad = fresh(1);
+  for (let i = 0; i <= 1200; i++) {
+    const a = (i / 1200) * Math.PI * 2;
+    circleBad.setDt(dt);
+    circleBad.step(Math.cos(a) * 5, Math.sin(a) * 5, 3, dt);
+  }
   ok(
-    'an approach curving the wrong way costs nothing but the progress made',
-    approach.lap === 1,
-    'still completes after turning 300 degrees the right way',
+    'circling it the other way does not',
+    circleBad.lap === 0,
+    'that circle only ever crosses on the wrong side',
   );
 }
 
@@ -1100,12 +1112,13 @@ section('Race: the shipped course can actually be flown');
         goto_(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up);
         goto_(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up);
       } else {
-        const R = cp.radius * 0.6;
-        goto_(cp.north + R, cp.east, 4);
-        for (let i = 1; i <= 340; i++) {
-          const a = cp.direction * (i / 340) * ((300 * Math.PI) / 180);
-          goto_(cp.north + Math.cos(a) * R, cp.east + Math.sin(a) * R, 4);
-        }
+        // Past the pole on the required side, along the direction of travel.
+        const offN = cp.dirN * 6;
+        const offE = cp.dirE * 6;
+        const acrossN = -cp.dirE * cp.passWidth * 0.5 * cp.side;
+        const acrossE = cp.dirN * cp.passWidth * 0.5 * cp.side;
+        goto_(cp.north - offN + acrossN, cp.east - offE + acrossE, 4);
+        goto_(cp.north + offN + acrossN, cp.east + offE + acrossE, 4);
       }
     }
   }

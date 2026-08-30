@@ -463,12 +463,19 @@ noticed it: exact to 1e-6 s in the tests, against ~1 ms of avoidable jitter.
 or a reset at the right moment is a shortcut. Invalid laps also break a
 best-of-three run rather than being skipped over.
 
-**The flag's sweep is clamped at zero rather than going negative.** First version
-subtracted the approach arc, so a line that plainly went round the pylon was
-rejected for having entered from the far side — the autopilot test caught it,
-netting +174 deg from a 300 deg turn. Wrong-way turning now costs only the
-progress made. Still not gameable: the sweep has to be continuous and inside the
-radius, and there are tests for all three refusals.
+**The flag is a one-sided plane crossing**: go past the pole, this way, on this
+side, within `passWidth`. Same test a gate uses.
+
+It was a swept angle first — inside a radius, turn 270 degrees the right way —
+and Gilboa found it both unclear and unpassable. Unclear because a circle drawn
+on the ground says "fly this shape" when the shape was never the point.
+Unpassable because flying round the drawn ring strayed outside the radius, which
+silently reset the sweep, so it never completed however many laps he flew. **A
+rule you can satisfy and still fail is worse than a hard one.**
+
+Direction and side still matter, so circling the pole completes it only if the
+circle passes on the required side — tests for both halves, plus wrong side, too
+wide, and backwards.
 
 **Race OSD and next-gate marker (2026-08-30)**, all three from Gilboa flying it:
 

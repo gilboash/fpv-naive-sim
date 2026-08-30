@@ -299,8 +299,9 @@ function raceGate(
 }
 
 /**
- * The flag: a tall pylon with a ring of markers showing the circle to fly, and
- * a gap in that ring on the side you are meant to enter from.
+ * The flag: a tall striped pylon, with a marker on the ground on the side you
+ * are meant to pass. No ring — a circle drawn round it invited a pilot to fly
+ * the circle, which was never the rule.
  */
 function flagPylon(
   m: MeshBuilder,
@@ -308,24 +309,32 @@ function flagPylon(
   cx: number,
   cz: number,
   height: number,
-  radius: number,
-  direction: 1 | -1,
+  dirN: number,
+  dirE: number,
+  side: 1 | -1,
+  passWidth: number,
 ): void {
-  m.cylinder(cx, cz, 0, height, 0.22, 14, 0.9, 0.25, 0.15);
-  m.cylinder(cx, cz, height * 0.55, height * 0.75, 0.26, 14, 0.98, 0.98, 0.98);
-  obs.push({ kind: 'cylinder', north: north(cz), east: east(cx), radius: 0.3, height });
+  // Striped, so it reads as a marker rather than as scenery.
+  const bands = 6;
+  for (let i = 0; i < bands; i++) {
+    const y0 = (i / bands) * height;
+    const y1 = ((i + 1) / bands) * height;
+    const c: [number, number, number] = i % 2 === 0 ? [0.92, 0.22, 0.14] : [0.97, 0.97, 0.97];
+    m.cylinder(cx, cz, y0, y1, 0.24, 14, c[0], c[1], c[2]);
+  }
+  obs.push({ kind: 'cylinder', north: north(cz), east: east(cx), radius: 0.32, height });
 
-  // Markers round the turn, spaced so the direction reads: they get taller the
-  // way you are meant to go, which is legible from the air without a legend.
-  const count = 12;
-  for (let i = 0; i < count; i++) {
-    const a = (i / count) * Math.PI * 2;
-    const px = cx + Math.cos(a) * radius;
-    const pz = cz + Math.sin(a) * radius;
-    const along = direction > 0 ? i / count : 1 - i / count;
-    const h = 0.25 + along * 0.85;
-    m.cylinder(px, pz, 0, h, 0.07, 6, 0.95, 0.75, 0.15);
-    obs.push({ kind: 'cylinder', north: north(pz), east: east(px), radius: 0.12, height: h });
+  // Ground stripe on the passing side, along the direction of travel.
+  const dx = dirE;
+  const dz = -dirN;
+  const rx = dirN;
+  const rz = dirE;
+  for (let i = 0; i < 5; i++) {
+    const t = (i - 2) * 1.5;
+    const off = passWidth * 0.5 * side;
+    const px = cx + rx * off + dx * t;
+    const pz = cz + rz * off + dz * t;
+    m.groundQuad(px - 0.4, pz - 0.4, px + 0.4, pz + 0.4, 0.016, 0.95, 0.75, 0.15);
   }
 }
 
@@ -457,7 +466,7 @@ export const raceField: Track = {
         const alongZ = Math.abs(cp.dirN) > Math.abs(cp.dirE);
         raceGate(m, obs, cx, cz, cp.up, cp.halfWidth, cp.halfHeight, alongZ ? 'x' : 'z', colour, i + 1);
       } else {
-        flagPylon(m, obs, cp.east, -cp.north, cp.height, cp.radius, cp.direction);
+        flagPylon(m, obs, cp.east, -cp.north, cp.height, cp.dirN, cp.dirE, cp.side, cp.passWidth);
       }
     });
   },

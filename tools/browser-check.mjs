@@ -854,12 +854,10 @@ const main = async () => {
           go(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up);
           go(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up);
         } else {
-          const R = cp.radius * 0.6;
-          go(cp.north + R, cp.east, 4);
-          for (let i = 1; i <= 340; i++) {
-            const a = cp.direction * (i / 340) * (300 * Math.PI / 180);
-            go(cp.north + Math.cos(a) * R, cp.east + Math.sin(a) * R, 4);
-          }
+          const aN = -cp.dirE * cp.passWidth * 0.5 * cp.side;
+          const aE = cp.dirN * cp.passWidth * 0.5 * cp.side;
+          go(cp.north - cp.dirN * 6 + aN, cp.east - cp.dirE * 6 + aE, 4);
+          go(cp.north + cp.dirN * 6 + aN, cp.east + cp.dirE * 6 + aE, 4);
         }
       }
     }
@@ -911,9 +909,10 @@ const main = async () => {
   })()`);
   check(
     'the next-checkpoint marker is drawn on the checkpoint',
-    marker.ok && marker.none === 0 && marker.gate > 0 && marker.ring > marker.gate && marker.cleared === 0,
+    marker.ok && marker.none === 0 && marker.gate > 0 && marker.ring > 0 &&
+      marker.ring !== marker.gate && marker.cleared === 0,
     marker.ok
-      ? `gate outline ${marker.gate} indices, flag circle ${marker.ring}, cleared to ${marker.cleared}`
+      ? `gate outline ${marker.gate} indices, flag arrow ${marker.ring}, cleared to ${marker.cleared}`
       : 'no renderer',
   );
 

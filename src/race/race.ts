@@ -41,8 +41,6 @@ export interface RaceResult {
   total: number;
 }
 
-const TAU = Math.PI * 2;
-
 export class Race {
   course: Course;
   laps = 3;
@@ -69,10 +67,6 @@ export class Race {
   private prevE = 0;
   private prevU = 0;
   private havePrev = false;
-  /** Accumulated angle around the active flag, radians, signed. */
-  private flagSweep = 0;
-  private flagAngle = 0;
-  private inFlag = false;
 
   constructor(course: Course) {
     this.course = course;
@@ -103,8 +97,6 @@ export class Race {
     this.lapInvalid = false;
     this.countdown = 0;
     this.havePrev = false;
-    this.flagSweep = 0;
-    this.inFlag = false;
   }
 
   /**
@@ -114,8 +106,6 @@ export class Race {
   invalidateLap(): void {
     if (this.state === 'running') this.lapInvalid = true;
     this.havePrev = false;
-    this.flagSweep = 0;
-    this.inFlag = false;
   }
 
   /**
@@ -191,51 +181,29 @@ export class Race {
   private lastDt = 0;
 
   /**
-   * Circling a flag: sweep enough angle around it, the right way round,
-   * without leaving its radius.
+   * Passing a flag: cross the line through the pole, the right way, on the
+   * right side, near enough.
+   *
+   * The same plane crossing a gate uses, with the aperture on one side of the
+   * pole instead of both. Replaces a swept-angle rule that was unclear to fly
+   * and brittle to satisfy — see the note on Flag in course.ts.
    */
   private testFlag(flag: Flag, n: number, e: number): number | null {
-    const dn = n - flag.north;
-    const de = e - flag.east;
-    const dist = Math.hypot(dn, de);
-    const angle = Math.atan2(de, dn);
+    const before = (this.prevN - flag.north) * flag.dirN + (this.prevE - flag.east) * flag.dirE;
+    const after = (n - flag.north) * flag.dirN + (e - flag.east) * flag.dirE;
+    if (!(before < 0 && after >= 0)) return null;
 
-    if (dist > flag.radius) {
-      // Left the turn. Give up on the sweep rather than let a pilot bank it
-      // over several passes, which would not be circling anything.
-      this.inFlag = false;
-      this.flagSweep = 0;
-      return null;
-    }
+    const span = after - before;
+    const f = span === 0 ? 0 : -before / span;
+    const cn = this.prevN + (n - this.prevN) * f;
+    const ce = this.prevE + (e - this.prevE) * f;
 
-    if (!this.inFlag) {
-      this.inFlag = true;
-      this.flagSweep = 0;
-      this.flagAngle = angle;
-      return null;
-    }
+    // Positive across is to the right of the direction of travel.
+    const across = -(cn - flag.north) * flag.dirE + (ce - flag.east) * flag.dirN;
+    if (across * flag.side <= 0) return null;
+    if (Math.abs(across) > flag.passWidth) return null;
 
-    let d = angle - this.flagAngle;
-    // Shortest way round, so a wrap from +pi to -pi is a small step, not a lap.
-    if (d > Math.PI) d -= TAU;
-    else if (d < -Math.PI) d += TAU;
-    this.flagAngle = angle;
-    this.flagSweep += d;
-
-    // Progress cannot go negative. Turning the wrong way resets you to zero
-    // rather than digging a hole: the approach into a pylon usually curves the
-    // opposite way for a moment, and without this that arc was subtracted from
-    // the turn — a line that visibly went right round the flag would be
-    // rejected for having entered from the far side. Still not gameable, since
-    // the required sweep has to be turned continuously in one direction.
-    if (this.flagSweep * flag.direction < 0) this.flagSweep = 0;
-
-    if (this.flagSweep * flag.direction >= flag.sweep) {
-      this.inFlag = false;
-      this.flagSweep = 0;
-      return this.time;
-    }
-    return null;
+    return this.time - (1 - f) * this.lastDt;
   }
 
   private reach(at: number): void {

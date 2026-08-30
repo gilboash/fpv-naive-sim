@@ -801,15 +801,23 @@ that, a reset at the right moment is a shortcut and the timing measures nothing.
 
 ### The flag
 
-Circling is a swept angle: stay inside the radius and turn 270° the right way.
-Three things it deliberately refuses — turning the wrong way, leaving the radius
-and coming back to bank the rest of the turn, and stopping short.
+**Go past it, this way, on this side, near enough.** That is one plane crossing
+— the same test a gate uses, with the aperture on one side of the pole instead
+of both. An arrow beside the pole shows which side and which way; a stripe on
+the ground marks the corridor.
 
-One thing it deliberately forgives: **an approach that curves the wrong way
-costs only the progress made, not more.** Progress is clamped at zero rather
-than going negative. The first version subtracted it, and a line that visibly
-went right round the flag was rejected for having arrived from the far side —
-which is the kind of rule that makes a game feel arbitrary.
+It was a swept angle first: stay inside a radius and turn 270° the right way.
+That was wrong twice over, and a pilot found both. It was **unclear**, because a
+circle drawn on the ground says "fly this shape" when the shape was never the
+point. And it was **brittle**: a pilot flying round the drawn ring strayed
+outside the radius, which silently reset the accumulated sweep, so it never
+completed however many times they went round. A rule you can satisfy and still
+fail is worse than a hard one.
+
+The direction still matters — going past on the wrong side, too wide, or the
+wrong way all fail — so circling the pole completes it only if the circle takes
+the quad past on the required side. That is the rule working, not an edge case,
+and there is a test for each half.
 
 ## Flying it without the keyboard
 

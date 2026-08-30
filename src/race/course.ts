@@ -21,17 +21,34 @@ export interface Gate {
   halfHeight: number;
 }
 
+/**
+ * A pylon you pass on a given side.
+ *
+ * It was a swept angle at first — stay inside a radius and turn 270 degrees the
+ * right way — and it was the wrong rule twice over. It was unclear, because a
+ * circle drawn on the ground says "fly this shape" when the shape is not the
+ * point; and it was brittle, because a pilot flying round the drawn ring
+ * strayed outside the radius and silently lost all their progress, so it never
+ * completed however many times they went round.
+ *
+ * A flag is really a gate with one post: go past it, this way, on this side,
+ * near enough. That is one plane crossing, the same test a gate uses.
+ */
 export interface Flag {
   kind: 'flag';
   north: number;
   east: number;
   height: number;
-  /** Must be inside this to be circling it. */
-  radius: number;
-  /** +1 anticlockwise seen from above, -1 clockwise. */
-  direction: 1 | -1;
-  /** How much of a turn counts as "round it", radians. */
-  sweep: number;
+  /** Unit vector, horizontal: the way you are travelling as you pass it. */
+  dirN: number;
+  dirE: number;
+  /**
+   * Which side the pole must be on. +1 means you pass to the left of the
+   * direction of travel (the pole on your right), -1 the other way.
+   */
+  side: 1 | -1;
+  /** How far past the pole still counts, measured across the direction. */
+  passWidth: number;
 }
 
 export type Checkpoint = Gate | Flag;
@@ -85,14 +102,17 @@ export const sixGateCourse: Course = {
     g(-4, 6, 2.4, 0),
     g(10, 6, 2.4, 0),
     g(22, 0, 1.5, -90),
+    // Passed heading west, keeping the pole to the north — the natural line
+    // coming off gate 4 and turning back toward gate 6.
     {
       kind: 'flag',
-      north: 30,
-      east: -14,
-      height: 6,
-      radius: 9,
-      direction: 1,
-      sweep: (270 * Math.PI) / 180,
+      north: 26,
+      east: -15,
+      height: 7,
+      dirN: 0,
+      dirE: -1,
+      side: -1,
+      passWidth: 7,
     },
     g(10, -8, 3.2, 180),
     g(-10, -6, 2.4, 180),

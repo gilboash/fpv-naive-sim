@@ -463,46 +463,40 @@ function buildGateMarker(gate: Gate): MeshData {
 }
 
 /**
- * The flag marker: the circle to fly, with chevrons round it pointing the way.
- * Chevrons rather than a plain ring because a ring says where but not which
- * way, and the direction is half of what makes a pylon turn count.
+ * The flag marker: an arrow beside the pole, on the side you pass, pointing the
+ * way you pass it.
+ *
+ * It was a circle on the ground with chevrons round it, which said "fly this
+ * shape" when the shape was never the point — and a pilot reported it as
+ * unclear and unpassable. One arrow says everything the rule cares about: this
+ * side, this way.
  */
 function buildFlagMarker(flag: Flag): MeshData {
   const m = new MeshBuilder();
-  const cx = flag.east;
-  const cz = -flag.north;
-  const r = flag.radius;
-  const y = 1.4;
-  const seg = 36;
-  for (let i = 0; i < seg; i++) {
-    const a0 = (i / seg) * Math.PI * 2;
-    const a1 = ((i + 1) / seg) * Math.PI * 2;
-    // Render turns the other way round from NED, so the drawn sweep is negated
-    // to match the direction the timer wants.
-    const p0: [number, number, number] = [cx + Math.cos(a0) * r, y, cz - Math.sin(a0) * r];
-    const p1: [number, number, number] = [cx + Math.cos(a1) * r, y, cz - Math.sin(a1) * r];
-    bar(m, p0, p1, 0.06, i % 3 === 0 ? MARK : MARK_DIM);
+  // Render direction of travel, and the across-axis on the passing side.
+  const dx = flag.dirE;
+  const dz = -flag.dirN;
+  // Right of the direction of travel, in render space.
+  const rx = flag.dirN;
+  const rz = flag.dirE;
+  const off = flag.passWidth * 0.5 * flag.side;
+  const cx = flag.east + rx * off;
+  const cz = -flag.north + rz * off;
+  const y = 2.0;
+
+  const tip: [number, number, number] = [cx + dx * 2.6, y, cz + dz * 2.6];
+  const tail: [number, number, number] = [cx - dx * 2.6, y, cz - dz * 2.6];
+  bar(m, tail, tip, 0.1, MARK);
+  for (const s of [-1, 1]) {
+    const back: [number, number, number] = [
+      tip[0] - dx * 1.1 + rx * 0.85 * s,
+      y,
+      tip[2] - dz * 1.1 + rz * 0.85 * s,
+    ];
+    bar(m, back, tip, 0.1, MARK);
   }
-  // Chevrons every 45 degrees, tangent to the circle.
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    const px = cx + Math.cos(a) * r;
-    const pz = cz - Math.sin(a) * r;
-    // Tangent, in the direction of travel.
-    const tx = Math.sin(a) * flag.direction;
-    const tz = Math.cos(a) * flag.direction;
-    const nx = Math.cos(a);
-    const nz = -Math.sin(a);
-    const tip: [number, number, number] = [px + tx * 0.9, y, pz + tz * 0.9];
-    for (const side of [-1, 1]) {
-      const back: [number, number, number] = [
-        tip[0] - tx * 0.8 + nx * 0.5 * side,
-        y,
-        tip[2] - tz * 0.8 + nz * 0.5 * side,
-      ];
-      bar(m, back, tip, 0.06, MARK);
-    }
-  }
+  // A short upright at the arrow, so it reads from a distance and from above.
+  bar(m, [cx, 0.2, cz], [cx, y, cz], 0.07, MARK_DIM);
   return m.build();
 }
 
