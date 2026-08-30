@@ -459,10 +459,22 @@ as the collision volumes coming from the mesh build.
 is known, so the split is timed to the crossing rather than to the tick that
 noticed it: exact to 1e-6 s in the tests, against ~1 ms of avoidable jitter.
 
-**A crash mid-race respawns in place**, overriding the reset selector
-(`scene.forceInPlace`): sending a racer to the start line ends the race in
-practice, since the remaining checkpoints are behind them. Outside a race the
-selector still applies.
+**A crash mid-race recovers automatically** after a ~1.2 s pause
+(`crashRecover` in main.ts), respawning in place and re-armed, with the OSD
+showing CRASHED while it waits. The first attempt only made *manual* reset go in
+place, which missed the point — with the clock running, a quad waiting for a
+keypress ends the race. Re-arming ignores the throttle-down rule on purpose: a
+racer is holding throttle when they hit something, and a disarmed respawn just
+drops out of the sky.
+
+Respawn is forced in place during a race (`scene.forceInPlace`); outside one the
+selector applies.
+
+A note on testing this: the browser check cannot assert "always comes back
+armed", because headless here sees Gilboa's real Radiomaster and its
+availability flickers — and the failsafe disarming on a lost link is correct.
+The check asserts armed *when the link held* and disarmed when it did not,
+which is the actual contract.
 
 **Flag-and-gate elements** are a flag and a gate in sequence, not a new
 checkpoint kind — the pole is passed on its outside, which puts the quad wide

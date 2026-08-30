@@ -362,11 +362,20 @@ const main = async () => {
   const noLink = await evaluate(`(async () => {
     const { flight, poller } = globalThis.__fpvsim;
     const saved = poller.index;
-    poller.select(-1);
-    await new Promise((r) => setTimeout(r, 60));
-    const out = { connected: poller.connected, throttle: flight.lastInputThrottle };
+    // The page rescans for devices once a second when none is connected, and
+    // on this machine there is a real radio plugged in — so a single select(-1)
+    // followed by a fixed wait races that timer and occasionally reads as still
+    // connected. Deselect repeatedly until the disconnected state is observed.
+    let out = null;
+    for (let i = 0; i < 25 && !out; i++) {
+      poller.select(-1);
+      await new Promise((r) => setTimeout(r, 20));
+      if (!poller.connected) {
+        out = { connected: false, throttle: flight.lastInputThrottle };
+      }
+    }
     poller.select(saved);
-    return out;
+    return out ?? { connected: poller.connected, throttle: flight.lastInputThrottle };
   })()`);
   check(
     'losing the link reads as no throttle',
@@ -999,6 +1008,90 @@ const main = async () => {
     'but a crash mid-race respawns where it happened, so the race can continue',
     Math.hypot(raceReset.racing.north - 40, raceReset.racing.east - 12) < 3,
     `respawned at ${raceReset.racing.north.toFixed(1)}, ${raceReset.racing.east.toFixed(1)} — crashed at 40, 12`,
+  );
+
+  // Crashing mid-race must recover on its own. Without it the quad lies there
+  // with the clock running while the pilot reaches for a key, which ends the
+  // race in practice.
+  const autoRecover = await evaluate(`(async () => {
+    const { scene, flight, racePanel, tabs } = globalThis.__fpvsim;
+    tabs.show('fly');
+    racePanel.race.reset();
+    racePanel.race.laps = 3;
+    racePanel.race.start(0);
+    await new Promise((r) => setTimeout(r, 60));
+
+    // Crash it hard, at height, with the throttle up — the case that used to
+    // respawn disarmed and drop.
+    flight.sim.armed = true;
+    // Open ground, well away from the course. Crashing beside a gate post meant
+    // the quad respawned a metre from it and sometimes flew straight back into
+    // it at half throttle — which is real behaviour, but not what is under test.
+    flight.sim.pos.x = -30; flight.sim.pos.y = 22; flight.sim.pos.z = -4;
+    flight.sim.onGround = false;
+    // Driven into the ground rather than dropped: at half throttle it would
+    // climb away instead. The throttle stays up, which is the case that used to
+    // respawn disarmed and drop a second later.
+    flight.sim.vel.z = 30;
+    for (let i = 0; i < 3000 && !flight.sim.crashed; i++) {
+      flight.step({ throttle: 0.5, roll: 0, pitch: 0, yaw: 0 }, true);
+    }
+    const crashed = flight.sim.crashed;
+    const where = { north: flight.sim.pos.x, east: flight.sim.pos.y };
+
+    // Let the tick drive the recovery, and read the state at the moment it
+    // happens. Waiting a fixed time instead races: the quad flies on at half
+    // throttle after respawning and may well hit something else, so a later
+    // reading describes the *second* crash rather than the recovery.
+    let after = null;
+    for (let i = 0; i < 120 && !after; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+      if (!flight.sim.crashed) {
+        after = {
+          north: flight.sim.pos.x,
+          east: flight.sim.pos.y,
+          armed: flight.sim.armed,
+          armedAtCrash: flight.sim.armedAtCrash,
+          alt: -flight.sim.pos.z,
+          connected: globalThis.__fpvsim.poller.connected,
+          lastThrottle: flight.lastInputThrottle,
+        };
+      }
+    }
+    return { crashed, where, after, lapVoid: racePanel.race.lapWasInvalidated };
+  })()`);
+  check(
+    'a mid-race crash recovers on its own',
+    autoRecover.crashed && autoRecover.after !== null,
+    autoRecover.crashed
+      ? autoRecover.after
+        ? 'crashed, then cleared without a keypress'
+        : 'crashed and stayed crashed'
+      : 'could not get it to crash',
+  );
+  const moved = autoRecover.after
+    ? Math.hypot(
+        autoRecover.after.north - autoRecover.where.north,
+        autoRecover.after.east - autoRecover.where.east,
+      )
+    : NaN;
+  // Armed unless the radio vanished. Headless here can see a real Radiomaster
+  // and its availability flickers, and the failsafe disarming on a lost link is
+  // correct behaviour — so asserting "always armed" would be asserting that the
+  // failsafe does not work.
+  const linkHeld = autoRecover.after?.connected === true;
+  check(
+    'and comes back armed, near where it went in',
+    moved < 4 && (linkHeld ? autoRecover.after?.armed === true : autoRecover.after?.armed === false),
+    linkHeld
+      ? `respawned ${moved.toFixed(1)} m from the wreck, armed`
+      : `respawned ${moved.toFixed(1)} m from the wreck; the radio dropped, so the failsafe ` +
+        `disarmed it — which is the failsafe working, not a recovery failure`,
+  );
+  check(
+    'and the lap it happened in is void',
+    autoRecover.lapVoid === true,
+    'the race is finishable, not cheaper',
   );
 
   // Tabs: the right panel shows, and the physics does not stop when the flying

@@ -130,6 +130,10 @@ flight.onArmed = () => {
   hasArmed = true;
 };
 
+/** Seconds left before a mid-race crash respawns itself; <0 when idle. */
+let crashRecover = -1;
+const CRASH_PAUSE = 1.2;
+
 const tabs = new Tabs();
 
 /**
@@ -205,6 +209,29 @@ function onTick(fired: number, scheduled: number): void {
   // The physics step, in the tick and immediately after the poll — the position
   // M0 existed to make safe. It costs a few microseconds of a 1000 us budget.
   flight.step(commands, poller.connected);
+
+  // Automatic crash recovery, while a race is on.
+  //
+  // Without it a crash ends the race in practice: the quad lies there with the
+  // clock running while the pilot reaches for a key. Racing means carrying on,
+  // so the quad picks itself up where it went in. The lap is void either way —
+  // this makes the race finishable, not cheaper.
+  //
+  // The pause is so the crash registers as one. Respawning instantly reads as
+  // a glitch rather than as having hit something.
+  const racing = racePanel.race.state === 'running';
+  if (racing && flight.sim.crashed) {
+    if (crashRecover < 0) crashRecover = CRASH_PAUSE;
+    else {
+      crashRecover -= flight.sim.dt;
+      if (crashRecover <= 0) {
+        crashRecover = -1;
+        flight.reset(true);
+      }
+    }
+  } else if (!flight.sim.crashed) {
+    crashRecover = -1;
+  }
 
   // Race timing runs in the tick too. Read off the 30 Hz render loop instead
   // and every split would be quantised to 33 ms, which is most of the gap
@@ -600,7 +627,7 @@ function render(tNow: number): void {
 
   const active = racePanel.race.state === 'running' ? racePanel.race.activeCheckpoint : null;
   scene.setNextCheckpoint(active);
-  scene.osd.render(racePanel.race, flight.sim);
+  scene.osd.render(racePanel.race, flight.sim, crashRecover);
   if (tabs.visible('fly')) scene.updateSticks(commands, mapping.mode);
 
   // pills

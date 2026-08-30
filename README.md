@@ -744,8 +744,22 @@ back to the gate run. An index is not an identifier; it is a fact about the
 current order of a list. It is stored by name now, with a one-time migration
 from the index era.
 
-**A crash mid-race respawns where it happened**, whatever the reset selector
-says, so the pilot can carry on and finish. Sending a racer to the start line
+**A crash mid-race recovers on its own.** After about a second — long enough
+that the crash registers as one rather than as a glitch — the quad picks itself
+up where it went in and carries on, armed. Nothing to press. The OSD says
+CRASHED while it waits.
+
+That pause and the automatic part are the point: with the clock running, a quad
+lying on its back waiting for a keypress ends the race in practice. The lap is
+void either way, so this makes a race finishable rather than cheaper.
+
+It re-arms regardless of the throttle, which is the one place the usual
+throttle-down rule is suspended: a racer is normally holding throttle when they
+hit something, and respawning them disarmed just means they drop out of the sky
+a second later.
+
+**The respawn is always in place during a race**, whatever the reset selector
+says. Sending a racer to the start line
 ends the race in practice — the remaining checkpoints are behind them and the
 lap is already void, so there is nothing left to do but abort. Outside a race
 the selector is honoured, because "put me back at the start" is a reasonable

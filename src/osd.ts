@@ -55,11 +55,21 @@ export class Osd {
     parent.appendChild(root);
   }
 
-  render(race: Race, sim: FlightSim): void {
+  /** @param crashRecover seconds until an automatic respawn, or <0 for none. */
+  render(race: Race, sim: FlightSim, crashRecover = -1): void {
     const t = sim.telemetry;
     this.battery.textContent = `${t.batteryV.toFixed(1)}V  ${t.batteryA.toFixed(0)}A`;
     this.alt.textContent = `${t.altitude.toFixed(1)} m`;
     this.speed.textContent = `${(t.speed * 3.6).toFixed(0)} km/h`;
+
+    if (crashRecover >= 0) {
+      // Say what is about to happen, so a respawn is not mistaken for a glitch.
+      this.countdown.textContent = 'CRASHED';
+      this.countdown.className = 'osd-count crashed';
+      this.countdown.style.display = '';
+      return;
+    }
+    this.countdown.className = 'osd-count';
 
     if (race.state === 'countdown') {
       this.countdown.textContent = String(Math.ceil(race.countdown));

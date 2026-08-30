@@ -301,18 +301,24 @@ export class FlightPanel {
     }
   }
 
-  reset(): void {
+  /**
+   * @param force Arm regardless of the throttle. Used by the race's automatic
+   *   crash recovery: a racer is usually holding throttle when they hit
+   *   something, and respawning them disarmed means they drop out of the sky a
+   *   second later, which is a worse outcome than a slightly abrupt resume.
+   */
+  reset(force = false): void {
     // Come back the way you left. Crashing is the normal outcome of practice,
     // and making a pilot re-arm after every one is friction with nothing behind
     // it: arming is a deliberate act once per session, not once per prang.
     // Throttle still has to be down, or the quad would leap off the reset.
     const wasFlying = this.sim.armed || this.sim.armedAtCrash;
-    const throttleDown = this.lastInput.throttle <= 0.05;
+    const throttleDown = force || this.lastInput.throttle <= 0.05;
 
     if (this.onReset) this.onReset();
     else this.sim.reset();
 
-    if (wasFlying && throttleDown && this.sim.arm(this.lastInput)) {
+    if (wasFlying && throttleDown && this.sim.arm(force ? { ...this.lastInput, throttle: 0 } : this.lastInput)) {
       this.armBtn.textContent = 'Disarm';
       this.setStatus('reset — armed, ready');
       return;

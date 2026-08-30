@@ -562,3 +562,5 @@ tbody tr:hover { background: var(--panel-2); }
 .fpv-stage:fullscreen .osd-lap { font-size: 20px; }
 .fpv-stage:fullscreen .osd-next { font-size: 18px; }
 .fpv-stage:fullscreen .osd-item { font-size: 18px; }
+
+.osd-count.crashed { font-size: 44px; color: #ff6b6b; letter-spacing: 0.08em; }

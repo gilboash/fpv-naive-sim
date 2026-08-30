@@ -59,6 +59,11 @@ export class Race {
   private lastSplitAt = 0;
   private lapInvalid = false;
 
+  /** Whether the lap in progress has been voided. Read-only, for the UI. */
+  get lapWasInvalidated(): boolean {
+    return this.lapInvalid;
+  }
+
   /** Countdown remaining, seconds, while state is 'countdown'. */
   countdown = 0;
 
