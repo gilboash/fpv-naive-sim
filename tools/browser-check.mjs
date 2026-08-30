@@ -917,6 +917,54 @@ const main = async () => {
       : 'no renderer',
   );
 
+  // A race must be impossible on a map with no gates, and switching away from
+  // the race map must clear the marker — otherwise checkpoint outlines hang in
+  // mid-air over ground that has nothing on it.
+  const mapBound = await evaluate(`(async () => {
+    const { scene, racePanel } = globalThis.__fpvsim;
+    const tracks = [...document.querySelectorAll('#scene-view select')][0];
+    const race = scene.renderer;
+    const pick = (name) => {
+      const opt = [...tracks.options].find((o) => o.textContent === name);
+      tracks.value = opt.value;
+      tracks.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    pick('Race — six gates');
+    const onRace = { disabled: racePanel.startBtnDisabled, hasCourse: !!scene.track.course };
+    racePanel.race.start(0);
+    racePanel.race.setDt(0.001);
+    racePanel.race.step(-34, 0, 1.5, 0.001);
+    scene.setNextCheckpoint(racePanel.race.activeCheckpoint);
+    const markerOnRace = race.markerTriangleCount;
+
+    pick('Open field');
+    const onField = {
+      disabled: racePanel.startBtnDisabled,
+      hasCourse: !!scene.track.course,
+      raceState: racePanel.race.state,
+      marker: race.markerTriangleCount,
+    };
+    pick('Race — six gates');
+    return { onRace, markerOnRace, onField, saved: JSON.parse(localStorage.getItem('fpvsim.scene.v1') || '{}') };
+  })()`);
+  check(
+    'a race can only start on a map that has a course',
+    mapBound.onRace.hasCourse && !mapBound.onRace.disabled &&
+      !mapBound.onField.hasCourse && mapBound.onField.disabled,
+    `race map: enabled; open field: ${mapBound.onField.disabled ? 'disabled' : 'STILL ENABLED'}`,
+  );
+  check(
+    'switching away from the race map stops it and clears the marker',
+    mapBound.markerOnRace > 0 && mapBound.onField.marker === 0 && mapBound.onField.raceState === 'idle',
+    `marker ${mapBound.markerOnRace} -> ${mapBound.onField.marker}, race ${mapBound.onField.raceState}`,
+  );
+  check(
+    'the chosen map is stored by name, not by a position in a list',
+    typeof mapBound.saved.trackName === 'string' && mapBound.saved.track === undefined,
+    `stored "${mapBound.saved.trackName}"`,
+  );
+
   // Tabs: the right panel shows, and the physics does not stop when the flying
   // tab is hidden — that last one matters, because a pilot ducking into
   // Settings mid-flight must not have the quad freeze and drop.

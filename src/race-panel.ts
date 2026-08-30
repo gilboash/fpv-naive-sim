@@ -7,7 +7,7 @@
 
 import type { FlightSim } from './flight/sim.ts';
 import { Race } from './race/race.ts';
-import { sixGateCourse } from './race/course.ts';
+import { sixGateCourse, type Course } from './race/course.ts';
 
 const el = <T extends HTMLElement>(tag: string, cls?: string, text?: string): T => {
   const n = document.createElement(tag) as T;
@@ -27,6 +27,11 @@ export function fmt(t: number): string {
 export class RacePanel {
   readonly race = new Race(sixGateCourse);
   private sim: FlightSim;
+  /**
+   * Which map is loaded, so a race is never run against gates that are not
+   * standing there. Set by the owner whenever the track changes.
+   */
+  private courseAvailable = false;
   private startBtn: HTMLButtonElement;
   private lapsInput: HTMLInputElement;
   private live: HTMLElement;
@@ -59,13 +64,50 @@ export class RacePanel {
 
     this.live = el('span', 'race-live');
     row.appendChild(this.live);
+    row.appendChild(this.hint);
     root.appendChild(row);
 
     this.results = el('div', 'race-results');
     root.appendChild(this.results);
   }
 
+  /**
+   * Tell the panel which course the loaded map carries, if any.
+   *
+   * This exists because of a real and thoroughly confusing bug: the race ran
+   * against its own hard-coded course whatever map was loaded, so starting one
+   * on the circuit drew checkpoint markers hanging in mid-air where that
+   * course's gates would have been — pointing at gates that were not there.
+   * A race belongs to a map.
+   */
+  setCourse(course: Course | null): void {
+    this.courseAvailable = course !== null;
+    if (course && course !== this.race.course) {
+      const laps = this.race.laps;
+      this.race.reset();
+      this.race.course = course;
+      this.race.laps = laps;
+      this.results.innerHTML = '';
+    }
+    if (!course && this.race.state !== 'idle') this.race.reset();
+    this.startBtn.disabled = !this.courseAvailable;
+    this.startBtn.title = this.courseAvailable
+      ? ''
+      : 'This map has no course. Pick a race map to time a lap.';
+    this.hint.textContent = this.courseAvailable
+      ? ''
+      : 'No course on this map — pick “Race — six gates” to race.';
+  }
+
+  private hint = el('span', 'dim', '');
+
+  /** For the browser check: is starting a race currently possible? */
+  get startBtnDisabled(): boolean {
+    return this.startBtn.disabled;
+  }
+
   private toggle(): void {
+    if (!this.courseAvailable) return;
     if (this.race.state === 'countdown' || this.race.state === 'running') {
       this.race.reset();
       this.startBtn.textContent = 'Start race';

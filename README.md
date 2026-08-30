@@ -727,6 +727,23 @@ mesh, so the circuit's 76 volumes cannot drift from what is drawn.
 
 ## Race mode
 
+**A race belongs to a map.** The course is a property of the track — `raceField`
+declares `sixGateCourse` and the practice maps declare none — so the Start race
+button is only live on a map whose gates are actually standing there. Switching
+away mid-race stops it and clears the marker.
+
+That is not a nicety. It shipped without the binding, and the timer ran its own
+course whatever map was loaded: starting a race on the circuit drew checkpoint
+outlines hanging in mid-air over ground that had nothing on it, pointing at
+gates that did not exist.
+
+The other half of that bug is worth its own note. **The chosen map was persisted
+by index**, and inserting the race map at position 0 silently repointed every
+saved setting at a different track — someone who had chosen the circuit came
+back to the gate run. An index is not an identifier; it is a fact about the
+current order of a list. It is stored by name now, with a one-time migration
+from the index era.
+
 The **Race — six gates** map carries a course: six gates in order, then a flag
 to circle. Set the lap count, press *Start race*, and the clock starts after a
 three-second countdown.

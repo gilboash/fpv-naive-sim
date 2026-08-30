@@ -21,7 +21,17 @@ interface StoredScene {
   version: 1;
   fovDeg: number;
   tiltDeg: number;
-  track: number;
+  /**
+   * Stored by NAME, not by index.
+   *
+   * It was an index, and adding the race map at position 0 silently repointed
+   * every saved setting at a different map — someone who had chosen the circuit
+   * came back to the gate run. An index is not an identifier; it is a fact
+   * about the current order of a list.
+   */
+  trackName?: string;
+  /** Legacy index, read once and migrated. */
+  track?: number;
   resetMode: 'inPlace' | 'start';
 }
 
@@ -189,8 +199,15 @@ export class SceneView {
       if (Number.isFinite(st.fovDeg)) this.fovDeg = Math.max(50, Math.min(130, st.fovDeg));
       if (Number.isFinite(st.tiltDeg)) this.tiltDeg = Math.max(0, Math.min(60, st.tiltDeg));
       if (st.resetMode === 'start' || st.resetMode === 'inPlace') this.resetMode = st.resetMode;
-      const t = TRACKS[st.track];
-      if (t) this.track = t;
+      const byName = st.trackName ? TRACKS.find((t) => t.name === st.trackName) : undefined;
+      if (byName) this.track = byName;
+      else if (typeof st.track === 'number') {
+        // One-time migration from the index era. The order at the time was
+        // [openField, gateRun, circuit]; the race map went in front of it.
+        const legacy = ['Open field', 'Gate run', 'Circuit'][st.track];
+        const t = TRACKS.find((x) => x.name === legacy);
+        if (t) this.track = t;
+      }
     } catch {
       // A corrupt stored setting should cost the defaults, not the page.
     }
@@ -202,7 +219,7 @@ export class SceneView {
         version: 1,
         fovDeg: this.fovDeg,
         tiltDeg: this.tiltDeg,
-        track: Math.max(0, TRACKS.indexOf(this.track)),
+        trackName: this.track.name,
         resetMode: this.resetMode,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
@@ -215,13 +232,18 @@ export class SceneView {
     return this.renderer !== null;
   }
 
+  /** Fired when the loaded map changes, so the race can follow it. */
+  onTrackChange: ((track: Track) => void) | null = null;
+
   loadTrack(track: Track): void {
     this.track = track;
     // The collision volumes come back from the same build that made the mesh,
     // so the quad hits what it can see.
     const obstacles = this.renderer?.loadTrack(track);
     if (obstacles) this.sim.obstacles = obstacles;
+    this.renderer?.setNextCheckpoint(null);
     this.placeAtStart();
+    this.onTrackChange?.(track);
   }
 
   /** Whatever the current reset mode says. */

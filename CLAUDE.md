@@ -430,6 +430,23 @@ describe the live flight — the same rule that put battery and speed there.
 
 ## Race mode (2026-08-30)
 
+**A race belongs to a map** (`Track.course`). Shipped without that binding and
+the result was thoroughly confusing: the timer ran `sixGateCourse` whatever map
+was loaded, so starting a race on another track drew checkpoint outlines hanging
+in mid-air over ground with no gates on it. The Start button is now disabled on
+a map with no course, and changing map stops the race and clears the marker.
+
+**The chosen map was persisted by index**, so inserting `raceField` at position
+0 silently repointed everyone's saved setting at a different track — which is
+how Gilboa ended up looking at floating markers in the first place. Stored by
+name now, with a migration from the index era. *An index is not an identifier.*
+
+A test asserts the drawn gates and the timed gates coincide: every checkpoint's
+nearest post is exactly one half-width away. That was always true — the mesh is
+built from the checkpoint list — but it is the invariant the whole thing rests
+on and it was untested.
+
+
 `src/race/course.ts` (what a course is) and `src/race/race.ts` (sequencing and
 timing), stepped from the 1 kHz tick beside the physics. `src/race-panel.ts` is
 the UI, on the flying tab.

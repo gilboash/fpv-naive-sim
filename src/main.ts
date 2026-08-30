@@ -115,6 +115,11 @@ racePanel.onArmAtStart = () => {
   scene.placeAtStart();
   flight.reset();
 };
+// A race belongs to the map whose gates are actually standing there. Without
+// this the timer ran its own course whatever was loaded, and the checkpoint
+// markers hung in mid-air over ground with no gates on it.
+scene.onTrackChange = (track) => racePanel.setCourse(track.course ?? null);
+racePanel.setCourse(scene.track.course ?? null);
 // The scene owns where the quad belongs once a track is loaded, and which of
 // the reset modes is in force.
 flight.onReset = () => {

@@ -19,6 +19,8 @@ import { newMapping, computeCommands, loadMapping, type Mapping } from '../src/m
 import { AuxControl } from '../src/aux-control.ts';
 import { Race } from '../src/race/race.ts';
 import { sixGateCourse, type Course } from '../src/race/course.ts';
+import { raceField, TRACKS } from '../src/render/track.ts';
+import { MeshBuilder } from '../src/render/mesh.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
 
@@ -1118,6 +1120,51 @@ section('Race: the shipped course can actually be flown');
     'best-of-three needs three laps',
     res.bestThree === null,
     'two laps flown, so no three-lap figure',
+  );
+}
+
+section('Race: the drawn gates are the timed gates');
+{
+  // The bug this exists to prevent: markers hanging in mid-air over ground with
+  // no gates on it. That happened because the race ran its own course whatever
+  // map was loaded — but it would happen just as badly if the mesh and the
+  // checkpoint list drifted apart, so this asserts they agree.
+  const m = new MeshBuilder();
+  const obs: Obstacle[] = [];
+  raceField.build(m, obs);
+
+  let worst = 0;
+  let worstLabel = '';
+  sixGateCourse.checkpoints.forEach((cp, i) => {
+    let nearest = Infinity;
+    for (const o of obs) {
+      if (o.kind !== 'cylinder') continue;
+      nearest = Math.min(nearest, Math.hypot(o.north - cp.north, o.east - cp.east));
+    }
+    // A gate's nearest solid thing is its own post, one half-width away. The
+    // flag's is the pylon itself, at zero.
+    const expected = cp.kind === 'gate' ? cp.halfWidth : 0;
+    const err = Math.abs(nearest - expected);
+    if (err > worst) {
+      worst = err;
+      worstLabel = `${cp.kind} ${i + 1}: post at ${nearest.toFixed(2)} m, expected ${expected.toFixed(2)}`;
+    }
+  });
+  ok(
+    'every checkpoint has its posts standing exactly where it is',
+    worst < 0.05,
+    worst < 0.05 ? 'all seven agree' : worstLabel,
+  );
+
+  ok(
+    'and the race map declares the course it carries',
+    raceField.course === sixGateCourse,
+    'so the race can only run on a map whose gates exist',
+  );
+  ok(
+    'while the practice maps declare none',
+    TRACKS.filter((t) => t.course).length === 1,
+    `${TRACKS.filter((t) => t.course).length} of ${TRACKS.length} maps carry a course`,
   );
 }
 

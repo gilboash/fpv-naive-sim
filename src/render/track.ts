@@ -11,7 +11,7 @@
 
 import { MeshBuilder } from './mesh.ts';
 import type { Obstacle } from '../flight/collision.ts';
-import { sixGateCourse } from '../race/course.ts';
+import { sixGateCourse, type Course } from '../race/course.ts';
 
 /**
  * Render space to NED, for collision volumes.
@@ -25,6 +25,12 @@ const east = (renderX: number): number => renderX;
 
 export interface Track {
   name: string;
+  /**
+   * The race course this map carries, if any. A race belongs to a map: the
+   * checkpoints have to be the gates that are actually standing there, or the
+   * markers point at thin air.
+   */
+  course?: Course;
   /** Where the quad starts, in NED metres, and its heading in degrees. */
   start: { north: number; east: number; yawDeg: number };
   build(m: MeshBuilder, obstacles: Obstacle[]): void;
@@ -435,6 +441,7 @@ export const circuit: Track = {
  */
 export const raceField: Track = {
   name: 'Race — six gates',
+  course: sixGateCourse,
   start: sixGateCourse.start,
   build(m, obs) {
     ground(m);
