@@ -744,6 +744,24 @@ back to the gate run. An index is not an identifier; it is a fact about the
 current order of a list. It is stored by name now, with a one-time migration
 from the index era.
 
+**A crash mid-race respawns where it happened**, whatever the reset selector
+says, so the pilot can carry on and finish. Sending a racer to the start line
+ends the race in practice — the remaining checkpoints are behind them and the
+lap is already void, so there is nothing left to do but abort. Outside a race
+the selector is honoured, because "put me back at the start" is a reasonable
+thing to want when you are not being timed.
+
+### Flag and gate
+
+Two of the flags stand beside a gate, taken once before it and once after, so a
+pilot meets both orders on one lap. The pole must be passed on its *outside*,
+which puts the quad wide and makes the gate a cut back rather than a straight
+line — a jink rather than a corridor.
+
+It needs no new kind of checkpoint and no new detector: it is a flag and a gate
+in sequence, placed to read as one element. A test asserts both orders exist and
+that no pole stands close enough to block the gate it is beside.
+
 The **Race — six gates** map carries a course: six gates in order, then a flag
 to circle. Set the lap count, press *Start race*, and the clock starts after a
 three-second countdown.

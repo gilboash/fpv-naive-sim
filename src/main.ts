@@ -594,6 +594,10 @@ function render(tNow: number): void {
   racePanel.render();
 
   // Point the pilot at the next checkpoint while a race is on.
+  // A crash mid-race respawns where it happened, so the pilot can carry on to
+  // the finish; the lap is voided either way.
+  scene.forceInPlace = racePanel.race.state === 'running' || racePanel.race.state === 'countdown';
+
   const active = racePanel.race.state === 'running' ? racePanel.race.activeCheckpoint : null;
   scene.setNextCheckpoint(active);
   scene.osd.render(racePanel.race, flight.sim);

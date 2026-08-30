@@ -964,6 +964,43 @@ const main = async () => {
     `stored "${mapBound.saved.trackName}"`,
   );
 
+  // A crash mid-race must put the quad back where it went in, whatever the
+  // reset selector says — sending a racer to the start line ends the race in
+  // practice, since the remaining checkpoints are behind them.
+  const raceReset = await evaluate(`(() => {
+    const { scene, flight, racePanel } = globalThis.__fpvsim;
+    scene.resetMode = 'start';
+    racePanel.race.reset();
+
+    // Outside a race the selector is honoured.
+    flight.sim.reset(0);
+    flight.sim.pos.x = 40; flight.sim.pos.y = 12;
+    scene.forceInPlace = false;
+    scene.reset();
+    const idle = { north: flight.sim.pos.x, east: flight.sim.pos.y };
+
+    // During one it is not.
+    racePanel.race.start(0);
+    flight.sim.pos.x = 40; flight.sim.pos.y = 12;
+    scene.forceInPlace = true;
+    scene.reset();
+    const racing = { north: flight.sim.pos.x, east: flight.sim.pos.y };
+    racePanel.race.reset();
+    scene.forceInPlace = false;
+    scene.resetMode = 'inPlace';
+    return { idle, racing, start: scene.track.start };
+  })()`);
+  check(
+    'outside a race, "reset to start line" is honoured',
+    Math.abs(raceReset.idle.north - raceReset.start.north) < 0.1,
+    `back to ${raceReset.idle.north.toFixed(1)} north, start is ${raceReset.start.north}`,
+  );
+  check(
+    'but a crash mid-race respawns where it happened, so the race can continue',
+    Math.hypot(raceReset.racing.north - 40, raceReset.racing.east - 12) < 3,
+    `respawned at ${raceReset.racing.north.toFixed(1)}, ${raceReset.racing.east.toFixed(1)} — crashed at 40, 12`,
+  );
+
   // Tabs: the right panel shows, and the physics does not stop when the flying
   // tab is hidden — that last one matters, because a pilot ducking into
   // Settings mid-flight must not have the quad freeze and drop.

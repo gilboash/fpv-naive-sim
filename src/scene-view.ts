@@ -246,9 +246,22 @@ export class SceneView {
     this.onTrackChange?.(track);
   }
 
-  /** Whatever the current reset mode says. */
+  /**
+   * Set while a race is running, so a crash puts the quad back where it went in
+   * whatever the selector says.
+   *
+   * Sending a racer to the start line mid-race ends the race in practice — the
+   * remaining checkpoints are behind them and the lap is already void, so there
+   * is nothing to do but abort. Respawning in place lets them carry on and
+   * finish, which is what a pilot practising a track wants. Outside a race the
+   * selector is honoured, because there "put me back at the start" is a
+   * perfectly reasonable thing to ask for.
+   */
+  forceInPlace = false;
+
+  /** Whatever the current reset mode says, unless a race overrides it. */
   reset(): void {
-    if (this.resetMode === 'start') this.placeAtStart();
+    if (this.resetMode === 'start' && !this.forceInPlace) this.placeAtStart();
     else this.respawnInPlace();
   }
 

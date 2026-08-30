@@ -1166,7 +1166,43 @@ section('Race: the drawn gates are the timed gates');
   ok(
     'every checkpoint has its posts standing exactly where it is',
     worst < 0.05,
-    worst < 0.05 ? 'all seven agree' : worstLabel,
+    worst < 0.05 ? `all ${sixGateCourse.checkpoints.length} agree` : worstLabel,
+  );
+
+  // The flag-and-gate elements: a pole beside a gate, taken in both orders on
+  // one lap. They are a flag and a gate in sequence rather than a new kind of
+  // checkpoint, so they need no new detector — but they do need to not block
+  // the gate they stand beside.
+  const cps = sixGateCourse.checkpoints;
+  let flagBeforeGate = 0;
+  let gateBeforeFlag = 0;
+  let tightest = Infinity;
+  for (let i = 0; i + 1 < cps.length; i++) {
+    const a = cps[i]!;
+    const b = cps[i + 1]!;
+    const near = Math.hypot(a.north - b.north, a.east - b.east) < 12;
+    if (!near) continue;
+    if (a.kind === 'flag' && b.kind === 'gate') flagBeforeGate++;
+    if (a.kind === 'gate' && b.kind === 'flag') gateBeforeFlag++;
+  }
+  for (const cp of cps) {
+    if (cp.kind !== 'flag') continue;
+    for (const other of cps) {
+      if (other.kind !== 'gate') continue;
+      const d = Math.hypot(cp.north - other.north, cp.east - other.east);
+      // How far the pole sits from the gate's aperture edge.
+      tightest = Math.min(tightest, d - other.halfWidth);
+    }
+  }
+  ok(
+    'the course has a flag-and-gate element in both orders',
+    flagBeforeGate >= 1 && gateBeforeFlag >= 1,
+    `${flagBeforeGate} flag-then-gate, ${gateBeforeFlag} gate-then-flag`,
+  );
+  ok(
+    'and no pole stands close enough to block a gate',
+    tightest > 2,
+    `nearest pole is ${tightest.toFixed(1)} m outside an aperture edge`,
   );
 
   ok(

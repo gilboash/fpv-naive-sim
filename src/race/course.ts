@@ -83,15 +83,57 @@ const g = (
 };
 
 /**
- * Six gates and a flag, on the open field.
+ * A flag standing beside a gate, taken as one element.
  *
- * Deliberately simple: a short out-and-back with one direction change and one
- * pylon turn, so the timing and the sequencing get exercised without the course
- * itself being the hard part. Gate 4 is low and gate 5 is high, which is enough
- * to stop a pilot flying the whole thing at one altitude.
+ * Needs no new kind of checkpoint and no new detector: it is a flag and a gate
+ * in sequence, placed so they read as one thing. The pole sits off to one side
+ * and must be passed on its *outside*, which puts the quad wide of the gate and
+ * makes the gate a cut back rather than a straight line — a jink rather than a
+ * corridor, which is the point of the element.
  *
- * The flag sits at the far end and is circled anticlockwise, which is the turn
- * a pilot arrives at naturally coming up the left of the field.
+ * `flagFirst` chooses which way round: pass the pole then take the gate, or
+ * take the gate then round the pole on the way out.
+ */
+function flagGate(
+  gate: Gate,
+  flagFirst: boolean,
+  offsetSide: 1 | -1,
+  lateral = 4.5,
+  along = 6,
+): Checkpoint[] {
+  // Across the gate's direction: right of travel is (-dirE, dirN) reversed —
+  // the same convention the detectors use, where positive across is to the
+  // right of the direction of travel.
+  const acrossN = -gate.dirE * lateral * offsetSide;
+  const acrossE = gate.dirN * lateral * offsetSide;
+  // Before the gate if the flag comes first, after it if not.
+  const s = flagFirst ? -1 : 1;
+  const flag: Flag = {
+    kind: 'flag',
+    north: gate.north + gate.dirN * along * s + acrossN,
+    east: gate.east + gate.dirE * along * s + acrossE,
+    height: 6,
+    dirN: gate.dirN,
+    dirE: gate.dirE,
+    // Passed on the outside of the pole, which is the same side it is offset
+    // to: the quad goes wide, then cuts back through the gate.
+    side: offsetSide,
+    passWidth: 6,
+  };
+  return flagFirst ? [flag, gate] : [gate, flag];
+}
+
+/**
+ * Six gates and three flags, on the open field.
+ *
+ * Deliberately simple: a short out-and-back so the timing and the sequencing
+ * get exercised without the course itself being the hard part. Gates sit at
+ * different heights, which is enough to stop a pilot flying the whole thing at
+ * one altitude.
+ *
+ * Two of the flags stand beside a gate — once taken before it and once after,
+ * so a pilot meets both orders on a single lap. The third is the turnaround at
+ * the far end.
  */
 export const sixGateCourse: Course = {
   name: 'Six gates and a flag',
@@ -99,7 +141,8 @@ export const sixGateCourse: Course = {
   defaultLaps: 3,
   checkpoints: [
     g(-20, 0, 2.2, 0),
-    g(-4, 6, 2.4, 0),
+    // Gate 2 is a flag-and-gate: round the pole on the right, then cut back in.
+    ...flagGate(g(-4, 6, 2.4, 0), true, 1),
     g(10, 6, 2.4, 0),
     g(22, 0, 1.5, -90),
     // Passed heading west, keeping the pole to the north — the natural line
@@ -114,7 +157,9 @@ export const sixGateCourse: Course = {
       side: -1,
       passWidth: 7,
     },
-    g(10, -8, 3.2, 180),
+    // And this one the other way round: through the gate, then out around the
+    // pole, so the pilot meets both orders on one lap.
+    ...flagGate(g(10, -8, 3.2, 180), false, -1),
     g(-10, -6, 2.4, 180),
   ],
 };

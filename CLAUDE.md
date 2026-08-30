@@ -459,6 +459,16 @@ as the collision volumes coming from the mesh build.
 is known, so the split is timed to the crossing rather than to the tick that
 noticed it: exact to 1e-6 s in the tests, against ~1 ms of avoidable jitter.
 
+**A crash mid-race respawns in place**, overriding the reset selector
+(`scene.forceInPlace`): sending a racer to the start line ends the race in
+practice, since the remaining checkpoints are behind them. Outside a race the
+selector still applies.
+
+**Flag-and-gate elements** are a flag and a gate in sequence, not a new
+checkpoint kind — the pole is passed on its outside, which puts the quad wide
+and makes the gate a cut back. Two on the course, one in each order. Tests
+assert both orders exist and that no pole is close enough to block a gate.
+
 **A respawn voids its lap** (`race.invalidateLap()`, wired to `flight.onReset`),
 or a reset at the right moment is a shortcut. Invalid laps also break a
 best-of-three run rather than being skipped over.
