@@ -490,6 +490,11 @@ of every gate.
 thing only: wrong way. Practice maps keep their alternating colours, having no
 markers to clash with.
 
+**Starting a race does not arm the quad**, so the OSD carries a `NOT ARMED`
+warning through the countdown and beyond until it is. A disarmed quad on the
+ground is visually identical to an armed one nobody is flying, so the failure
+mode was a clock running with no explanation.
+
 **The reset mode selector and "to start line" are disabled during a race**
 (`SceneView.setRacing`), because neither means anything then. **The flight
 recorder moved to Settings -> Diagnostics**: it is the tool for producing a

@@ -576,3 +576,17 @@ select:disabled {
 }
 
 button:disabled:hover { background: #1c2430; }
+
+.osd-armwarn {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 58%;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #ffca3a;
+}
+
+.fpv-stage:fullscreen .osd-armwarn { font-size: 34px; }

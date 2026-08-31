@@ -745,6 +745,12 @@ back to the gate run. An index is not an identifier; it is a fact about the
 current order of a list. It is stored by name now, with a one-time migration
 from the index era.
 
+**Starting a race does not arm the quad**, and it says so: `NOT ARMED —
+REMEMBER TO ARM` sits on the video through the countdown and beyond, until the
+quad is armed. Without it the clock runs while the sticks do nothing and there
+is no hint as to why — a disarmed quad on the ground looks exactly like an armed
+one nobody is flying.
+
 **The reset controls are off while a race runs.** Neither means anything then:
 the respawn mode is forced in place for the duration, and "to start line" would
 put the pilot behind every remaining checkpoint with the clock still running. A

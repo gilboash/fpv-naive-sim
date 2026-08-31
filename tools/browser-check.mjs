@@ -1187,6 +1187,41 @@ const main = async () => {
     `before: enabled, during: disabled and faded, after: enabled`,
   );
 
+  // Starting a race does not arm the quad, and a disarmed quad on the ground
+  // looks exactly like an armed one nobody is flying — so the clock runs while
+  // the sticks do nothing and there is no hint as to why.
+  const armWarn = await evaluate(`(async () => {
+    const { racePanel, flight, scene, tabs } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const el = () => document.querySelector('.osd-armwarn');
+    const shown = () => {
+      const n = el();
+      return !!n && n.style.display !== 'none' && (n.textContent || '').length > 0;
+    };
+
+    racePanel.race.reset();
+    flight.sim.reset(0);
+    scene.osd.render(racePanel.race, flight.sim, -1);
+    const idle = shown();
+
+    racePanel.race.start(3);
+    flight.sim.armed = false;
+    scene.osd.render(racePanel.race, flight.sim, -1);
+    const disarmedInRace = { shown: shown(), text: el()?.textContent };
+
+    flight.sim.armed = true;
+    scene.osd.render(racePanel.race, flight.sim, -1);
+    const armedInRace = shown();
+
+    racePanel.race.reset();
+    return { idle, disarmedInRace, armedInRace };
+  })()`);
+  check(
+    'starting a race disarmed warns on the video',
+    armWarn.disarmedInRace.shown && !armWarn.armedInRace && !armWarn.idle,
+    `"${armWarn.disarmedInRace.text}" — shown only while racing and disarmed`,
+  );
+
   // Tabs: the right panel shows, and the physics does not stop when the flying
   // tab is hidden — that last one matters, because a pilot ducking into
   // Settings mid-flight must not have the quad freeze and drop.
@@ -1296,6 +1331,15 @@ const main = async () => {
         sel.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);
       await sleep(400);
+    }
+    if (process.env.SHOT_ARMWARN) {
+      await evaluate(`(() => {
+        const { racePanel, flight, scene } = globalThis.__fpvsim;
+        racePanel.race.reset();
+        racePanel.race.start(3);
+        flight.sim.armed = false;
+        scene.osd.render(racePanel.race, flight.sim, -1);
+      })()`);
     }
     if (process.env.SHOT_RACE) {
       await evaluate(`(() => {

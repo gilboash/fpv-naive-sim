@@ -26,6 +26,7 @@ export class Osd {
   private next: HTMLElement;
   private last: HTMLElement;
   private countdown: HTMLElement;
+  private armWarn: HTMLElement;
   private battery: HTMLElement;
   private alt: HTMLElement;
   private speed: HTMLElement;
@@ -52,6 +53,11 @@ export class Osd {
     this.countdown = el('div', 'osd-count', '');
     root.appendChild(this.countdown);
 
+    // Its own line rather than the centre slot, so it can sit under a running
+    // countdown instead of replacing it.
+    this.armWarn = el('div', 'osd-armwarn', '');
+    root.appendChild(this.armWarn);
+
     parent.appendChild(root);
   }
 
@@ -61,6 +67,15 @@ export class Osd {
     this.battery.textContent = `${t.batteryV.toFixed(1)}V  ${t.batteryA.toFixed(0)}A`;
     this.alt.textContent = `${t.altitude.toFixed(1)} m`;
     this.speed.textContent = `${(t.speed * 3.6).toFixed(0)} km/h`;
+
+    // Nothing about a race arms the quad, and a pilot who starts one disarmed
+    // watches the clock run while the sticks do nothing — with no hint as to
+    // why, because a disarmed quad on the ground looks exactly like an armed
+    // one that is not being flown.
+    const racing = race.state === 'countdown' || race.state === 'running';
+    const warn = racing && !sim.armed && crashRecover < 0;
+    this.armWarn.textContent = warn ? 'NOT ARMED — REMEMBER TO ARM' : '';
+    this.armWarn.style.display = warn ? '' : 'none';
 
     if (crashRecover >= 0) {
       // Say what is about to happen, so a respawn is not mistaken for a glitch.
