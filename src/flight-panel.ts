@@ -102,7 +102,18 @@ export class FlightPanel {
    * the airframe model, rate tracking, motor outputs. They were one wall of
    * numbers, which meant the flying numbers were buried among the tuning ones.
    */
-  constructor(live: HTMLElement, diag: HTMLElement, quadHost: HTMLElement) {
+  /**
+   * @param recorderHost Where the flight recorder goes. It lives in Settings →
+   *   Diagnostics rather than on the flying tab: it is the tool for producing a
+   *   recording to compare against a Blackbox log, which is a thing you set up
+   *   deliberately, not something to read while racing.
+   */
+  constructor(
+    live: HTMLElement,
+    diag: HTMLElement,
+    quadHost: HTMLElement,
+    recorderHost: HTMLElement,
+  ) {
     const root = live;
     const grid = el('div', 'fl-grid one-col');
 
@@ -237,10 +248,10 @@ export class FlightPanel {
     recRow.appendChild(this.recBtn);
     this.recProgress = el('span', 'dim', '');
     recRow.appendChild(this.recProgress);
-    root.appendChild(recRow);
+    recorderHost.appendChild(recRow);
 
     this.recLinks = el('div', 'row');
-    root.appendChild(this.recLinks);
+    recorderHost.appendChild(this.recLinks);
 
     const hint = el(
       'p',

@@ -471,7 +471,9 @@ const main = async () => {
   // The button path: duration, auto-stop, and the download links appearing.
   const uiRec = await evaluate(`(async () => {
     const { flight } = globalThis.__fpvsim;
-    const panel = document.querySelector('#flight-live');
+    // The recorder moved to Settings -> Diagnostics: it is a tool you set up
+    // deliberately, not something to read while racing.
+    const panel = document.querySelector('#recorder-panel');
     const dur = panel.querySelector('input[type=number]');
     const btn = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Record flight');
     dur.value = '5';
@@ -994,7 +996,12 @@ const main = async () => {
     const markerOnRace = race.markerTriangleCount;
 
     pick('Open field');
+    const btn = [...document.querySelectorAll('#race-panel button')][0];
     const onField = {
+      // Disabled has to be visible, not just enforced: a live-looking button
+      // that silently does nothing is worse than one that is obviously off.
+      faded: parseFloat(getComputedStyle(btn).opacity) < 0.7,
+      hintShown: (document.querySelector('#race-panel .dim')?.textContent || '').length > 0,
       disabled: racePanel.startBtnDisabled,
       hasCourse: !!scene.track.course,
       raceState: racePanel.race.state,
@@ -1008,6 +1015,11 @@ const main = async () => {
     mapBound.onRace.hasCourse && !mapBound.onRace.disabled &&
       !mapBound.onField.hasCourse && mapBound.onField.disabled,
     `race map: enabled; open field: ${mapBound.onField.disabled ? 'disabled' : 'STILL ENABLED'}`,
+  );
+  check(
+    'and the disabled button looks disabled, with a reason beside it',
+    mapBound.onField.faded && mapBound.onField.hintShown,
+    `faded: ${mapBound.onField.faded}, reason shown: ${mapBound.onField.hintShown}`,
   );
   check(
     'switching away from the race map stops it and clears the marker',
@@ -1139,6 +1151,40 @@ const main = async () => {
     'and the lap it happened in is void',
     autoRecover.lapVoid === true,
     'the race is finishable, not cheaper',
+  );
+
+  // The reset controls mean nothing during a race — the mode is forced in place
+  // and "to start line" would drop the pilot behind every remaining checkpoint
+  // with the clock running — so they must be visibly off, not merely inert.
+  const raceLocks = await evaluate(`(async () => {
+    const { racePanel, scene, tabs } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const sel = [...document.querySelectorAll('#scene-view select')].pop();
+    const toStart = [...document.querySelectorAll('#scene-view button')]
+      .find((b) => b.textContent === 'To start line');
+    racePanel.race.reset();
+    scene.setRacing(false);
+    const before = { sel: sel.disabled, btn: toStart.disabled };
+
+    racePanel.race.start(3);
+    await new Promise((r) => setTimeout(r, 120));
+    const during = {
+      sel: sel.disabled,
+      btn: toStart.disabled,
+      faded: parseFloat(getComputedStyle(toStart).opacity) < 0.7,
+    };
+
+    racePanel.race.reset();
+    await new Promise((r) => setTimeout(r, 120));
+    const after = { sel: sel.disabled, btn: toStart.disabled };
+    return { before, during, after };
+  })()`);
+  check(
+    'the reset controls are off during a race and on either side of it',
+    !raceLocks.before.sel && !raceLocks.before.btn &&
+      raceLocks.during.sel && raceLocks.during.btn && raceLocks.during.faded &&
+      !raceLocks.after.sel && !raceLocks.after.btn,
+    `before: enabled, during: disabled and faded, after: enabled`,
   );
 
   // Tabs: the right panel shows, and the physics does not stop when the flying
@@ -1276,6 +1322,15 @@ const main = async () => {
       flight.sim.reset(0);
       flight.sim.pos.x = p[0]; flight.sim.pos.y = p[1]; flight.sim.pos.z = p[2];
       flight.sim.onGround = false;
+      // Hold it there for the shot: otherwise it falls during the capture
+      // window and the frame is of a crash rather than of the thing being
+      // photographed.
+      globalThis.__fpvsimHold = setInterval(() => {
+        flight.sim.pos.x = p[0]; flight.sim.pos.y = p[1]; flight.sim.pos.z = p[2];
+        flight.sim.vel.x = flight.sim.vel.y = flight.sim.vel.z = 0;
+        flight.sim.crashed = false;
+        flight.sim.onGround = false;
+      }, 8);
       scene.render();
     })()`);
     if (process.env.SHOT_TAB) {

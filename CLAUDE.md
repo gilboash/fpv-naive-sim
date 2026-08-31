@@ -486,6 +486,22 @@ Tests distinguish the two invariants: an attached pole sits exactly at the post
 position (at the aperture edge, deliberately), a free-standing one is well clear
 of every gate.
 
+**Race gates are all yellow** and flag poles yellow/white, so red means one
+thing only: wrong way. Practice maps keep their alternating colours, having no
+markers to clash with.
+
+**The reset mode selector and "to start line" are disabled during a race**
+(`SceneView.setRacing`), because neither means anything then. **The flight
+recorder moved to Settings -> Diagnostics**: it is the tool for producing a
+recording to compare against a Blackbox log, set up deliberately, not read while
+racing.
+
+**A disabled control has to look disabled.** Start race was correctly refusing
+clicks on a map with no course, but nothing styled `:disabled`, so it read as a
+button that silently did nothing — worse than one that is obviously off. There
+is a global `:disabled` rule now and a check asserting the opacity, not just the
+`disabled` property.
+
 **Checkpoint markers tint green/red** by which side of the plane the quad is on,
 via a `uTint` uniform rather than a rebuilt mesh. The gate arrow is gone — it sat
 on top of the thing a pilot aims at and said what the colour now says quietly.

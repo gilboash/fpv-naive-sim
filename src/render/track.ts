@@ -325,12 +325,14 @@ function flagPylon(
   side: 1 | -1,
   passWidth: number,
 ): void {
-  // Striped, so it reads as a marker rather than as scenery.
+  // Striped yellow and white rather than the traditional red and white, for the
+  // same reason the gates are yellow: red belongs to the wrong-way marker here,
+  // and two of these poles are literally one side of a gate.
   const bands = 6;
   for (let i = 0; i < bands; i++) {
     const y0 = (i / bands) * height;
     const y1 = ((i + 1) / bands) * height;
-    const c: [number, number, number] = i % 2 === 0 ? [0.92, 0.22, 0.14] : [0.97, 0.97, 0.97];
+    const c: [number, number, number] = i % 2 === 0 ? [0.95, 0.75, 0.15] : [0.97, 0.97, 0.97];
     m.cylinder(cx, cz, y0, y1, 0.24, 14, c[0], c[1], c[2]);
   }
   obs.push({ kind: 'cylinder', north: north(cz), east: east(cx), radius: 0.32, height });
@@ -469,7 +471,12 @@ export const raceField: Track = {
 
     const cps = sixGateCourse.checkpoints;
     cps.forEach((cp, i) => {
-      const colour = i % 2 === 0 ? GATE_A : GATE_B;
+      // Every race gate is yellow, deliberately. The next-checkpoint marker
+      // says green or red, and alternating red and yellow gates put a large red
+      // structure next to a small red warning — the one colour that has to mean
+      // "wrong way" cannot also mean "gate". Gates are told apart by the
+      // counting blocks beside them, not by colour.
+      const colour = GATE_B;
       if (cp.kind === 'gate') {
         // NED to render: x = east, z = -north.
         const cx = cp.east;

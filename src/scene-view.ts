@@ -53,6 +53,8 @@ export class SceneView {
   readonly stage: HTMLElement;
   readonly sticks: StickView;
   readonly osd: Osd;
+  private modeSel!: HTMLSelectElement;
+  private restartBtn!: HTMLButtonElement;
   resetMode: 'inPlace' | 'start' = 'inPlace';
   /**
    * Camera settings live here as well as on the renderer, because the controls
@@ -143,6 +145,7 @@ export class SceneView {
       o.textContent = label;
       modeSel.appendChild(o);
     }
+    this.modeSel = modeSel;
     modeSel.value = this.resetMode;
     modeSel.onchange = () => {
       this.resetMode = modeSel.value === 'start' ? 'start' : 'inPlace';
@@ -162,6 +165,7 @@ export class SceneView {
     restart.type = 'button';
     restart.textContent = 'To start line';
     restart.onclick = () => this.placeAtStart();
+    this.restartBtn = restart;
     row.appendChild(restart);
 
     this.crashEl = el('span', 'crash-flag', '');
@@ -258,6 +262,22 @@ export class SceneView {
    * perfectly reasonable thing to ask for.
    */
   forceInPlace = false;
+
+  /**
+   * While a race is on, the reset controls are off.
+   *
+   * Not because they would break anything, but because neither means anything:
+   * the respawn mode is forced in place for the duration, and "to start line"
+   * would put the pilot behind every remaining checkpoint with the clock still
+   * running. A control that is live but inert is a small lie.
+   */
+  setRacing(racing: boolean): void {
+    if (this.modeSel.disabled === racing) return;
+    this.modeSel.disabled = racing;
+    this.restartBtn.disabled = racing;
+    this.modeSel.title = racing ? 'Fixed to “where you crashed” during a race.' : '';
+    this.restartBtn.title = racing ? 'Not while a race is running — abort it first.' : '';
+  }
 
   /** Whatever the current reset mode says, unless a race overrides it. */
   reset(): void {

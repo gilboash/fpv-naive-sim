@@ -564,3 +564,15 @@ tbody tr:hover { background: var(--panel-2); }
 .fpv-stage:fullscreen .osd-item { font-size: 18px; }
 
 .osd-count.crashed { font-size: 44px; color: #ff6b6b; letter-spacing: 0.08em; }
+
+/* A disabled control has to look disabled. "Start race" was correctly refusing
+   clicks on a map with no course, but nothing styled it, so it read as a button
+   that simply did nothing — which is worse than one that is obviously off. */
+button:disabled,
+input:disabled,
+select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button:disabled:hover { background: #1c2430; }

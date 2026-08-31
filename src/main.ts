@@ -105,7 +105,12 @@ function setTicking(on: boolean): void {
 // ticks only arrive via a message event, so module evaluation has always
 // finished by then, but relying on that would make the ordering a trap for
 // whoever moves this next.
-const flight = new FlightPanel($('flight-live'), $('flight-panel'), $('quad-check'));
+const flight = new FlightPanel(
+  $('flight-live'),
+  $('flight-panel'),
+  $('quad-check'),
+  $('recorder-panel'),
+);
 const auxControl = new AuxControl();
 const switchDetector = new SwitchDetector(poller);
 const scene = new SceneView($('scene-view'), flight.sim);
@@ -623,7 +628,9 @@ function render(tNow: number): void {
   // Point the pilot at the next checkpoint while a race is on.
   // A crash mid-race respawns where it happened, so the pilot can carry on to
   // the finish; the lap is voided either way.
-  scene.forceInPlace = racePanel.race.state === 'running' || racePanel.race.state === 'countdown';
+  const raceOn = racePanel.race.state === 'running' || racePanel.race.state === 'countdown';
+  scene.forceInPlace = raceOn;
+  scene.setRacing(raceOn);
 
   const active = racePanel.race.state === 'running' ? racePanel.race.activeCheckpoint : null;
   scene.setNextCheckpoint(active);

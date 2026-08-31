@@ -217,7 +217,7 @@ rather than smoothing it out is the point.
 
 ### Exporting a flight
 
-Section 5 of the page has a recorder: pick a duration and a rate, press
+The recorder lives in **Settings → Diagnostics**: pick a duration and a rate, press
 **Record flight**, fly, and it writes out **Download CSV** and **Download
 JSON** when it finishes. It samples inside the 1 kHz tick, so 1 kHz means every
 step; the export itself happens off the tick, because touching layout from in
@@ -728,8 +728,9 @@ mesh, so the circuit's 76 volumes cannot drift from what is drawn.
 ## Race mode
 
 **A race belongs to a map.** The course is a property of the track — `raceField`
-declares `sixGateCourse` and the practice maps declare none — so the Start race
-button is only live on a map whose gates are actually standing there. Switching
+declares `sixGateCourse` and the practice maps declare none — so Start race is
+only live on a map whose gates are actually standing there, greyed out with the
+reason beside it everywhere else. Switching
 away mid-race stops it and clears the marker.
 
 That is not a nicety. It shipped without the binding, and the timer ran its own
@@ -743,6 +744,11 @@ saved setting at a different track — someone who had chosen the circuit came
 back to the gate run. An index is not an identifier; it is a fact about the
 current order of a list. It is stored by name now, with a one-time migration
 from the index era.
+
+**The reset controls are off while a race runs.** Neither means anything then:
+the respawn mode is forced in place for the duration, and "to start line" would
+put the pilot behind every remaining checkpoint with the clock still running. A
+control that is live but inert is a small lie.
 
 **A crash mid-race recovers on its own.** After about a second — long enough
 that the crash registers as one rather than as a glitch — the quad picks itself
@@ -764,6 +770,14 @@ ends the race in practice — the remaining checkpoints are behind them and the
 lap is already void, so there is nothing left to do but abort. Outside a race
 the selector is honoured, because "put me back at the start" is a reasonable
 thing to want when you are not being timed.
+
+### Colour
+
+Every race gate is yellow, and the flag poles are yellow and white rather than
+the traditional red and white. Red belongs to the wrong-way marker here: a large
+red gate standing next to a small red warning is the one collision of meaning
+worth avoiding, and gates are told apart by the counting blocks beside them
+rather than by colour.
 
 ### Flag and gate
 
