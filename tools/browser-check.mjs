@@ -931,7 +931,10 @@ const main = async () => {
       // setting it earlier is a race the page usually wins.
       scene.renderer.setNextCheckpoint(gate);
       const s = fromBehind ? -8 : 8;
-      flight.sim.reset(0);
+      // Face the gate either way. Standing past it and still looking away put
+      // the gate behind the camera, so the "wrong side" frame was empty and the
+      // check was passing on nothing.
+      flight.sim.reset(fromBehind ? 0 : 180);
       flight.sim.pos.x = gate.north + gate.dirN * s;
       flight.sim.pos.y = gate.east + gate.dirE * s;
       flight.sim.pos.z = -gate.up;
@@ -1319,6 +1322,63 @@ const main = async () => {
         ? ''
         : ' — no mapping stored yet, which is expected until a radio is mapped'),
   );
+
+  // Destructive, so it runs last: it wipes stored settings and switches tab,
+  // and an earlier version of it sitting mid-suite broke two later checks.
+  // Reset everything. Two presses, and it must clear every key the app owns —
+  // the reason it discovers them by prefix rather than from a list.
+  const resetAll = await evaluate(`(() => {
+    const { tabs } = globalThis.__fpvsim;
+    tabs.show('settings');
+    // Seed one of each, including a key added after this button was written —
+    // a hard-coded list would miss that one, which is the failure being
+    // guarded against.
+    localStorage.setItem('fpvsim.mappings.v1', '{}');
+    localStorage.setItem('fpvsim.tune.v1', '{}');
+    localStorage.setItem('fpvsim.scene.v1', '{}');
+    localStorage.setItem('fpvsim.tab.v1', 'settings');
+    localStorage.setItem('fpvsim.something.new.v1', '{}');
+    localStorage.setItem('somebody-elses-key', 'keep me');
+
+    const btn = document.querySelector('#reset-all-btn');
+    btn.click();
+    const armed = btn.textContent;
+    const listed = document.querySelector('#reset-all-state').textContent;
+
+    // Second press erases. Stop the reload from taking the page away.
+    const realReload = globalThis.location.reload;
+    let reloaded = false;
+    try {
+      Object.defineProperty(globalThis.location, 'reload', {
+        configurable: true,
+        value: () => { reloaded = true; },
+      });
+    } catch { /* some browsers refuse; the key check below still stands */ }
+    btn.click();
+
+    const left = Object.keys(localStorage).filter((k) => k.startsWith('fpvsim.'));
+    const foreign = localStorage.getItem('somebody-elses-key');
+    localStorage.removeItem('somebody-elses-key');
+    return { armed, listed, left, foreign, label: btn.textContent };
+  })()`);
+  check(
+    'reset all asks twice before erasing',
+    /again/i.test(resetAll.armed) && resetAll.listed.length > 0,
+    `first press: "${resetAll.armed}", and it lists what will go`,
+  );
+  check(
+    'and clears every key the app owns, including ones added later',
+    resetAll.left.length === 0,
+    resetAll.left.length === 0
+      ? 'discovered by prefix, so a new key needs no code change here'
+      : `left behind: ${resetAll.left.join(', ')}`,
+  );
+  check(
+    'while leaving keys it does not own alone',
+    resetAll.foreign === 'keep me',
+    'only the fpvsim. prefix is cleared',
+  );
+
 
   // Let it run a while longer to catch anything that only shows up over time.
   await sleep(2000);

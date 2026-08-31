@@ -29,6 +29,7 @@ import { JitterRun, type RunResult, type Stats } from './jitter.ts';
 import { FlightPanel } from './flight-panel.ts';
 import { AuxControl } from './aux-control.ts';
 import { Tabs } from './tabs.ts';
+import { clearStored, describeStored } from './reset-all.ts';
 import { RacePanel } from './race-panel.ts';
 import { applyRates, AXIS_ROLL, AXIS_PITCH, AXIS_YAW } from './flight/rates.ts';
 import { SceneView } from './scene-view.ts';
@@ -902,6 +903,51 @@ $('jitter-start').onclick = startRun;
 // import.meta.env.DEV guard, so it cannot become a load-bearing API.
 if (import.meta.env.DEV) {
   (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl, racePanel };
+}
+
+// ---------------------------------------------------------- reset everything
+
+{
+  const btn = $<HTMLButtonElement>('reset-all-btn');
+  const state = $('reset-all-state');
+  let armedToReset = false;
+  let armTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const disarmReset = (): void => {
+    armedToReset = false;
+    btn.textContent = 'Reset all settings';
+    btn.classList.remove('confirm');
+    if (armTimer !== null) clearTimeout(armTimer);
+    armTimer = null;
+  };
+
+  btn.onclick = () => {
+    // Two presses, not a confirm() dialog: this throws away a pilot's
+    // calibration, which is the most tedious thing here to redo, and a
+    // mis-click should not be able to do it. The arming lapses on its own so a
+    // half-pressed button does not sit there waiting to be triggered later.
+    if (!armedToReset) {
+      const stored = describeStored();
+      if (stored.length === 0) {
+        state.textContent = 'nothing stored — already at defaults';
+        return;
+      }
+      armedToReset = true;
+      btn.textContent = 'Press again to erase';
+      btn.classList.add('confirm');
+      state.textContent = `will clear: ${stored.join('; ')}`;
+      armTimer = setTimeout(disarmReset, 6000);
+      return;
+    }
+
+    const cleared = clearStored();
+    disarmReset();
+    state.textContent = `cleared ${cleared.length} setting${cleared.length === 1 ? '' : 's'} — reloading…`;
+    // Reload rather than rebuild in place: every panel reads its state once in
+    // its constructor, so a live reset means a re-read path per panel that
+    // exists for this button alone and is exercised by nothing else.
+    setTimeout(() => globalThis.location.reload(), 350);
+  };
 }
 
 globalThis.addEventListener('gamepadconnected', refreshDevices);

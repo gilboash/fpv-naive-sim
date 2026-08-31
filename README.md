@@ -696,7 +696,10 @@ holding half throttle. No link now means no input, explicitly.
 
 ### The maps
 
-**Circuit** is the default: eleven gates round a loop, plus freestyle furniture
+**Race — six gates** is what a first-time visitor lands on, since racing is the
+thing this is for. Everyone else keeps whichever map they last chose.
+
+**Circuit** carries the freestyle furniture: eleven gates round a loop, plus freestyle furniture
 to have opinions about — floodlight masts, two tubes to thread, and three square
 windows, one low enough to take on the straight and two up high. **Gate run** is
 a staggered line for practising a single trajectory, and **Open field** is
@@ -881,6 +884,21 @@ The direction still matters — going past on the wrong side, too wide, or the
 wrong way all fail — so circling the pole completes it only if the circle takes
 the quad past on the required side. That is the rule working, not an edge case,
 and there is a test for each half.
+
+## Starting over
+
+**Settings → Reset everything** puts every stored setting back to its default:
+channel mapping and calibration, rates, PIDs and filters, camera and map.
+
+It asks twice, and the arming lapses after a few seconds. That is deliberate
+rather than fussy — it throws away a pilot's calibration, which is the most
+tedious thing here to redo, and a mis-click should not be able to.
+
+It finds the keys **by prefix**, not from a list. A hard-coded list is the
+obvious way to write it and is wrong: the next feature that persists something
+gets a key, nobody remembers to add it, and "reset all" quietly stops meaning
+all. There is a check that seeds a key nobody has written yet and asserts it is
+cleared anyway — and that keys the app does not own are left alone.
 
 ## Flying it without the keyboard
 

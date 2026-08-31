@@ -590,3 +590,10 @@ button:disabled:hover { background: #1c2430; }
 }
 
 .fpv-stage:fullscreen .osd-armwarn { font-size: 34px; }
+
+button.confirm {
+  background: #4a1d20;
+  border-color: #7a2f34;
+  color: #ffc9cc;
+  font-weight: 600;
+}

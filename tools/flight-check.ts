@@ -1226,6 +1226,12 @@ section('Race: the drawn gates are the timed gates');
   );
 
   ok(
+    'the race map is the one a first-time visitor lands on',
+    TRACKS[0] === raceField,
+    'and SceneView names it rather than indexing into the list',
+  );
+
+  ok(
     'and the race map declares the course it carries',
     raceField.course === sixGateCourse,
     'so the race can only run on a map whose gates exist',

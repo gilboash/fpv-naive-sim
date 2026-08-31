@@ -486,6 +486,24 @@ Tests distinguish the two invariants: an attached pole sits exactly at the post
 position (at the aperture edge, deliberately), a free-standing one is well clear
 of every gate.
 
+**The default map is `raceField`, by reference.** `SceneView.track` said
+`TRACKS[2]`, which meant the circuit when written and silently became the gate
+run when the race map went in at the front — the *same* index-is-not-an-
+identifier bug that had already been fixed for the stored map, in a second place
+nobody checked. A test asserts `TRACKS[0] === raceField`.
+
+**Reset everything** (`src/reset-all.ts`, Settings) clears by *prefix*, not from
+a list, so a key added later is covered without touching that file. Two presses,
+arming lapses after 6 s, then a reload — every panel reads its state once in its
+constructor, so a live reset would mean a re-read path per panel exercised by
+nothing else.
+
+**A destructive browser check belongs last.** The reset test wiped stored
+settings and switched tab mid-suite, breaking two later checks. It also exposed
+that the marker tint check had been near-vacuous: its "wrong side" camera faced
+away from the gate, so the frame was empty and it passed on 23 background
+pixels. Facing the gate both ways gives 1161 green against 1181 red.
+
 **Race gates are all yellow** and flag poles yellow/white, so red means one
 thing only: wrong way. Practice maps keep their alternating colours, having no
 markers to clash with.

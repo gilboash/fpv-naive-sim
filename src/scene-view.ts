@@ -8,7 +8,7 @@
 
 import type { FlightSim } from './flight/sim.ts';
 import { Renderer } from './render/renderer.ts';
-import { TRACKS, type Track } from './render/track.ts';
+import { raceField, TRACKS, type Track } from './render/track.ts';
 import { clearance } from './flight/collision.ts';
 import { StickView } from './stick-view.ts';
 import type { Checkpoint } from './race/course.ts';
@@ -46,7 +46,16 @@ export class SceneView {
   readonly canvas: HTMLCanvasElement;
   renderer: Renderer | null = null;
   private failure = '';
-  track: Track = TRACKS[2] ?? TRACKS[0]!;
+  /**
+   * The race course, by reference rather than by position.
+   *
+   * This line said `TRACKS[2]`, which meant the circuit when it was written and
+   * silently became the gate run when the race map went in at the front — the
+   * same index-is-not-an-identifier bug that had already been fixed for the
+   * *stored* map without anyone noticing it applied here too. Naming the track
+   * cannot rot that way.
+   */
+  track: Track = raceField;
   private sim: FlightSim;
   private statusEl: HTMLElement;
   private crashEl: HTMLElement;
