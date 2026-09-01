@@ -583,6 +583,24 @@ inside the frame, immediately before drawing. And the failsafe check raced the
 one-second device rescan, since headless here can see a real radio; it now
 deselects repeatedly until the disconnected state is actually observed.
 
+**Agreed 2026-09-01: Docker with auto-restart, once the dev work settles.**
+The box's servers are bare background processes, so a reboot takes the sim and
+the collection down silently — worse than it used to be, because a dead page is
+obvious and a stopped collection is not. Gilboa's call: this over backing up
+`sessions.jsonl`, which he does not consider critical yet, and both after the
+current round of features. Three things the future container must get right, all
+of them already learned the hard way here:
+
+- **`data/` is a mount, not a layer.** The whole point is that a rebuild does
+  not take the collection with it — the same property `/XD data` buys the
+  robocopy today.
+- **COOP/COEP must survive whatever serves it.** Lose them and the 1 kHz ticker
+  falls back to a timer, quietly, and the page still works well enough that
+  nobody reports it.
+- **Port 5181 must not be published.** The admin view has no password; its
+  protection is that the tunnel does not forward that port. A `-p 5181:5181` on
+  a host with any other route in would undo that in one character.
+
 **Next, roughly in order:**
 
 1. **Map generation** — still outstanding, and now less pressing: four
