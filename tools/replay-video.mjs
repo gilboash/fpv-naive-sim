@@ -21,7 +21,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const [lapFile, outFile = 'lap.mp4', url = 'http://localhost:5180/'] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const tiltArg = argv.indexOf('--tilt');
+const cameraTilt = tiltArg >= 0 ? Number(argv[tiltArg + 1]) : 25;
+const fovArg = argv.indexOf('--fov');
+const cameraFov = fovArg >= 0 ? Number(argv[fovArg + 1]) : 90;
+const positional = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--tilt' && argv[i - 1] !== '--fov');
+const [lapFile, outFile = 'lap.mp4', url = 'http://localhost:5180/'] = positional;
 if (!lapFile) {
   console.error('usage: node tools/replay-video.mjs lap.json [out.mp4] [url]');
   process.exit(2);
@@ -133,6 +139,15 @@ const setup = await evaluate(`(async () => {
   flight.sim.armed = true;
   flight.sim.crashed = false;
   racePanel.race.reset();
+
+  // Camera tilt changes the picture and nothing else. The machine pilot does
+  // not look through it — it flies on state, not on a view — so this cannot
+  // make the lap faster, only easier to watch. A real pilot's uptilt does
+  // change how they fly; that asymmetry is worth remembering when comparing.
+  if (scene.renderer) {
+    scene.renderer.camera.tiltDeg = ${cameraTilt};
+    scene.renderer.camera.fovDeg = ${cameraFov};
+  }
 
   const c = document.querySelector('#scene-view canvas');
   c.scrollIntoView({ block: 'center' });

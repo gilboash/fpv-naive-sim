@@ -84,6 +84,20 @@ export interface AutopilotGains {
   maxRateDps: number;
   /** Ceiling on tilt from vertical, degrees. Beyond this a quad falls. */
   maxTiltDeg: number;
+  /**
+   * Pin the throttle wide open and steer with attitude alone.
+   *
+   * A different strategy, not a tuning knob. With thrust fixed you cannot
+   * choose the magnitude of the acceleration, only its direction — so holding
+   * altitude fixes the tilt (about 83 degrees at a thrust-to-weight of 8) and
+   * guidance is left with the azimuth. Pointing it forward accelerates,
+   * backward brakes, sideways turns. That is the shape a time-optimal solution
+   * takes for a thrust-limited vehicle, and it is what a pilot means by "full
+   * throttle and fly it".
+   */
+  fullThrottle: boolean;
+  /** Thrust-to-weight, needed only when fullThrottle is set. */
+  twr: number;
 }
 
 export function defaultGains(): AutopilotGains {
@@ -97,6 +111,8 @@ export function defaultGains(): AutopilotGains {
     maxCorrection: 9,
     maxAccel: 26,
     ffWeight: 0,
+    fullThrottle: false,
+    twr: 8,
     maxRateDps: 800,
     maxTiltDeg: 78,
   };
@@ -285,9 +301,27 @@ export class Autopilot {
     //
     // Thrust also holds the aircraft up, hence the gravity term; the result
     // points up (negative z) in the hover.
-    const fN = aN;
-    const fE = aE;
-    const fD = -(aU + G);
+    let fN = aN;
+    let fE = aE;
+    let fD = -(aU + G);
+    if (g.fullThrottle) {
+      // Magnitude is not ours to choose. Hold altitude with the vertical
+      // component — including whatever the guidance wants to correct — and
+      // spend everything that is left on the horizontal, in the direction
+      // guidance asked for.
+      const total = g.twr * G;
+      const wantD = -(aU + G);
+      const clampedD = clamp(wantD, -total * 0.999, total * 0.999);
+      const horizMag = Math.sqrt(Math.max(0, total * total - clampedD * clampedD));
+      const h = Math.hypot(aN, aE);
+      // With no horizontal preference, keep pointing where we are going rather
+      // than snapping to north.
+      const uN = h > 1e-6 ? aN / h : (sim.vel.x || 1) / (Math.hypot(sim.vel.x, sim.vel.y) || 1);
+      const uE = h > 1e-6 ? aE / h : sim.vel.y / (Math.hypot(sim.vel.x, sim.vel.y) || 1);
+      fN = uN * horizMag;
+      fE = uE * horizMag;
+      fD = clampedD;
+    }
     let mag = Math.hypot(fN, fE, fD);
     if (mag < 1e-6) mag = 1e-6;
     let dN = fN / mag;
@@ -296,8 +330,11 @@ export class Autopilot {
 
     // Tilt limit. Past about 80 degrees there is no vertical component left and
     // a quad simply falls, and the optimiser will happily ask for it.
+    // Skipped when the throttle is pinned: the altitude-hold term already fixes
+    // the tilt, and at a thrust-to-weight of 8 that tilt is 83 degrees — past
+    // any limit that makes sense when thrust is the free variable.
     const minUp = Math.cos(g.maxTiltDeg * DEG);
-    if (-dD < minUp) {
+    if (!g.fullThrottle && -dD < minUp) {
       const horiz = Math.hypot(dN, dE) || 1;
       const wantHoriz = Math.sqrt(Math.max(0, 1 - minUp * minUp));
       dN = (dN / horiz) * wantHoriz;
@@ -343,9 +380,13 @@ export class Autopilot {
     // ---- throttle, closed on the thrust the model is actually making
     // The alternative is a curve fitted to the motors, which would be a second
     // model of a thing we already have exactly.
-    const wantN = mag * sim.airframe.mass;
-    const haveN = sim.telemetry.totalThrustN;
-    this.throttle = clamp(this.throttle + (wantN - haveN) * g.kThrottle * sim.dt, 0, 1);
+    if (g.fullThrottle) {
+      this.throttle = 1;
+    } else {
+      const wantN = mag * sim.airframe.mass;
+      const haveN = sim.telemetry.totalThrustN;
+      this.throttle = clamp(this.throttle + (wantN - haveN) * g.kThrottle * sim.dt, 0, 1);
+    }
 
     return {
       throttle: this.throttle,

@@ -389,6 +389,15 @@ function measuredTwr(): number {
   return cachedTwr;
 }
 
+/** A centre line at a chosen grip and speed cap, for experiments. */
+export function buildTuned(course: Course, grip: number, vMax: number): PathPoint[] {
+  return buildPath(
+    course,
+    { offsets: new Array<number>(course.checkpoints.length * 2).fill(0), grip, vMax, turnRadius: 7 },
+    2,
+  );
+}
+
 function buildPath(course: Course, p: LapParams, laps: number): PathPoint[] {
   const pts: Vec[] = [{ n: course.start.north, e: course.start.east, u: 1.2 }];
   const cps = course.checkpoints;
@@ -478,6 +487,8 @@ function lapBound(course: Course, p: LapParams): number {
   return profileTime(line, v);
 }
 
+let fullThrottle = false;
+
 function flyLap(
   course: Course,
   p: LapParams,
@@ -500,7 +511,16 @@ function flyLap(
   sim.pos.z = -1.2;
   sim.arm({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
 
-  const ap = new Autopilot(path, sim.rates, defaultGains());
+  const gains = defaultGains();
+  if (fullThrottle) {
+    gains.fullThrottle = true;
+    gains.twr = measuredTwr();
+    // Guidance is only choosing a direction now, so it wants a speed target it
+    // will never reach — otherwise it spends the thrust braking to a number the
+    // planner invented rather than to the one the corner demands.
+    gains.maxAccel = gains.twr * G;
+  }
+  const ap = new Autopilot(path, sim.rates, gains);
   const race = new Race(course);
   race.laps = laps;
   race.start(0);
@@ -574,6 +594,11 @@ function main(): number {
   const wanted = args.find((a) => !a.startsWith('--') && !flagValues.has(a));
   const recArg = args.indexOf('--record');
   const recordTo = recArg >= 0 ? args[recArg + 1] : undefined;
+  fullThrottle = args.includes('--full-throttle');
+  const gripArg = args.indexOf('--grip');
+  const forcedGrip = gripArg >= 0 ? Number(args[gripArg + 1]) : undefined;
+  const vmaxArg = args.indexOf('--vmax');
+  const forcedVmax = vmaxArg >= 0 ? Number(args[vmaxArg + 1]) : undefined;
   const optArg = args.indexOf('--opt');
   const iterations = optArg >= 0 ? Number(args[optArg + 1] ?? 200) : 0;
   const laps = 2;
@@ -594,8 +619,8 @@ function main(): number {
     console.log(`\n\x1b[1m${course.name}\x1b[0m — ${course.checkpoints.length} checkpoints`);
     let best: LapParams = {
       offsets: new Array<number>(course.checkpoints.length * 2).fill(0),
-      grip: 0.35,
-      vMax: 30,
+      grip: forcedGrip ?? 0.35,
+      vMax: forcedVmax ?? 30,
       turnRadius: 7,
     };
     let bestResult = flyLap(course, best, laps, rates);
