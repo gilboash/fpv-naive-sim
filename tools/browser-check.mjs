@@ -927,8 +927,10 @@ const main = async () => {
       }
     };
     racePanel.race.setDt(dt); racePanel.race.step(n, e, u, dt);
-    for (let lap = 0; lap < 3; lap++) {
-      for (const cp of course.checkpoints) {
+    // Four passes for three laps: a lap closes when the aircraft comes back to
+    // the start gate, so the last pass is that gate on its own.
+    for (let lap = 0; lap < 4; lap++) {
+      for (const cp of lap === 3 ? [course.checkpoints[0]] : course.checkpoints) {
         if (cp.kind === 'gate') {
           const du = cp.dirU ?? 0;
           go(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up - du * 3);

@@ -1113,6 +1113,35 @@ exactly what makes them unreadable, and a voided lap still has a time worth
 seeing. Dimmed, with the ✗ and the respawn count doing the work, in the table
 and on the video alike.
 
+## A lap is start gate to start gate (2026-09-01)
+
+Gilboa: "a lap counts once you are back to the start gate (crossing it),
+including finishing all 3 laps, it ends when you cross the start gate."
+
+It did not. A lap completed on the **last** checkpoint, so the timed lap stopped
+somewhere out on the course and the run back to the line was credited to the
+next lap — and the race ended out there too, rather than at the line. Every race
+in the world measures at a start/finish gate.
+
+Now: the first crossing of checkpoint 1 is the **hole shot** and starts the
+clock on lap 1; every subsequent crossing of it closes a lap and opens the next;
+the race ends on the crossing that completes the last lap. So N laps take N+1
+crossings of the start gate, and `holeShot + sum(laps)` is the whole race time —
+which is asserted, because it is the arithmetic that says the model is right.
+
+Consequences worth knowing:
+
+- **The splits within a lap are no longer in checkpoint order.** A lap runs 2,
+  3, … n, then 1. The results table builds its columns in that order; reading
+  them off the course array would mislabel every column.
+- **Every driver in the tests needed a closing pass.** Three laps is four
+  crossings of the line, not three passes of the course. That caught four
+  checks, which is the right number for a change to what a lap *is*.
+- **The one-checkpoint flag tests now assert `crossings`, not `lap`.** On a
+  course with a single checkpoint a lap needs two passes of it, which says
+  nothing about whether the pass was legal — and legality is what those tests
+  are about.
+
 ## The bot pilot, parked (2026-09-01)
 
 Built, shown to Gilboa, and **taken out of the product on his call**: the Circle

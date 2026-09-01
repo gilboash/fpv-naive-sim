@@ -171,9 +171,15 @@ export class RacePanel {
     // Splits: every gate-to-gate segment, which is where a lap is actually won
     // or lost. A total tells a pilot they were slow; this tells them where.
     const table = el('table', 'race-table');
-    const names = this.race.course.checkpoints.map((cp, i) =>
-      cp.kind === 'flag' ? 'flag' : cp.frame === 'none' ? 'cube' : `g${this.race.gateNumber(i)}`,
-    );
+    // In the order they are taken *within a lap*, which is no longer the order
+    // they appear in the course: a lap runs from the start gate back to it, so
+    // it is checkpoint 2, 3, … n, and then 1 again to close it.
+    const cps = this.race.course.checkpoints;
+    const order = [...cps.keys()].slice(1).concat(0);
+    const names = order.map((i) => {
+      const cp = cps[i]!;
+      return cp.kind === 'flag' ? 'flag' : cp.frame === 'none' ? 'cube' : `g${this.race.gateNumber(i)}`;
+    });
     const hdr = el('tr');
     hdr.appendChild(el('th', undefined, 'lap'));
     for (const n of names) hdr.appendChild(el('th', undefined, n));

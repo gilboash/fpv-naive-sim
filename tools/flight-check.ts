@@ -974,7 +974,22 @@ section('Race: gates, direction, and the clock');
     Math.abs((r.holeShot ?? 0) - 1) < 1e-6,
     `${(r.holeShot ?? 0).toFixed(6)} s for 10 m at 10 m/s`,
   );
-  ok('and a lap completes', r.lap === 1, `lap ${r.lap}`);
+  // A lap closes at the *start gate*, so passing the last gate is not a lap:
+  // the aircraft has to come back round to the line. Flying wide of gate one on
+  // the way back and then through it is exactly what a pilot does.
+  fly(r, [25, 0], [5, 12], 10);
+  fly(r, [5, 12], [5, 0], 10);
+  fly(r, [5, 0], [15, 0], 10);
+  ok('and a lap completes on returning to the start gate', r.lap === 1, `lap ${r.lap}`);
+  ok(
+    'while passing the last gate alone does not',
+    (() => {
+      const partial = fresh();
+      fly(partial, [0, 0], [25, 0], 10);
+      return partial.lap === 0 && partial.next === 0;
+    })(),
+    'both gates taken, back at the line, lap still open',
+  );
 
   // A gate flown backwards is not a gate flown.
   const back = fresh();
@@ -996,6 +1011,9 @@ section('Race: gates, direction, and the clock');
   fly(void_, [0, 0], [12, 0], 10);
   void_.invalidateLap();
   fly(void_, [12, 0], [25, 0], 10);
+  fly(void_, [25, 0], [5, 12], 10);
+  fly(void_, [5, 12], [5, 0], 10);
+  fly(void_, [5, 0], [15, 0], 10);
   ok(
     'a respawn voids the lap it happened in',
     void_.completed[0]?.invalid === true,
@@ -1036,17 +1054,20 @@ section('Race: passing a flag');
     return r;
   };
 
+  // Asserted on crossings rather than laps: these check whether a pass is
+  // legal, and a lap now needs the aircraft to come back to the line, which is
+  // a different question and would only obscure this one.
   const right = fresh(1);
   pass(right, 4);
-  ok('passing on the required side counts', right.lap === 1, 'complete');
+  ok('passing on the required side counts', right.crossings === 1, 'complete');
 
   const wrong = fresh(1);
   pass(wrong, -4);
-  ok('passing on the other side does not', wrong.lap === 0, 'still waiting');
+  ok('passing on the other side does not', wrong.crossings === 0, 'still waiting');
 
   const far = fresh(1);
   pass(far, 20);
-  ok('and neither does passing far too wide', far.lap === 0, `20 m out, limit is 7`);
+  ok('and neither does passing far too wide', far.crossings === 0, `20 m out, limit is 7`);
 
   const backwards = new Race(mk(1));
   backwards.laps = 1;
@@ -1057,7 +1078,7 @@ section('Race: passing a flag');
     backwards.setDt(dt);
     backwards.step(10 - i * 0.05, 4, 3, dt);
   }
-  ok('nor going past it the wrong way', backwards.lap === 0, 'direction still matters');
+  ok('nor going past it the wrong way', backwards.crossings === 0, 'direction still matters');
 
   // The failure that prompted the rewrite was a pilot circling the pole and
   // never completing it. A circle now completes it — provided the circle goes
@@ -1069,7 +1090,7 @@ section('Race: passing a flag');
     circleGood.setDt(dt);
     circleGood.step(Math.cos(a) * 5, Math.sin(a) * 5, 3, dt);
   }
-  ok('circling it the right way round completes it', circleGood.lap === 1, 'the circle contains a pass');
+  ok('circling it the right way round completes it', circleGood.crossings === 1, 'the circle contains a pass');
 
   const circleBad = fresh(1);
   for (let i = 0; i <= 1200; i++) {
@@ -1079,7 +1100,7 @@ section('Race: passing a flag');
   }
   ok(
     'circling it the other way does not',
-    circleBad.lap === 0,
+    circleBad.crossings === 0,
     'that circle only ever crosses on the wrong side',
   );
 }
@@ -1113,8 +1134,10 @@ section('Race: the shipped course can actually be flown');
       r.step(n, e, u, dt);
     }
   };
-  for (let lap = 0; lap < 2; lap++) {
-    for (const cp of raceVibesCourse.checkpoints) {
+  // Three passes for two laps: the last one is the start gate alone, because a
+  // lap closes when the aircraft comes back to the line.
+  for (let lap = 0; lap < 3; lap++) {
+    for (const cp of lap === 2 ? [raceVibesCourse.checkpoints[0]!] : raceVibesCourse.checkpoints) {
       if (cp.kind === 'gate') {
         const du = cp.dirU ?? 0;
         goto_(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up - du * 3);
@@ -1137,6 +1160,22 @@ section('Race: the shipped course can actually be flown');
     res.laps[0]?.splits.length === raceVibesCourse.checkpoints.length,
     `${res.laps[0]?.splits.length} splits for ${raceVibesCourse.checkpoints.length} checkpoints`,
   );
+  // The rule Gilboa stated, asserted directly: the timed lap runs from the
+  // start gate back to it, and the race ends on that crossing rather than on
+  // the checkpoint before it.
+  ok(
+    'a lap is measured from the start gate back to the start gate',
+    res.laps.length === 2 &&
+      res.laps.every((l) => l.splits.length === raceVibesCourse.checkpoints.length) &&
+      res.laps.every((l) => l.splits[l.splits.length - 1]!.index === 0),
+    `each lap ends on checkpoint 1 and carries ${res.laps[0]?.splits.length} splits`,
+  );
+  ok(
+    'and the hole shot is the run to the line, outside any lap',
+    Math.abs(res.holeShot + res.laps.reduce((a, l) => a + l.time, 0) - r.time) < 0.02,
+    `hole shot ${res.holeShot.toFixed(2)} + laps ${res.laps.map((l) => l.time.toFixed(2)).join(' + ')} = the clock`,
+  );
+
   ok(
     'best-of-three needs three laps',
     res.bestThree === null,
@@ -1147,7 +1186,7 @@ section('Race: the shipped course can actually be flown');
   // the audio out of the tick.
   ok(
     'crossings and laps are counted for anything that wants to react',
-    r.crossings === raceVibesCourse.checkpoints.length * 2 && r.lapsCompleted === 2,
+    r.crossings === raceVibesCourse.checkpoints.length * 2 + 1 && r.lapsCompleted === 2,
     `${r.crossings} crossings, ${r.lapsCompleted} laps, last was a ${r.lastCrossing}`,
   );
 }
@@ -1184,8 +1223,10 @@ section('Race: every shipped course can be flown, in order, twice round');
         r.step(n, e, u, dt);
       }
     };
-    for (let lap = 0; lap < 2; lap++) {
-      for (const cp of course.checkpoints) {
+    // One extra pass of the start gate at the end: a lap now closes when the
+    // aircraft comes back to the line, so N laps need N+1 crossings of it.
+    for (let lap = 0; lap < 3; lap++) {
+      for (const cp of lap === 2 ? [course.checkpoints[0]!] : course.checkpoints) {
         if (cp.kind === 'gate') {
           // The vertical component matters now: a cube's floor is a
           // checkpoint you drop through, so approaching it means being above

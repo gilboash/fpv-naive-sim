@@ -285,12 +285,8 @@ export class Race {
   }
 
   private reach(at: number): void {
-    const delta = at - this.lastSplitAt;
     const kind = this.course.checkpoints[this.next]?.kind ?? 'gate';
-    this.current.push({ index: this.next, at, delta });
-    this.lastSplitAt = at;
-
-    if (this.holeShot === null) this.holeShot = at;
+    const atStartGate = this.next === 0;
 
     // Two counters rather than a callback, because this runs inside the 1 kHz
     // tick: the owner compares them on the render path and makes the noise
@@ -299,27 +295,49 @@ export class Race {
     this.crossings++;
     this.lastCrossing = kind;
 
-    this.next++;
-    if (this.next < this.course.checkpoints.length) return;
+    // The first arrival at the start gate is the hole shot, not a lap. The
+    // clock has been running since the light, and this is the moment the lap
+    // timing starts from.
+    if (atStartGate && this.holeShot === null) {
+      this.holeShot = at;
+      this.lapStart = at;
+      this.lastSplitAt = at;
+      this.current = [];
+      this.next = 1 % this.course.checkpoints.length;
+      return;
+    }
 
-    // Lap complete.
-    this.next = 0;
-    this.lap++;
-    this.completed.push({
-      number: this.lap,
-      time: at - this.lapStart,
-      splits: this.current,
-      invalid: this.lapInvalid,
-      respawns: this.lapRespawns,
-    });
-    this.current = [];
-    this.lapStart = at;
-    this.lapInvalid = false;
-    this.lapRespawns = 0;
+    const delta = at - this.lastSplitAt;
+    this.current.push({ index: this.next, at, delta });
+    this.lastSplitAt = at;
 
-    this.lapsCompleted++;
+    // **A lap is start gate to start gate.** It used to end on the *last*
+    // checkpoint, which meant the timed lap stopped somewhere out on the course
+    // and the run back to the line was credited to the next one. Every race
+    // measures at a start/finish line and so does this now.
+    if (atStartGate) {
+      this.lap++;
+      this.completed.push({
+        number: this.lap,
+        time: at - this.lapStart,
+        splits: this.current,
+        invalid: this.lapInvalid,
+        respawns: this.lapRespawns,
+      });
+      this.current = [];
+      this.lapStart = at;
+      this.lapInvalid = false;
+      this.lapRespawns = 0;
+      this.lapsCompleted++;
 
-    if (this.lap >= this.laps) this.state = 'finished';
+      // And the race ends on that crossing, not on the checkpoint before it.
+      if (this.lap >= this.laps) {
+        this.state = 'finished';
+        return;
+      }
+    }
+
+    this.next = (this.next + 1) % this.course.checkpoints.length;
   }
 
   /**
