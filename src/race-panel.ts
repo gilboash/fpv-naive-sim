@@ -7,7 +7,7 @@
 
 import type { FlightSim } from './flight/sim.ts';
 import { Race } from './race/race.ts';
-import { sixGateCourse, type Course } from './race/course.ts';
+import { raceVibesCourse, type Course } from './race/course.ts';
 
 const el = <T extends HTMLElement>(tag: string, cls?: string, text?: string): T => {
   const n = document.createElement(tag) as T;
@@ -25,7 +25,7 @@ export function fmt(t: number): string {
 }
 
 export class RacePanel {
-  readonly race = new Race(sixGateCourse);
+  readonly race = new Race(raceVibesCourse);
   private sim: FlightSim;
   /**
    * Which map is loaded, so a race is never run against gates that are not
@@ -54,7 +54,7 @@ export class RacePanel {
     this.lapsInput.type = 'number';
     this.lapsInput.min = '1';
     this.lapsInput.max = '20';
-    this.lapsInput.value = String(sixGateCourse.defaultLaps);
+    this.lapsInput.value = String(raceVibesCourse.defaultLaps);
     this.lapsInput.oninput = () => {
       const v = Number(this.lapsInput.value);
       if (Number.isFinite(v) && v >= 1) this.race.laps = Math.round(v);

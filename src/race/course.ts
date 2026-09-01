@@ -255,19 +255,23 @@ function cubeFace(c: CubeSpec, wallHeading: number, storey: number, travel: 1 | 
 }
 
 /**
- * Six gates and three flags, on the open field.
+ * Race vibes: the mixed course, and the one a first-time visitor lands on.
  *
- * Deliberately simple: a short out-and-back so the timing and the sequencing
- * get exercised without the course itself being the hard part. Gates sit at
- * different heights, which is enough to stop a pilot flying the whole thing at
- * one altitude.
+ * Six gates, three flags — two of which *are* one side of a gate — and two
+ * cubes, one dropped into from above and one climbed. Gates sit at different
+ * heights, which is enough to stop a pilot flying the whole thing at one
+ * altitude.
  *
  * Two of the flags stand beside a gate — once taken before it and once after,
  * so a pilot meets both orders on a single lap. The third is the turnaround at
  * the far end.
  */
-export const sixGateCourse: Course = {
-  name: 'Six gates and a flag',
+export const raceVibesCourse: Course = {
+  // Named for the map it belongs to. It was "Six gates and a flag" — a
+  // description rather than a name — and it stayed that way when the map was
+  // renamed, so the reference-lap tool cheerfully reported a course nobody can
+  // find in the selector. A course and its map are one thing to a pilot.
+  name: 'Race vibes',
   start: { north: -34, east: 0, yawDeg: 0 },
   defaultLaps: 3,
   checkpoints: [
@@ -437,4 +441,4 @@ export const oneEightyCourse: Course = {
   })(),
 };
 
-export const COURSES: Course[] = [sixGateCourse, thrustCourse, circleCourse, oneEightyCourse];
+export const COURSES: Course[] = [raceVibesCourse, thrustCourse, circleCourse, oneEightyCourse];

@@ -22,7 +22,7 @@ import {
   COURSES,
   GATE_HALF_H,
   GATE_HALF_W,
-  sixGateCourse,
+  raceVibesCourse,
   type Course,
 } from '../src/race/course.ts';
 import { freestyle, raceField, TRACKS } from '../src/render/track.ts';
@@ -1090,11 +1090,11 @@ section('Race: the shipped course can actually be flown');
   // completed by a sane line, the sequencing is unusable and no amount of
   // flying skill fixes it.
   const dt = 0.001;
-  const r = new Race(sixGateCourse);
+  const r = new Race(raceVibesCourse);
   r.laps = 2;
   r.start(0);
-  let n = sixGateCourse.start.north;
-  let e = sixGateCourse.start.east;
+  let n = raceVibesCourse.start.north;
+  let e = raceVibesCourse.start.east;
   let u = 1.5;
   r.setDt(dt);
   r.step(n, e, u, dt);
@@ -1114,7 +1114,7 @@ section('Race: the shipped course can actually be flown');
     }
   };
   for (let lap = 0; lap < 2; lap++) {
-    for (const cp of sixGateCourse.checkpoints) {
+    for (const cp of raceVibesCourse.checkpoints) {
       if (cp.kind === 'gate') {
         const du = cp.dirU ?? 0;
         goto_(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up - du * 3);
@@ -1134,8 +1134,8 @@ section('Race: the shipped course can actually be flown');
   ok('the six-gate course completes', r.state === 'finished', `${res.laps.length} laps`);
   ok(
     'and every checkpoint produces a split',
-    res.laps[0]?.splits.length === sixGateCourse.checkpoints.length,
-    `${res.laps[0]?.splits.length} splits for ${sixGateCourse.checkpoints.length} checkpoints`,
+    res.laps[0]?.splits.length === raceVibesCourse.checkpoints.length,
+    `${res.laps[0]?.splits.length} splits for ${raceVibesCourse.checkpoints.length} checkpoints`,
   );
   ok(
     'best-of-three needs three laps',
@@ -1147,7 +1147,7 @@ section('Race: the shipped course can actually be flown');
   // the audio out of the tick.
   ok(
     'crossings and laps are counted for anything that wants to react',
-    r.crossings === sixGateCourse.checkpoints.length * 2 && r.lapsCompleted === 2,
+    r.crossings === raceVibesCourse.checkpoints.length * 2 && r.lapsCompleted === 2,
     `${r.crossings} crossings, ${r.lapsCompleted} laps, last was a ${r.lastCrossing}`,
   );
 }
@@ -1434,7 +1434,7 @@ section('Race: the drawn gates are the timed gates');
   // The cube route, which is the thing a coordinate typo would break silently:
   // a floor crossing with the wrong sign is still a valid checkpoint, it just
   // asks the pilot to fly up through a floor they are standing on.
-  const cubeCps = sixGateCourse.checkpoints.filter((c) => c.kind === 'gate' && c.frame === 'none');
+  const cubeCps = raceVibesCourse.checkpoints.filter((c) => c.kind === 'gate' && c.frame === 'none');
   const single = cubeCps.filter((c) => c.kind === 'gate' && Math.abs(c.east - 16) < 3);
   const dbl = cubeCps.filter((c) => c.kind === 'gate' && c.east < -15);
   ok(
@@ -1478,7 +1478,7 @@ section('Race: the drawn gates are the timed gates');
   // one lap. They are a flag and a gate in sequence rather than a new kind of
   // checkpoint, so they need no new detector — but they do need to not block
   // the gate they stand beside.
-  const cps = sixGateCourse.checkpoints;
+  const cps = raceVibesCourse.checkpoints;
   let flagBeforeGate = 0;
   let gateBeforeFlag = 0;
   let tightest = Infinity;
@@ -1551,7 +1551,7 @@ section('Race: the drawn gates are the timed gates');
 
   ok(
     'and the race map declares the course it carries',
-    raceField.course === sixGateCourse,
+    raceField.course === raceVibesCourse,
     'so the race can only run on a map whose gates exist',
   );
   ok(
@@ -1560,6 +1560,19 @@ section('Race: the drawn gates are the timed gates');
     `${TRACKS.filter((t) => t.course).length} of ${TRACKS.length} maps carry a course; ` +
       `${TRACKS.filter((t) => !t.course).map((t) => t.name).join(', ')} does not`,
   );
+  // Named the same, deliberately. Race vibes carried a course called "Six gates
+  // and a flag" for a day after the map was renamed, and nothing noticed —
+  // every tool that printed a course name printed one no pilot could find in
+  // the selector. To a pilot the map and its course are one thing.
+  const mismatched = TRACKS.filter((t) => t.course && t.course.name !== t.name);
+  ok(
+    'a map and the course it carries have the same name',
+    mismatched.length === 0,
+    mismatched.length === 0
+      ? TRACKS.filter((t) => t.course).map((t) => t.name).join(', ')
+      : mismatched.map((t) => `${t.name} carries "${t.course!.name}"`).join('; '),
+  );
+
   ok(
     'and no two maps share a name, since the stored setting is the name',
     new Set(TRACKS.map((t) => t.name)).size === TRACKS.length,

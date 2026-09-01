@@ -21,7 +21,7 @@ import {
   SINGLE_CUBE,
   type CubeSpec,
   oneEightyCourse,
-  sixGateCourse,
+  raceVibesCourse,
   thrustCourse,
   type Course,
 } from '../race/course.ts';
@@ -258,7 +258,7 @@ function bandedPost(
  *    facing 54 degrees was drawn facing 90. The next-checkpoint marker is built
  *    from the true direction, which is why the marker looked tilted relative to
  *    the gate — the marker was right and the gate was wrong.
- *  - **It read the direction out of `sixGateCourse` by index.** Harmless while
+ *  - **It read the direction out of `raceVibesCourse` by index.** Harmless while
  *    there was one race map; wrong on every gate of the three added after it.
  *    The direction is a parameter now, which is what it always should have been.
  */
@@ -779,12 +779,12 @@ function raceScenery(m: MeshBuilder, obs: Obstacle[], course: Course): void {
  */
 export const raceField: Track = {
   name: 'Race vibes',
-  course: sixGateCourse,
-  start: sixGateCourse.start,
+  course: raceVibesCourse,
+  start: raceVibesCourse.start,
   build(m, obs) {
     ground(m);
     m.groundQuad(-6, -6, 6, 6, 0.02, ...TARMAC);
-    raceScenery(m, obs, sixGateCourse);
+    raceScenery(m, obs, raceVibesCourse);
 
     // Both cubes are on the course now — dropped into from above after gate 2,
     // and climbed after gate 5. They are drawn from the same specs the
