@@ -26,6 +26,7 @@ import { Autopilot, defaultGains, type PathPoint } from '../src/flight/autopilot
 import { defaultRates, type RateProfile } from '../src/flight/rates.ts';
 import { COURSES, type Checkpoint, type Course } from '../src/race/course.ts';
 import { Race } from '../src/race/race.ts';
+import { writeFileSync } from 'node:fs';
 
 const G = 9.80665;
 
@@ -313,6 +314,24 @@ function buildPath(course: Course, p: LapParams, laps: number): PathPoint[] {
   return line.map((q, i) => ({ north: q.n, east: q.e, up: q.u, speed: v[i]! }));
 }
 
+export interface FrameSample {
+  t: number;
+  n: number;
+  e: number;
+  u: number;
+  qw: number;
+  qx: number;
+  qy: number;
+  qz: number;
+  speed: number;
+  throttle: number;
+  roll: number;
+  pitch: number;
+  yaw: number;
+  batteryV: number;
+  batteryA: number;
+}
+
 interface LapResult {
   ok: boolean;
   laps: number[];
@@ -351,7 +370,15 @@ function lapBound(course: Course, p: LapParams): number {
   return profileTime(line, v);
 }
 
-function flyLap(course: Course, p: LapParams, laps: number, rates: RateProfile): LapResult {
+function flyLap(
+  course: Course,
+  p: LapParams,
+  laps: number,
+  rates: RateProfile,
+  /** When given, one sample every this many steps is kept for a replay. */
+  sampleEvery = 0,
+  samples: FrameSample[] = [],
+): LapResult {
   const path = buildPath(course, p, laps);
   const sim = new FlightSim({ airframe: kronos() });
   sim.rates.type = rates.type;
@@ -375,7 +402,28 @@ function flyLap(course: Course, p: LapParams, laps: number, rates: RateProfile):
   const maxSteps = 240_000; // four minutes of simulated time
   let steps = 0;
   while (steps++ < maxSteps && race.state === 'running' && !sim.crashed) {
-    sim.step(ap.step(sim));
+    const cmd = ap.step(sim);
+    sim.step(cmd);
+    if (sampleEvery > 0 && steps % sampleEvery === 0) {
+      const t = sim.telemetry;
+      samples.push({
+        t: steps * sim.dt,
+        n: sim.pos.x,
+        e: sim.pos.y,
+        u: -sim.pos.z,
+        qw: sim.q.w,
+        qx: sim.q.x,
+        qy: sim.q.y,
+        qz: sim.q.z,
+        speed: t.speed,
+        throttle: cmd.throttle,
+        roll: cmd.roll,
+        pitch: cmd.pitch,
+        yaw: cmd.yaw,
+        batteryV: t.batteryV,
+        batteryA: t.batteryA,
+      });
+    }
     race.setDt(sim.dt);
     race.step(sim.pos.x, sim.pos.y, -sim.pos.z, sim.dt);
     if (ap.finished) break;
@@ -411,7 +459,13 @@ function score(r: LapResult, course: Course, laps: number): number {
 
 function main(): number {
   const args = process.argv.slice(2);
-  const wanted = args.find((a) => !a.startsWith('--'));
+  const flagValues = new Set<string>();
+  for (let i = 0; i < args.length; i++) {
+    if (args[i]!.startsWith('--')) flagValues.add(args[i + 1] ?? '');
+  }
+  const wanted = args.find((a) => !a.startsWith('--') && !flagValues.has(a));
+  const recArg = args.indexOf('--record');
+  const recordTo = recArg >= 0 ? args[recArg + 1] : undefined;
   const optArg = args.indexOf('--opt');
   const iterations = optArg >= 0 ? Number(args[optArg + 1] ?? 200) : 0;
   const laps = 2;
@@ -493,6 +547,25 @@ function main(): number {
       `  grip ${best.grip.toFixed(2)}, vMax ${best.vMax.toFixed(1)} m/s, ` +
         `turn radius ${best.turnRadius.toFixed(1)} m`,
     );
+
+    if (recordTo) {
+      // 60 Hz, which is a frame of video. The lap is flown again rather than
+      // recorded during the search: the search runs thousands of laps and
+      // keeping every sample of every one of them would be gigabytes.
+      const samples: FrameSample[] = [];
+      flyLap(course, best, laps, rates, Math.round(1 / 60 / 0.001), samples);
+      const out = {
+        course: course.name,
+        generated: new Date().toISOString(),
+        laps: bestResult.laps,
+        holeShot: bestResult.holeShot,
+        params: best,
+        hz: 60,
+        samples,
+      };
+      writeFileSync(recordTo, JSON.stringify(out));
+      console.log(`  recorded ${samples.length} frames to ${recordTo}`);
+    }
   }
   return 0;
 }
