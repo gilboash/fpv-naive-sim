@@ -905,7 +905,7 @@ control that is live but inert is a small lie.
 **A crash mid-race recovers on its own.** After about a second — long enough
 that the crash registers as one rather than as a glitch — the quad picks itself
 up where it went in and carries on, armed. Nothing to press. The OSD says
-CRASHED while it waits.
+YOU SUCK while it waits.
 
 That pause and the automatic part are the point: with the clock running, a quad
 lying on its back waiting for a keypress ends the race in practice. The lap is

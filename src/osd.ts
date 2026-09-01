@@ -93,7 +93,10 @@ export class Osd {
 
     if (crashRecover >= 0) {
       // Say what is about to happen, so a respawn is not mistaken for a glitch.
-      this.countdown.textContent = 'CRASHED';
+      // Gilboa's wording. It still does the job the old "CRASHED" did — it only
+      // appears while the automatic respawn is counting down, so it marks the
+      // pause as deliberate rather than as the simulator having stopped.
+      this.countdown.textContent = 'YOU SUCK';
       this.countdown.className = 'osd-count crashed';
       this.countdown.style.display = '';
       return;

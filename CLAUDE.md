@@ -461,7 +461,8 @@ noticed it: exact to 1e-6 s in the tests, against ~1 ms of avoidable jitter.
 
 **A crash mid-race recovers automatically** after a ~1.2 s pause
 (`crashRecover` in main.ts), respawning in place and re-armed, with the OSD
-showing CRASHED while it waits. The first attempt only made *manual* reset go in
+showing YOU SUCK while it waits (Gilboa's wording, 2026-09-01; it was
+CRASHED). The first attempt only made *manual* reset go in
 place, which missed the point — with the clock running, a quad waiting for a
 keypress ends the race. Re-arming ignores the throttle-down rule on purpose: a
 racer is holding throttle when they hit something, and a disarmed respawn just
