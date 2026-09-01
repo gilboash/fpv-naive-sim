@@ -38,6 +38,10 @@ const chrome = spawn(
     // of green tick that means nothing.
     '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader',
+    // Headless has no speakers, but Web Audio still runs the graph — and
+    // without this the context stays suspended for want of a gesture the
+    // check cannot make, so every sound assertion would pass vacuously.
+    '--autoplay-policy=no-user-gesture-required',
     'about:blank',
   ],
   { stdio: 'ignore' },
@@ -188,10 +192,47 @@ const main = async () => {
       : 'no — the host is not sending COOP/COEP, so the ticker falls back',
   );
 
-  const backend = await evaluate(
-    `document.querySelectorAll('#status-pills .pill')[1]?.textContent ?? '(none)'`,
+  // Read off the root element rather than out of a pill. The pills used to
+  // carry the ticker backend, isolation and a poll count; they were developer
+  // instrumentation shown to pilots, and only the radio survived. The values
+  // still go on `document.documentElement` as data attributes precisely so this
+  // check keeps working against a production build, where there is no handle.
+  const backend = await evaluate(`document.documentElement.dataset.ticker ?? '(none)'`);
+  judge('ticker backend', /atomics/.test(backend), `ticker: ${backend}`);
+
+  const pillCount = await evaluate(`document.querySelectorAll('#status-pills .pill').length`);
+  const pillText = await evaluate(
+    `document.querySelector('#status-pills .pill')?.textContent ?? '(none)'`,
   );
-  judge('ticker backend', /atomics/.test(backend), backend);
+  check(
+    'the header shows the radio and nothing else',
+    pillCount === 1,
+    `${pillCount} pill: "${pillText}" — isolation and the ticker are on the root element for checks, and in the banner in words when they matter`,
+  );
+
+  const brand = await evaluate(`(() => {
+    const img = document.querySelector('#brand-logo');
+    const link = document.querySelector('.site-footer a');
+    return {
+      logo: !!img && img.naturalWidth > 0,
+      href: link?.getAttribute('href') ?? '',
+      // \\s, not \s: this string is a template literal on its way to the page,
+      // so a single backslash is eaten here and the regex arrives as /s+/ —
+      // which quietly replaced every "s" in the footer text with a space.
+      footer: (document.querySelector('.site-footer')?.textContent || '').replace(/\\s+/g, ' ').trim(),
+      icon: document.querySelector('link[rel=icon]')?.getAttribute('href') ?? '',
+    };
+  })()`);
+  check(
+    'the branding is there and the image actually loaded',
+    brand.logo === true && brand.href === 'https://www.instagram.com/nacofpv',
+    `logo decoded, footer reads "${brand.footer}"`,
+  );
+  check(
+    'and the tab icon is a quad rather than a helicopter',
+    /svg/.test(brand.icon) && /circle/.test(brand.icon) && !/F0%9F%9A%81/.test(brand.icon),
+    'four rotors drawn as SVG — there is no quadcopter emoji',
+  );
 
   const hasPanel = await evaluate(`!!document.querySelector('#flight-panel .fl-grid') && !!document.querySelector('#flight-live .fl-nums')`);
   check('flight panels rendered', hasPanel, hasPanel ? 'live and diagnostic hosts both present' : 'missing');
@@ -222,12 +263,23 @@ const main = async () => {
 
     const notice = await evaluate(`(() => {
       const n = document.querySelector('#notice');
-      return { hidden: n?.hidden !== false, text: (n?.textContent || '').slice(0, 90) };
+      return { hidden: n?.hidden !== false, text: (n?.textContent || '').slice(0, 120) };
     })()`);
+    // The banner has two jobs and only one of them is about the deployment.
+    // "Your throttle is not calibrated" describes the pilot's radio, and this
+    // machine has a real Radiomaster plugged in whose visibility to headless
+    // Chrome flickers — so an isolated page can legitimately be showing that
+    // one. Judging on the text rather than on whether anything is shown is what
+    // makes this check about the host again.
+    const aboutTheRadio = /throttle/i.test(notice.text ?? '');
     check(
       'degraded-state notice matches the environment',
-      isolated ? notice.hidden === true : notice.hidden === false,
-      isolated ? 'isolated, so no notice shown' : `notice shown: "${notice.text}"`,
+      isolated ? notice.hidden === true || aboutTheRadio : notice.hidden === false,
+      isolated
+        ? notice.hidden
+          ? 'isolated, so no notice shown'
+          : `isolated; the notice showing is about the radio, not the host: "${notice.text?.slice(0, 60)}…"`
+        : `notice shown: "${notice.text}"`,
     );
     if (!ctx.secure) {
       check(
@@ -311,7 +363,7 @@ const main = async () => {
   const flightResult = await evaluate(`(() => {
     const { flight } = globalThis.__fpvsim;
     const sim = flight.sim;
-    // Flight-model checks, not collision ones. The circuit has a tube directly
+    // Flight-model checks, not collision ones. The freestyle map has a tube directly
     // over the origin these reset to, so with scenery in place they climb into
     // it, crash, disarm and fall back — a net climb of zero and a puzzling
     // failure about the wrong subsystem.
@@ -733,8 +785,15 @@ const main = async () => {
   const quadSticks = await evaluate(`(() => {
     const { flight } = globalThis.__fpvsim;
     if (!flight.quadView) return { ok: false };
+    // A synthetic clock, not performance.now(). The model integrates against the
+    // frame time, so driving it on the wall clock makes the angle depend on how
+    // fast the machine drew — 40 frames turned 100 degrees here and 240 on a
+    // slower run, which failed the direction check for looking like a reversal.
+    // Controlling the clock makes the rotation exact.
+    let clock = performance.now();
     const shot = (cmd, rate) => {
-      flight.renderQuad(cmd, rate ?? [cmd.roll * 500, cmd.pitch * 500, cmd.yaw * 500], performance.now());
+      clock += 16;
+      flight.renderQuad(cmd, rate ?? [cmd.roll * 500, cmd.pitch * 500, cmd.yaw * 500], clock);
       const c = flight.quadCanvas;
       const off = document.createElement('canvas');
       off.width = c.width; off.height = c.height;
@@ -757,17 +816,17 @@ const main = async () => {
     // Pitch forward has to drop the nose. The model's forward axis is -z, so
     // its y component going negative is the nose going down.
     flight.quadView.level();
-    for (let i = 0; i < 40; i++) shot({ throttle: 0, roll: 0, pitch: 1, yaw: 0 });
+    for (let i = 0; i < 12; i++) shot({ throttle: 0, roll: 0, pitch: 1, yaw: 0 });
     const fwd = [...flight.quadView.modelMatrix].slice(8, 11).map((v) => +v.toFixed(3));
     // Roll right must drop the right wingtip. The model's right axis is +x, so
     // its y component going negative is that wingtip going down.
     flight.quadView.level();
-    for (let i = 0; i < 40; i++) shot({ throttle: 0, roll: 1, pitch: 0, yaw: 0 });
+    for (let i = 0; i < 12; i++) shot({ throttle: 0, roll: 1, pitch: 0, yaw: 0 });
     const rightY = +[...flight.quadView.modelMatrix][1].toFixed(3);
 
     // Yaw right must swing the nose toward +x.
     flight.quadView.level();
-    for (let i = 0; i < 40; i++) shot({ throttle: 0, roll: 0, pitch: 0, yaw: 1 });
+    for (let i = 0; i < 12; i++) shot({ throttle: 0, roll: 0, pitch: 0, yaw: 1 });
     const noseX = -[...flight.quadView.modelMatrix][8];
 
     flight.quadView.level();
@@ -799,6 +858,8 @@ const main = async () => {
     // Short window on purpose: 600 deg/s over half a second is 288 degrees,
     // which sails past vertical and makes the tilt non-monotonic. Six frames
     // keeps both cases well inside a quarter turn.
+    // Already on a synthetic clock, and for the same reason as the direction
+    // checks above: the angle must come from the rate, not from the machine.
     const turn = (dps) => {
       flight.quadView.level();
       const t0 = performance.now();
@@ -838,6 +899,13 @@ const main = async () => {
   const race = await evaluate(`(async () => {
     const { racePanel, scene, flight, tabs } = globalThis.__fpvsim;
     tabs.show('fly');
+    // Nothing to hit and nothing broken, so any invalid lap that comes out of
+    // this is the timer inventing one. A lap is voided by a respawn, and the
+    // page's own tick respawns automatically after a crash — so a crashed quad
+    // left over from an earlier check would void every lap here and look like a
+    // bug in the race rather than the leftover it is.
+    flight.sim.obstacles = [];
+    flight.sim.crashed = false;
     const course = racePanel.race.course;
     scene.loadTrack(scene.constructor === undefined ? null : scene.track);
     racePanel.race.laps = 3;
@@ -862,8 +930,9 @@ const main = async () => {
     for (let lap = 0; lap < 3; lap++) {
       for (const cp of course.checkpoints) {
         if (cp.kind === 'gate') {
-          go(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up);
-          go(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up);
+          const du = cp.dirU ?? 0;
+          go(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up - du * 3);
+          go(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up + du * 3);
         } else {
           const aN = -cp.dirE * cp.passWidth * 0.5 * cp.side;
           const aE = cp.dirN * cp.passWidth * 0.5 * cp.side;
@@ -877,6 +946,8 @@ const main = async () => {
     return {
       state: racePanel.race.state,
       laps: racePanel.race.completed.length,
+      invalid: racePanel.race.completed.filter((l) => l.invalid).length,
+      struck: table ? table.querySelectorAll('tr.invalid').length : -1,
       rows: table ? table.querySelectorAll('tr').length : 0,
       cols: table ? table.querySelectorAll('tr')[0].children.length : 0,
       checkpoints: course.checkpoints.length,
@@ -892,6 +963,33 @@ const main = async () => {
     'the results table has a column per checkpoint',
     race.cols === race.checkpoints + 2 && race.rows === 4,
     `${race.rows - 1} lap rows, ${race.cols} columns for ${race.checkpoints} checkpoints plus lap and total`,
+  );
+  check(
+    'and an uninterrupted race counts every lap',
+    race.invalid === 0 && race.struck === 0,
+    race.invalid === 0
+      ? 'no respawns, no strikethrough — a struck-out lap means a reset happened in it'
+      : `${race.invalid} of ${race.laps} laps voided with nothing to hit`,
+  );
+  const finishOsd = await evaluate(`(async () => {
+    // The OSD is drawn from the page's own 30 Hz loop, so the summary does not
+    // exist in the same turn the race finished in — the checkpoints above were
+    // driven synchronously. Give it frames before looking.
+    for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r));
+    const s = document.querySelector('.osd-summary');
+    const rows = [...(s?.querySelectorAll('.osd-sum-row') || [])].map((r) =>
+      r.textContent.replace(/\\s+/g, ' ').trim(),
+    );
+    return { shown: !!s && s.style.display !== 'none', rows, head: s?.querySelector('.osd-sum-head')?.textContent };
+  })()`);
+  check(
+    'and the result goes up on the video, not just in the panel',
+    finishOsd.shown === true &&
+      finishOsd.rows.some((r) => /HOLE SHOT/.test(r)) &&
+      finishOsd.rows.filter((r) => /^LAP /.test(r)).length === 3 &&
+      finishOsd.rows.some((r) => /TOTAL/.test(r)) &&
+      !finishOsd.rows.some((r) => /GATE/.test(r)),
+    `${finishOsd.head}: ${finishOsd.rows.join(' | ')}`,
   );
   check(
     'and reports hole shot, best lap, best three and total',
@@ -960,6 +1058,30 @@ const main = async () => {
       resolve({ ok: true, behind, infront });
     });
   })`);
+  // The same question for a checkpoint you drop through: above is the correct
+  // side, below is not. Without the vertical term the tint sat exactly on the
+  // boundary for every cube floor and told a pilot nothing.
+  const tintUp = await evaluate(`(() => {
+    const { scene, flight, racePanel } = globalThis.__fpvsim;
+    if (!scene.renderer) return { ok: false };
+    const top = racePanel.race.course.checkpoints.find((c) => c.kind === 'gate' && c.dirU === -1);
+    if (!top) return { ok: false, reason: 'no drop-through checkpoint on this course' };
+    const read = (upMetres) => {
+      flight.sim.pos.x = top.north;
+      flight.sim.pos.y = top.east;
+      flight.sim.pos.z = -upMetres;
+      return scene.renderer.markerTint(top, flight.sim);
+    };
+    return { ok: true, above: read(top.up + 6), below: read(Math.max(0.2, top.up - 2)) };
+  })()`);
+  check(
+    'and green from above on a checkpoint you drop through',
+    tintUp.ok === true && tintUp.above === 'green' && tintUp.below === 'red',
+    tintUp.ok
+      ? `above the cube: ${tintUp.above}, inside it: ${tintUp.below}`
+      : `skipped — ${tintUp.reason}`,
+  );
+
   check(
     'the marker is green from the correct side and red from the wrong one',
     tint.ok && tint.behind.g > tint.behind.r && tint.infront.r > tint.infront.g,
@@ -990,7 +1112,7 @@ const main = async () => {
       tracks.dispatchEvent(new Event('change', { bubbles: true }));
     };
 
-    pick('Race — six gates');
+    pick('Race vibes');
     const onRace = { disabled: racePanel.startBtnDisabled, hasCourse: !!scene.track.course };
     racePanel.race.start(0);
     racePanel.race.setDt(0.001);
@@ -998,7 +1120,7 @@ const main = async () => {
     scene.setNextCheckpoint(racePanel.race.activeCheckpoint);
     const markerOnRace = race.markerTriangleCount;
 
-    pick('Open field');
+    pick('Freestyle');
     const btn = [...document.querySelectorAll('#race-panel button')][0];
     const onField = {
       // Disabled has to be visible, not just enforced: a live-looking button
@@ -1010,7 +1132,7 @@ const main = async () => {
       raceState: racePanel.race.state,
       marker: race.markerTriangleCount,
     };
-    pick('Race — six gates');
+    pick('Race vibes');
     return { onRace, markerOnRace, onField, saved: JSON.parse(localStorage.getItem('fpvsim.scene.v1') || '{}') };
   })()`);
   check(
@@ -1323,6 +1445,328 @@ const main = async () => {
         : ' — no mapping stored yet, which is expected until a radio is mapped'),
   );
 
+  // Sound. The promise made in Settings is that turning it off is exactly as
+  // before, so the checks are as much about what stops as about what plays.
+  const soundOn = await evaluate(`(async () => {
+    const { audio, flight, scene, poller } = globalThis.__fpvsim;
+    audio.setEnabled(true);
+
+    // Spin the motors up properly: an rpm-driven tone is silent on a quad that
+    // is not turning, so a check on a disarmed model proves nothing.
+    const realPoll = poller.poll.bind(poller);
+    poller.poll = (t) => { realPoll(t); poller.connected = true; return true; };
+    flight.sim.obstacles = [];
+    flight.sim.crashed = false;
+    flight.sim.armed = true;
+    await new Promise((r) => setTimeout(r, 300));
+    // Read the model and the graph in the same breath. The page's own 1 kHz
+    // tick keeps stepping underneath, so anything measured across a wait is a
+    // race — this asks only whether what is being heard matches what is being
+    // flown right now.
+    audio.update(flight.sim);
+    await new Promise((r) => setTimeout(r, 200));
+    audio.update(flight.sim);
+    const live = audio.debug();
+    const rpm = flight.sim.telemetry.motorRpm.slice();
+
+    flight.sim.armed = false;
+    poller.poll = realPoll;
+    flight.reset();
+
+    // The rpm-to-sound mapping itself, driven from a stand-in rather than from
+    // the model, because the live tick will not hold still for a before/after.
+    //
+    // The wait is a *blocking* one on purpose. Yielding would let the page's own
+    // render loop call update() with the real, now-stopped model and pull every
+    // target back to silence — which is what the first version of this measured.
+    // Blocking the main thread does not stop the audio thread, so the ramp still
+    // converges and the reading is of the value actually being heard.
+    const at = (r) => {
+      audio.update({ telemetry: { motorRpm: [r, r, r, r], speed: 0 } });
+      const t0 = performance.now();
+      while (performance.now() - t0 < 250) { /* hold the loop out */ }
+      return audio.debug();
+    };
+    const loud = at(24000);
+    const quiet = at(3000);
+
+    return {
+      state: audio.state,
+      active: audio.active,
+      live,
+      rpm,
+      loud,
+      quiet,
+      blades: flight.sim.airframe.prop.blades,
+      map: scene.track.name,
+    };
+  })()`);
+  const expected = ((soundOn.rpm[0] ?? 0) / 60) * soundOn.blades;
+  check(
+    'sound builds a graph and starts running',
+    soundOn.active === true && soundOn.state === 'running' && soundOn.live.freqs.length === 4,
+    `${soundOn.live.freqs.length} motor voices, context ${soundOn.state}`,
+  );
+  check(
+    'what is heard is what is flown — blade pass, from the live model',
+    (soundOn.rpm[0] ?? 0) > 2000 &&
+      Math.abs((soundOn.live.freqs[0] ?? 0) - expected) < Math.max(25, expected * 0.12),
+    `${(soundOn.live.freqs[0] ?? 0).toFixed(0)} Hz against ${expected.toFixed(0)} expected from ${(soundOn.rpm[0] ?? 0).toFixed(0)} rpm on ${soundOn.blades} blades`,
+  );
+  check(
+    'and it follows the throttle down',
+    (soundOn.quiet.freqs[0] ?? 0) < (soundOn.loud.freqs[0] ?? 0) * 0.4 &&
+      (soundOn.quiet.gains[0] ?? 0) < (soundOn.loud.gains[0] ?? 0) * 0.5,
+    `24 000 rpm: ${(soundOn.loud.freqs[0] ?? 0).toFixed(0)} Hz at gain ${(soundOn.loud.gains[0] ?? 0).toFixed(3)}; ` +
+      `3 000 rpm: ${(soundOn.quiet.freqs[0] ?? 0).toFixed(0)} Hz at gain ${(soundOn.quiet.gains[0] ?? 0).toFixed(3)}`,
+  );
+
+  // Crossing a gate has to be audible: in a race the pilot is looking at the
+  // next gate, not at the panel, so confirmation that one counted can only
+  // arrive in the ear.
+  const chime = await evaluate(`(async () => {
+    const { audio, racePanel, scene, tabs } = globalThis.__fpvsim;
+    audio.setEnabled(true);
+    tabs.show('fly');
+    const course = racePanel.race.course;
+    racePanel.race.laps = 3;
+    racePanel.race.start(0);
+    const cp = course.checkpoints[0];
+    const dt = 0.001;
+    // Straight through the first checkpoint, which the page's own tick will
+    // notice on its next pass — this is the wiring, not the audio call.
+    const at = (f) => {
+      racePanel.race.setDt(dt);
+      racePanel.race.step(cp.north + cp.dirN * f, cp.east + cp.dirE * f, cp.up, dt);
+    };
+    at(-4); at(-1); at(1); at(4);
+    const crossed = racePanel.race.crossings;
+    // Voices decay in about a tenth of a second, so watch rather than sample.
+    let peak = 0;
+    for (let i = 0; i < 30; i++) {
+      peak = Math.max(peak, audio.debug().voices);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    racePanel.race.reset();
+    return { crossed, peak };
+  })()`);
+  check(
+    'crossing a checkpoint makes a sound',
+    chime.crossed > 0 && chime.peak > 0,
+    `${chime.crossed} crossing(s) counted in the tick, ${chime.peak} voice(s) heard on the render path`,
+  );
+
+  const bang = await evaluate(`(async () => {
+    const { audio, flight } = globalThis.__fpvsim;
+    audio.noteCrash(9);
+    audio.update(flight.sim);
+    const during = audio.debug().voices;
+    return { during };
+  })()`);
+  check(
+    'a crash makes a noise',
+    bang.during > 0,
+    `${bang.during} impact voice(s), built on the render path rather than in the tick`,
+  );
+
+  // The part that has to be true for the promise in Settings to hold.
+  const soundOff = await evaluate(`(() => {
+    const { audio, flight } = globalThis.__fpvsim;
+    audio.setEnabled(false);
+    const after = { state: audio.state, active: audio.active };
+    // Must be a no-op rather than a throw, since the render loop calls it every
+    // frame whether or not anyone is listening.
+    let threw = false;
+    try { for (let i = 0; i < 100; i++) audio.update(flight.sim); } catch { threw = true; }
+    const stored = JSON.parse(localStorage.getItem('fpvsim.audio.v1') || 'null');
+    return { ...after, threw, stored, debug: audio.debug() };
+  })()`);
+  check(
+    'turning it off closes the graph rather than muting it',
+    soundOff.active === false && soundOff.state === 'closed' && soundOff.debug.freqs.length === 0,
+    'context closed, no oscillators left — nothing on the audio thread',
+  );
+  check(
+    'and updating it afterwards costs a property check',
+    soundOff.threw === false,
+    '100 update() calls with sound off, no graph touched and nothing thrown',
+  );
+  check(
+    'the choice is stored',
+    soundOff.stored && soundOff.stored.enabled === false,
+    JSON.stringify(soundOff.stored),
+  );
+
+  const soundUi = await evaluate(`(() => {
+    const { audio, tabs } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const btn = document.querySelector('#audio-toggle');
+    const box = document.querySelector('#sound-enabled');
+    btn.click();                       // back on, from the flying tab
+    const afterBtn = { on: audio.enabled, box: box.checked, label: btn.textContent };
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+    const afterKey = { on: audio.enabled, box: box.checked, label: btn.textContent };
+    audio.setEnabled(true);
+    return { afterBtn, afterKey };
+  })()`);
+  check(
+    'the button on the flying tab and the checkbox in Settings stay in step',
+    soundUi.afterBtn.on === true && soundUi.afterBtn.box === true &&
+      soundUi.afterKey.on === false && soundUi.afterKey.box === false,
+    `button -> ${soundUi.afterBtn.label}, then M -> ${soundUi.afterKey.label}; one owner, two views`,
+  );
+
+  // Usage reporting. It is the first thing here that leaves the browser, so
+  // what is checked is mostly what it refuses to do: nothing from a dev build,
+  // nothing once the pilot opts out, and nothing counted while disarmed.
+  const teleId = await evaluate(`(() => {
+    const { telemetry } = globalThis.__fpvsim;
+    const stored = JSON.parse(localStorage.getItem('fpvsim.pilot.v1') || 'null');
+    return {
+      id: telemetry.pilotId,
+      storedId: stored && stored.id,
+      enabled: telemetry.enabled,
+      transmits: telemetry.transmits,
+      boxChecked: document.querySelector('#telemetry-enabled').checked,
+      optKey: localStorage.getItem('fpvsim.telemetry.v1'),
+    };
+  })()`);
+  check(
+    'a pilot id is minted and persisted',
+    typeof teleId.id === 'string' && teleId.id.length > 8 && teleId.storedId === teleId.id,
+    `${teleId.id.slice(0, 8)}… under fpvsim.pilot.v1`,
+  );
+  check(
+    'sharing defaults on, with no stored key needed to say so',
+    teleId.enabled === true && teleId.boxChecked === true && teleId.optKey === null,
+    'checkbox reflects the default rather than a written value',
+  );
+  check(
+    'and a dev build transmits nothing',
+    teleId.transmits === false,
+    'import.meta.env.DEV, so the endpoint is never called from here',
+  );
+
+  // Armed seconds are the number the whole thing exists to produce, so they are
+  // checked against the clock and against the map actually loaded — a counter
+  // that runs while the quad sits disarmed on the ground would report a pilot
+  // who left the tab open as the most dedicated one there is.
+  const armedCount = await evaluate(`(async () => {
+    const { telemetry, flight, scene, poller } = globalThis.__fpvsim;
+    const map = scene.track.name;
+    const of = () => (telemetry.report().maps.find((m) => m.name === map) || { armedS: 0 }).armedS;
+
+    // Hold the link up for the measurement. Headless usually has no radio, and
+    // the failsafe correctly disarms the model on the very next tick — which
+    // would make this check measure the failsafe rather than the counter.
+    const realPoll = poller.poll.bind(poller);
+    poller.poll = (t) => { realPoll(t); poller.connected = true; return true; };
+
+    flight.sim.crashed = false;
+    flight.sim.armed = false;
+    const idle0 = of();
+    await new Promise((r) => setTimeout(r, 400));
+    const idle1 = of();
+
+    flight.sim.armed = true;
+    const t0 = performance.now();
+    await new Promise((r) => setTimeout(r, 600));
+    const wall = (performance.now() - t0) / 1000;
+    flight.sim.armed = false;
+    const flown = of() - idle1;
+
+    await new Promise((r) => setTimeout(r, 300));
+    const after = of();
+
+    poller.poll = realPoll;
+    flight.sim.crashed = false;
+    flight.reset();
+    return { idleDrift: idle1 - idle0, flown, wall, stopped: after - idle1 - flown, map };
+  })()`);
+  check(
+    'armed seconds track the clock on the loaded map',
+    Math.abs(armedCount.flown - armedCount.wall) < 0.15 && armedCount.flown > 0.3,
+    `${armedCount.flown.toFixed(2)} s counted over ${armedCount.wall.toFixed(2)} s of wall clock on "${armedCount.map}"`,
+  );
+  check(
+    'and nothing accrues while disarmed',
+    armedCount.idleDrift === 0 && Math.abs(armedCount.stopped) < 0.05,
+    `${armedCount.idleDrift.toFixed(3)} s before arming, ${armedCount.stopped.toFixed(3)} s after disarming`,
+  );
+
+  // The beacon itself, with transmission forced on: what a production build
+  // would send, and what the opt-out has to stop.
+  const beacon = await evaluate(`(async () => {
+    const { telemetry, scene } = globalThis.__fpvsim;
+    const sent = [];
+    const real = navigator.sendBeacon;
+    navigator.sendBeacon = (url, body) => { sent.push({ url, body }); return true; };
+    const wasEnabled = telemetry.enabled;
+
+    telemetry.transmits = true;
+    telemetry.setName('  <script>alert(1)</script>  ');
+    telemetry.enabled = true;
+    const okSend = telemetry.send();
+    const unchanged = telemetry.send();  // nothing new to say
+
+    telemetry.noteCrash(scene.track.name);
+    telemetry.setEnabled(false);         // sends a final summary, then goes quiet
+    const afterOptOut = telemetry.send();
+
+    telemetry.transmits = false;
+    telemetry.enabled = wasEnabled;
+    localStorage.removeItem('fpvsim.telemetry.v1');
+    navigator.sendBeacon = real;
+
+    const texts = [];
+    for (const s of sent) texts.push(JSON.parse(await s.body.text()));
+    return {
+      okSend,
+      unchanged,
+      afterOptOut,
+      urls: sent.map((s) => s.url),
+      count: sent.length,
+      first: texts[0],
+      map: scene.track.name,
+      storedName: JSON.parse(localStorage.getItem('fpvsim.pilot.v1') || '{}').name,
+    };
+  })()`);
+  check(
+    'the beacon goes to this page\'s own host and nowhere else',
+    beacon.okSend === true && beacon.urls.every((u) => u === '/api/session'),
+    `${beacon.count} POST(s) to ${[...new Set(beacon.urls)].join(', ')} — relative, so no third party`,
+  );
+  check(
+    'the summary carries the pilot, the tune and the maps',
+    beacon.first &&
+      beacon.first.pilotId === teleId.id &&
+      beacon.first.name === '<script>alert(1)</script>' &&
+      !!beacon.first.tune?.rates &&
+      !!beacon.first.tune?.pids &&
+      beacon.first.maps.some((m) => m.name === beacon.map && m.armedS > 0),
+    `name, rates, pids and ${beacon.first?.maps?.length ?? 0} map(s) including "${beacon.map}"`,
+  );
+  check(
+    'a name is trimmed and stored, and left un-sanitised for the reader to escape',
+    beacon.storedName === '<script>alert(1)</script>',
+    'the admin page is where a name is escaped — mangling it here would hide that it must be',
+  );
+  check(
+    'an unchanged summary is not resent',
+    beacon.unchanged === false,
+    'an idle tab posts once, and pagehide plus visibilitychange do not each leave a copy',
+  );
+  check(
+    'opting out stops it, after one last summary',
+    beacon.afterOptOut === false && beacon.count === 2,
+    'the flying already done is reported rather than discarded, then nothing further',
+  );
+  check(
+    'and the summary is free of anything that identifies a machine',
+    beacon.first && !('ua' in beacon.first) && !('userAgent' in beacon.first) && !('ip' in beacon.first),
+    Object.keys(beacon.first ?? {}).join(', '),
+  );
+
   // Destructive, so it runs last: it wipes stored settings and switches tab,
   // and an earlier version of it sitting mid-suite broke two later checks.
   // Reset everything. Two presses, and it must clear every key the app owns —
@@ -1337,6 +1781,9 @@ const main = async () => {
     localStorage.setItem('fpvsim.tune.v1', '{}');
     localStorage.setItem('fpvsim.scene.v1', '{}');
     localStorage.setItem('fpvsim.tab.v1', 'settings');
+    localStorage.setItem('fpvsim.audio.v1', '{}');
+    localStorage.setItem('fpvsim.pilot.v1', '{}');
+    localStorage.setItem('fpvsim.telemetry.v1', '{}');
     localStorage.setItem('fpvsim.something.new.v1', '{}');
     localStorage.setItem('somebody-elses-key', 'keep me');
 

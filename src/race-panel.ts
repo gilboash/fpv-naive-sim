@@ -76,7 +76,7 @@ export class RacePanel {
    *
    * This exists because of a real and thoroughly confusing bug: the race ran
    * against its own hard-coded course whatever map was loaded, so starting one
-   * on the circuit drew checkpoint markers hanging in mid-air where that
+   * on the freestyle map drew checkpoint markers hanging in mid-air where that
    * course's gates would have been — pointing at gates that were not there.
    * A race belongs to a map.
    */
@@ -96,7 +96,7 @@ export class RacePanel {
       : 'This map has no course. Pick a race map to time a lap.';
     this.hint.textContent = this.courseAvailable
       ? ''
-      : 'No course on this map — pick “Race — six gates” to race.';
+      : 'No course on this map — pick a race map to race.';
   }
 
   private hint = el('span', 'dim', '');
@@ -172,7 +172,7 @@ export class RacePanel {
     // or lost. A total tells a pilot they were slow; this tells them where.
     const table = el('table', 'race-table');
     const names = this.race.course.checkpoints.map((cp, i) =>
-      cp.kind === 'flag' ? 'flag' : `g${i + 1}`,
+      cp.kind === 'flag' ? 'flag' : cp.frame === 'none' ? 'cube' : `g${this.race.gateNumber(i)}`,
     );
     const hdr = el('tr');
     hdr.appendChild(el('th', undefined, 'lap'));
@@ -188,7 +188,17 @@ export class RacePanel {
 
     for (const lap of res.laps) {
       const tr = el('tr', lap.invalid ? 'invalid' : undefined);
-      tr.appendChild(el('td', undefined, lap.invalid ? `${lap.number} ✗` : String(lap.number)));
+      // The reason, not just the mark. A row struck through with nothing beside
+      // it reads as the timer being broken; "2 respawns" reads as what happened.
+      tr.appendChild(
+        el(
+          'td',
+          undefined,
+          lap.invalid
+            ? `${lap.number} ✗ ${lap.respawns} respawn${lap.respawns === 1 ? '' : 's'}`
+            : String(lap.number),
+        ),
+      );
       names.forEach((_, i) => {
         const sp = lap.splits[i];
         const td = el('td', undefined, sp ? sp.delta.toFixed(2) : '—');
@@ -198,11 +208,21 @@ export class RacePanel {
       tr.appendChild(el('td', 'laptime', fmt(lap.time)));
       table.appendChild(tr);
     }
-    host.appendChild(table);
+    // A scroller round it, because a course can be long: the thrust line has 41
+    // checkpoints and so 43 columns, and without this the panel — and the page
+    // with it — grows sideways.
+    const scroll = el('div', 'race-scroll');
+    scroll.appendChild(table);
+    host.appendChild(scroll);
 
     if (res.laps.some((l) => l.invalid)) {
       host.appendChild(
-        el('p', 'hint', 'Laps marked ✗ had a respawn in them and do not count — otherwise a reset at the right moment would be a shortcut.'),
+        el(
+          'p',
+          'hint',
+          'Laps marked ✗ had a respawn in them and do not count — a crash respawns you automatically, ' +
+            'and pressing reset counts too. Otherwise a reset at the right moment would be a shortcut.',
+        ),
       );
     }
   }

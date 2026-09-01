@@ -47,6 +47,9 @@ const LABELS: Record<string, string> = {
   'fpvsim.tune.v1': 'rates, PIDs and filters',
   'fpvsim.scene.v1': 'FOV, camera tilt, map and reset mode',
   'fpvsim.tab.v1': 'which tab was open',
+  'fpvsim.audio.v1': 'sound on/off and volume',
+  'fpvsim.pilot.v1': 'your pilot id and name',
+  'fpvsim.telemetry.v1': 'your usage-sharing choice',
 };
 
 export function describeStored(): string[] {

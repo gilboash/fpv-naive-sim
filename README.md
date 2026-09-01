@@ -696,17 +696,160 @@ holding half throttle. No link now means no input, explicitly.
 
 ### The maps
 
-**Race — six gates** is what a first-time visitor lands on, since racing is the
-thing this is for. Everyone else keeps whichever map they last chose.
+Five maps. Four carry a race course; one deliberately does not.
 
-**Circuit** carries the freestyle furniture: eleven gates round a loop, plus freestyle furniture
-to have opinions about — floodlight masts, two tubes to thread, and three square
-windows, one low enough to take on the straight and two up high. **Gate run** is
-a staggered line for practising a single trajectory, and **Open field** is
-somewhere to learn hovering with nothing to hit.
+**Race vibes** is what a first-time visitor lands on, since racing is the thing
+this is for — six gates, three flags of which two *are* one side of a gate, and
+two cubes. Seventeen checkpoints. Everyone else keeps whichever map they last
+chose.
+
+The cubes are why a checkpoint is no longer always a frame you fly through
+sideways. `Gate.dirU` makes one a **horizontal** plane, so off gate 2 you climb
+and **drop into the single cube through its open top**, leaving by the west
+face; and off gate 5 you go **into the two-storey cube at ground level, up the
+shaft and out of the top**, then across — through the upper storey sideways,
+then through the lower one — and only then round the pole standing on gate 5. The crossing test used to
+assume a horizontal normal; both in-plane axes now come from one helper that the
+marker imports too, so what is drawn and what is timed cannot disagree about
+which way "across" points.
+
+**Thrust line** is 20 gates out over 266 m, a pole to turn round, and 20 back on
+a parallel line. Acceleration and braking with nothing else to think about. It
+is the one place where identical gates in a line are the point rather than the
+mistake the old gate run made: the receding frames read as a tunnel, and the
+numbered blocks beside them say which is which.
+
+**Circle** is 20 gates evenly round a 60 m circle, so a lap *is* the circle and
+there is no straight anywhere on it. Each gate faces along the tangent, which
+means a gate taken square is a turn that was right at that instant. There is a
+mast at the centre because without one fixed feature it is genuinely hard to
+tell a circle from a spiral.
+
+**180s** is two combs of ten gates 12 m apart: through one, hard 180, back
+through the next, ten times, then across to the second row and back. Nothing but
+turnarounds, which is what actually costs time on a real track.
+
+**Freestyle** carries no course and no timer, which is the point of keeping one
+map where nothing is being measured. It also carries a **block of cubes** — a
+3x3 grid one, two and three storeys tall, joined side to side so the faces line
+up, because the line worth finding is the one that goes through several of them
+without coming out. Eleven gates round a loop, plus things to
+have opinions about — floodlight masts, tubes to thread, square windows,
+**ladders** whose gaps are windows to climb, **chimneys** to dive (18 m of shaft
+with the exit out of sight until halfway down), and **arches** to carry speed
+through. It was "Circuit" until the race maps arrived.
+
+**Every gate has the same aperture: 3.96 m wide by 3.05 m tall**, race and
+freestyle alike, with the frame proportioned around it — two constants,
+`GATE_HALF_W` and `GATE_HALF_H`, and the whole gate scales with them. The
+uprights are banded yellow and white like the flag poles, and the rails are
+tubes of the same radius rather than rectangular beams — equal radii is what
+makes the corner disappear, because the post's end cap ends up inside the rail's
+surface. A plank meeting a round post had a visible edge; a frame welded from
+one gauge of tube does not. The banding is not decoration either: a plain column
+gives no sense of distance or closing speed, and bands give both, which is the
+same reason the flag poles have always had them.
+
+That is **twice** a MultiGP 5 ft gate in height and 30% wider than that again,
+and it is worth naming as a concession rather than quietly relabelling it. It
+was the MultiGP figure exactly for about an hour; flying it said otherwise. The
+shape is the standard one, the size is a simulator's compromise, and pretending
+otherwise would make every lap time here mean more than it should. There are
+checks on both numbers, because they are load-bearing for how every course flies
+and a silent drift in either would change every lap time.
+
+Wider rather than uniformly bigger, because a gate is missed sideways far more
+often than vertically: the line into it is horizontal, and the error that
+matters is the one in the turn. Keeping the height where it was keeps altitude
+honest.
+
+The next-checkpoint marker traces the aperture rather than carrying its own
+idea of a gate's size, so it followed both resizes without being touched — and
+there is a check asserting it, since "it happens to be built from the same
+numbers" is true right up until someone hard-codes one.
+
+Gates are drawn at their true heading rather than snapped to an axis. That
+sounds obvious and was not: the builder took an `'x' | 'z'`, which is harmless
+on a course whose gates face north or east and wrong on every gate of the
+circle. It showed up as the next-checkpoint marker looking *tilted* relative to
+the gate — the marker was right and the gate was wrong. They share one
+definition of "across" now, and the check that used to measure distance to the
+nearest post (which is half a gate's width at any angle, so it passed happily)
+now asks where the posts actually are.
 
 Every obstacle emits its collision volume from the same call that builds its
-mesh, so the circuit's 76 volumes cannot drift from what is drawn.
+mesh, so the drawn scene and the solid one cannot drift apart. The arches are
+where that shows: they are drawn as quads round the arc, because axis-aligned
+boxes would have made a staircase, while contact stays one box per segment —
+which is close enough to a quarter-metre of arc and does not need to be pretty.
+
+Two maps went when these arrived. **Open field** was four pylons and a landing
+pad, which is what an empty scene looks like once there is anywhere better to
+go, and **Gate run** was a staggered line that the thrust line now does properly
+and times.
+
+### Sound
+
+Motor noise is synthesised from the model's own rotor speeds rather than played
+from samples. Four oscillators, one per motor, each at that motor's **blade-pass
+frequency** — `rpm / 60 x blades`, the tone a prop actually makes — through a
+lowpass that opens with load, plus broadband noise for the disc and the
+airframe's speed through it. The beating between four motors as the mixer splits
+them is most of what a quad sounds like working; a single tone scaled by mean
+rpm sounds like a hair dryer. A crash is a bandpassed burst that sweeps down for
+the plastic and a short sine for the mass.
+
+Synthesis rather than samples for three reasons: nothing to download, the pitch
+is right at every rpm rather than at the three that were recorded, and the page
+stays a handful of static files with nothing to fetch at run time.
+
+**Off means off.** Turning it off closes the `AudioContext` and drops the whole
+graph, so the cost is one property check per rendered frame and nothing at all
+on the audio thread. That was the requirement, not an optimisation: the timing
+story is why anyone trusts this simulator, and a feature nobody asked for must
+not be able to spend any of it. There is a check that asserts exactly this —
+context `closed`, no oscillators, and `update()` still safe to call.
+
+Nothing audio-related runs in the 1 kHz tick. A crash sets a flag there; the
+render loop turns it into sound, so no audio node is ever allocated inside the
+flight loop. `update()` runs at 30 Hz and every parameter is a smoothed target,
+so the ear cannot hear the update rate.
+
+Crossing a checkpoint has its own blip — one for a gate, another for a flag, an
+arpeggio for a completed lap — because in a race the pilot is looking at the
+next gate, not at the panel, so confirmation that one counted can only arrive in
+the ear. The race counts crossings on monotonic counters and the render loop
+turns a change into a sound, so the tick stays free of the audio graph.
+
+Getting the pitch right needed the recording. The first version put a gate at
+1 568 Hz, straight on top of blade pass at full throttle, where it was
+indistinguishable from the motor sweeping past the same note. They sit above the
+rotors now, with a slight downward glide: a dead-steady tone reads as part of
+the motor noise, a falling one reads as an event.
+
+`node tools/sound-preview.mjs out.wav` records what it sounds like without
+flying it: it drives the real graph through a scripted rpm profile in a headless
+browser, taps the mix, and writes a WAV. That exists because sound is the one
+thing here that cannot be checked by reading a number back — `audio.debug()`
+says the oscillator was *asked* for 1 200 Hz, which is equally true of a graph
+that is silent, wrongly balanced, or clipping.
+
+### Finishing a race, and why a lap is struck out
+
+A lap is voided by one thing only: a respawn during it. A crash respawns you
+automatically so the race stays finishable, which makes it the case a pilot does
+not connect to the struck-out row afterwards — so the row says *how many*
+respawns rather than merely striking itself through, in the table and on the
+video alike.
+
+The result also lands **on the video** for nine seconds after the last gate:
+hole shot, each lap, best, best three, total. No splits there — the table
+underneath is where a race is studied, and the picture is where one is finished.
+In fullscreen the panel does not exist at all, which is the whole reason.
+
+There is a check that flies a clean race through the real page with nothing to
+hit and asserts every lap counts, so "all my laps were struck out" can be
+answered with something better than a shrug.
 
 ### Known gaps, stated rather than omitted
 
@@ -997,13 +1140,23 @@ API into the world.
 
 ## Hosting it for someone else
 
-**Everything runs on the pilot's machine.** There is no `fetch`, no
-`XMLHttpRequest`, no WebSocket and no beacon anywhere in the source; the only
-non-relative reference in the built page is a `data:` URI favicon. Physics,
-rendering, gamepad polling, log parsing and recording all happen in their
-browser, persistence is `localStorage`, and nothing is uploaded. The host serves
-four files, about 80 KB, once per visitor and then does nothing — three pilots
-or three hundred is the same load.
+**Everything runs on the pilot's machine.** Physics, rendering, gamepad polling,
+log parsing and recording all happen in their browser, and persistence is
+`localStorage`. The host serves six files, about 170 KB, once per visitor and
+then does nothing — three pilots or three hundred is the same load.
+
+**One thing does leave the browser**, and it is worth being exact about it,
+because for most of this project's life nothing did. A short usage summary — how
+long the pilot was *armed* on each map, their rates and PIDs, lap times, crash
+count — is POSTed to the machine serving the page, so the person running a
+feedback round can tell who actually flew it and on what. It is a summary and
+not a stream: no inputs, no positions, nothing that could reconstruct a flight.
+The pilot is a random id they can erase, plus a name they may type themselves.
+The endpoint is a **relative** URL, so there is still no third party anywhere in
+the built page — the only non-relative reference in it remains a `data:` URI
+favicon. Settings has a toggle, on by default, that turns it off.
+
+See [Who is flying it](#who-is-flying-it) for the collection and reading ends.
 
 Two things the host must get right, both of which fail quietly:
 
@@ -1038,7 +1191,7 @@ there.
 
 `SSHPASS=… ./deploy-windows.sh` builds here, ships `dist/` plus a stdlib Python
 server, and restarts it on **127.0.0.1:5180**. The box needs no Node: the Mac
-builds, Windows hands over four static files, and every byte of computation
+builds, Windows hands over the built files, and every byte of computation
 happens in the visitor's browser. `tools/serve.py` sets COOP/COEP itself and,
 unlike `vite preview`, does not gate on the Host header — so a tunnel needs no
 allow-list.
@@ -1065,16 +1218,20 @@ machine is sitting on.
 
 ### What each pilot's browser remembers
 
-Everything a pilot sets is kept in their own browser, under three keys:
+Everything a pilot sets is kept in their own browser, under five keys:
 
 | key | holds |
 |---|---|
 | `fpvsim.mappings.v1` | channel mapping and calibration, **per device id** |
 | `fpvsim.tune.v1` | rate curve, PIDs, filters |
 | `fpvsim.scene.v1` | FOV, camera tilt, map, reset mode |
+| `fpvsim.tab.v1` | which tab was open |
+| `fpvsim.pilot.v1` | the random pilot id, and the name if one was typed |
+| `fpvsim.telemetry.v1` | the usage-sharing opt-out, written only when turned off |
 
-Nothing is sent anywhere, and nothing is shared between pilots — the host has no
-idea any of it exists.
+Nothing is shared between pilots. The tune and the pilot id are the only parts
+the host ever sees, and only through the usage summary described above — a pilot
+who turns that off leaves the host knowing nothing about them at all.
 
 **`localStorage` is per origin**, which is the part that catches people out. A
 pilot who maps their radio at `http://192.168.7.54:5180` and then opens the
@@ -1094,13 +1251,68 @@ Measured against the deployed instance, with a headless browser flying it for
 | **client** all tasks | 6.1% of one core, including compositing |
 | **client** JS heap | 2.6 MB |
 
-The asymmetry is the design. The server hands over four files and then does
+The asymmetry is the design. The server hands over those files and then does
 nothing at all; a second visitor costs it another 80 KB and no more. The client
 runs a 1 kHz flight model and a renderer for about 6% of one core.
 
 Serving over plain http to a LAN address costs the client *less* — 5.6% against
 6.1% — which is not good news: the ticker has fallen back to a timer there and
 is doing less work than it should.
+
+### Who is flying it
+
+The page posts a session summary to `/api/session` on the machine serving it;
+`tools/serve.py` appends each one as a line of JSON to `data/sessions.jsonl`, and
+`tools/admin.py` reads them back as one page. Three decisions in that are worth
+keeping.
+
+**The whole summary is resent as it grows**, on a 60 s heartbeat and again when
+the tab goes away, with a session id attached. So a lost beacon costs nothing —
+the newest record for a session supersedes the rest, and the reader takes the
+last rather than adding them up. Summing would multiply every flight by the
+number of heartbeats it survived. An unchanged summary is not resent at all,
+which is what stops `pagehide` and `visibilitychange` — both of which fire when
+a tab closes — from leaving two copies of it.
+
+**The admin view's access control is its bind address**, and that is not
+laziness. The Cloudflare tunnel connects to `127.0.0.1`, so *every tunnelled
+visitor arrives as a local client*: a "is this request from localhost?" check
+would have admitted the entire internet, and a secret path on port 5180 would be
+carried by the tunnel like everything else. The tunnel forwards 5180 and only
+5180, so 5181 has no route from the internet whatever it binds — which is the
+whole protection, because the page itself has no password.
+
+It runs on **`0.0.0.0:5181`** as deployed, so it is readable from the house
+network at `http://192.168.7.54:5181/` — and by anything else on that network,
+guest wifi included. That is a deliberate choice for a home LAN, not a general
+recommendation. `admin.py --host 127.0.0.1` (or passing `127.0.0.1` to
+`start-fpvsim.bat`) puts it back to the box alone, reached with a forward:
+
+```
+ssh -L 5181:127.0.0.1:5181 gilboash@hotmail.com@192.168.7.54
+# then http://127.0.0.1:5181/
+```
+
+The page is read-only and has no controls, so the exposure is the data, not the
+collection: nothing on that port can alter what is stored.
+
+**Everything on that page is escaped**, because a pilot types their own name,
+it arrives over an open POST endpoint, and the admin page is the one place it is
+rendered back. A name of `<script>alert(1)</script>` is stored exactly as typed —
+sanitising on the way in would have hidden the fact that the reader has to escape
+on the way out — and the browser check asserts both halves of that.
+
+One deploy trap came with the second server: the restart step stopped
+returning. The bat detaches its servers with `Start-Process`, and with two of
+them the SSH channel stays open behind them, so the deploy hangs *after having
+already succeeded*. Redirecting the remote output does not help. The script
+backgrounds that call and cuts it loose, then verifies over a fresh connection —
+which is the honest thing to report anyway.
+
+The deploy script excludes `data` from the `robocopy /MIR`. That line is
+load-bearing: the box now holds state for this application where it previously
+held none, and a mirror deletes whatever is not in the source, so without the
+exclusion every deploy would silently erase the collection.
 
 ### Checking a deployment
 

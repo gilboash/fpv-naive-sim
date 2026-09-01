@@ -1,4 +1,5 @@
 import './style.css';
+import brandLogo from './assets/breaking-carbon.jpg';
 import {
   auxActive,
   AUX_ACTIONS,
@@ -34,6 +35,8 @@ import { RacePanel } from './race-panel.ts';
 import { applyRates, AXIS_ROLL, AXIS_PITCH, AXIS_YAW } from './flight/rates.ts';
 import { SceneView } from './scene-view.ts';
 import { TunePanel } from './tune-panel.ts';
+import { Telemetry } from './telemetry.ts';
+import { FlightAudio } from './audio.ts';
 import TickerWorker from './ticker.worker.ts?worker';
 import {
   CTRL_FUTEX,
@@ -121,11 +124,23 @@ racePanel.onArmAtStart = () => {
   scene.placeAtStart();
   flight.reset();
 };
+const telemetry = new Telemetry();
+telemetry.tuneSnapshot = () => tune.snapshot();
+// Sound. Blade count and rpm scale come from the airframe, so a different quad
+// sounds different; nothing is built until the pilot's first gesture, because
+// browsers refuse to start audio before one.
+const audio = new FlightAudio();
+audio.setAirframe(flight.sim);
+audio.attachGesture();
 // A race belongs to the map whose gates are actually standing there. Without
 // this the timer ran its own course whatever was loaded, and the checkpoint
 // markers hung in mid-air over ground with no gates on it.
-scene.onTrackChange = (track) => racePanel.setCourse(track.course ?? null);
+scene.onTrackChange = (track) => {
+  racePanel.setCourse(track.course ?? null);
+  telemetry.noteMap(track.name);
+};
 racePanel.setCourse(scene.track.course ?? null);
+telemetry.noteMap(scene.track.name);
 // The scene owns where the quad belongs once a track is loaded, and which of
 // the reset modes is in force.
 flight.onReset = () => {
@@ -135,6 +150,12 @@ flight.onReset = () => {
 flight.onArmed = () => {
   hasArmed = true;
 };
+
+/** Edge detectors for the usage counters and the checkpoint sounds; see onTick. */
+let wasCrashed = false;
+let raceWasFinished = false;
+let lastCrossings = 0;
+let lastLaps = 0;
 
 /** Seconds left before a mid-race crash respawns itself; <0 when idle. */
 let crashRecover = -1;
@@ -216,6 +237,20 @@ function onTick(fired: number, scheduled: number): void {
   // M0 existed to make safe. It costs a few microseconds of a 1000 us budget.
   flight.step(commands, poller.connected);
 
+  // Usage accounting. Two counters and a compare on the 1 kHz path, and only
+  // while armed — time on the page is not time flying, and the difference is
+  // the whole point of measuring it.
+  if (flight.sim.armed) telemetry.noteArmed(scene.track.name, flight.sim.dt);
+  if (flight.sim.crashed !== wasCrashed) {
+    if (flight.sim.crashed) {
+      telemetry.noteCrash(scene.track.name);
+      // Records the impact only. The sound is made from the render loop, so no
+      // audio node is ever allocated inside the 1 kHz tick.
+      audio.noteCrash(flight.sim.crashSpeed);
+    }
+    wasCrashed = flight.sim.crashed;
+  }
+
   // Automatic crash recovery, while a race is on.
   //
   // Without it a crash ends the race in practice: the quad lies there with the
@@ -243,6 +278,28 @@ function onTick(fired: number, scheduled: number): void {
   // and every split would be quantised to 33 ms, which is most of the gap
   // between a good lap and a bad one.
   racePanel.step(flight.sim.dt);
+
+  // Checkpoint sounds. The race counts crossings; this notices the count moved
+  // and queues a noise for the render loop to make, so the tick allocates
+  // nothing. A completed lap wins over the gate that completed it — they land
+  // on the same crossing, and two sounds at once is noise rather than feedback.
+  if (racePanel.race.crossings !== lastCrossings) {
+    lastCrossings = racePanel.race.crossings;
+    if (racePanel.race.lapsCompleted !== lastLaps) {
+      lastLaps = racePanel.race.lapsCompleted;
+      audio.noteCheckpoint('lap');
+    } else {
+      audio.noteCheckpoint(racePanel.race.lastCrossing);
+    }
+  }
+
+  // A finished race, recorded once on the edge. Reading it every tick would
+  // report the same race sixty thousand times while the results sit on screen.
+  if (racePanel.race.state === 'finished' && !raceWasFinished) {
+    const r = racePanel.race.result();
+    telemetry.noteRace(scene.track.name, r.laps.filter((l) => !l.invalid).length, r.best, r.bestThree);
+  }
+  raceWasFinished = racePanel.race.state === 'finished';
 
   if (run?.running) {
     run.recordTick(fired, scheduled);
@@ -625,6 +682,10 @@ function render(tNow: number): void {
 
   flight.render();
   racePanel.render();
+  // Sound follows the flight rather than the tab: the quad keeps flying while
+  // you are in Settings, so it keeps making noise there. Costs one property
+  // check per frame when it is off.
+  audio.update(flight.sim);
 
   // Point the pilot at the next checkpoint while a race is on.
   // A crash mid-race respawns where it happened, so the pilot can carry on to
@@ -638,16 +699,26 @@ function render(tNow: number): void {
   scene.osd.render(racePanel.race, flight.sim, crashRecover);
   if (tabs.visible('fly')) scene.updateSticks(commands, mapping.mode);
 
-  // pills
+  // One pill: the radio. The ticker backend, isolation and the poll count were
+  // up there too, and they are developer instrumentation — a visiting pilot
+  // reads "isolated: no" as something they have done wrong, and reads "polls:
+  // 61,204" as nothing at all. When either of the first two actually matters
+  // the banner below says so in words, which is the version worth showing.
+  //
+  // They are still *observable*: both go on the root element as data
+  // attributes, so `npm run check:browser` can assert them against a production
+  // build where the debug handle is absent.
   const pills = $('status-pills');
   const coi = globalThis.crossOriginIsolated === true;
-  const items: { text: string; cls: string }[] = [
-    { text: poller.connected ? `● ${poller.id.slice(0, 42)}` : '○ no device', cls: poller.connected ? 'good' : 'bad' },
-    { text: `ticker: ${tickerBackend}`, cls: tickerBackend === 'atomics' ? 'good' : tickerBackend === 'timeout' ? 'warn' : '' },
-    { text: `isolated: ${coi ? 'yes' : 'no'}`, cls: coi ? 'good' : 'warn' },
-    { text: `polls: ${poller.polls.toLocaleString()}`, cls: '' },
-  ];
-  pills.innerHTML = items.map((i) => `<span class="pill ${i.cls}">${i.text}</span>`).join('');
+  const device = poller.connected ? `● ${poller.id.slice(0, 42)}` : '○ no device';
+  const cls = poller.connected ? 'good' : 'bad';
+  if (pills.dataset.device !== device) {
+    pills.dataset.device = device;
+    pills.innerHTML = `<span class="pill ${cls}">${device}</span>`;
+  }
+  const root = document.documentElement;
+  root.dataset.ticker = tickerBackend;
+  root.dataset.isolated = coi ? 'yes' : 'no';
 
   renderNotice(coi);
 
@@ -902,8 +973,87 @@ $('jitter-start').onclick = startRun;
 // model without a radio attached. Stripped from a production build by the
 // import.meta.env.DEV guard, so it cannot become a load-bearing API.
 if (import.meta.env.DEV) {
-  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl, racePanel };
+  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl, racePanel, telemetry, audio };
 }
+
+// --------------------------------------------------------------------- sound
+
+{
+  const box = $<HTMLInputElement>('sound-enabled');
+  const vol = $<HTMLInputElement>('sound-volume');
+  const state = $('sound-state');
+  const btn = $<HTMLButtonElement>('audio-toggle');
+
+  // Two controls, one owner. The panel and the button both read and write the
+  // FlightAudio instance and redraw from its onChange, so they cannot disagree
+  // — which is the failure a second copy of the state would guarantee.
+  const paint = (): void => {
+    box.checked = audio.enabled;
+    vol.value = String(Math.round(audio.volume * 100));
+    vol.disabled = !audio.enabled;
+    btn.textContent = audio.enabled ? 'Sound: on' : 'Sound: off';
+    btn.setAttribute('aria-pressed', audio.enabled ? 'true' : 'false');
+    state.textContent = !audio.enabled
+      ? 'off — the audio graph is closed, so nothing runs'
+      : audio.state === 'running'
+        ? 'on'
+        : 'on — click anywhere or press a key to start it; browsers will not begin audio on their own';
+  };
+
+  audio.onChange = paint;
+  paint();
+
+  box.onchange = () => audio.setEnabled(box.checked);
+  vol.oninput = () => audio.setVolume(Number(vol.value) / 100);
+  btn.onclick = () => audio.setEnabled(!audio.enabled);
+
+  // M for mute, because in fullscreen the picture is all there is and a button
+  // in a panel underneath does not exist. Same reason the timer went on the
+  // video.
+  globalThis.addEventListener('keydown', (ev: Event) => {
+    const e = ev as KeyboardEvent;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    if (e.key === 'm' || e.key === 'M') audio.setEnabled(!audio.enabled);
+  });
+
+  // The context can only start on a gesture, so the first one is also when the
+  // state text stops being a promise.
+  globalThis.addEventListener('pointerdown', () => setTimeout(paint, 50), { once: true });
+}
+
+// ------------------------------------------------------------- usage sharing
+
+{
+  const box = $<HTMLInputElement>('telemetry-enabled');
+  const nameInput = $<HTMLInputElement>('pilot-name');
+  const state = $('telemetry-state');
+
+  const describe = (): void => {
+    if (!telemetry.transmits) {
+      state.textContent = `dev build — nothing is sent. Your id would be ${telemetry.pilotId.slice(0, 8)}.`;
+      return;
+    }
+    state.textContent = telemetry.enabled
+      ? `on — you are ${telemetry.pilotId.slice(0, 8)}${telemetry.name ? ` (${telemetry.name})` : ''}, sent to this page's own host.`
+      : 'off — nothing is sent.';
+  };
+
+  box.checked = telemetry.enabled;
+  nameInput.value = telemetry.name;
+  describe();
+
+  box.onchange = () => {
+    telemetry.setEnabled(box.checked);
+    describe();
+  };
+  nameInput.onchange = () => {
+    telemetry.setName(nameInput.value);
+    nameInput.value = telemetry.name;
+    describe();
+  };
+}
+
+telemetry.start();
 
 // ---------------------------------------------------------- reset everything
 
@@ -952,6 +1102,8 @@ if (import.meta.env.DEV) {
 
 globalThis.addEventListener('gamepadconnected', refreshDevices);
 globalThis.addEventListener('gamepaddisconnected', refreshDevices);
+
+$<HTMLImageElement>('brand-logo').src = brandLogo;
 
 buildChannelRows();
 buildAuxRows();

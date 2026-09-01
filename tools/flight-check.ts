@@ -17,9 +17,16 @@ import { defaultPids } from '../src/flight/pid.ts';
 import { Mixer } from '../src/flight/mixer.ts';
 import { newMapping, computeCommands, loadMapping, type Mapping } from '../src/mapping.ts';
 import { AuxControl } from '../src/aux-control.ts';
-import { Race } from '../src/race/race.ts';
-import { sixGateCourse, type Course } from '../src/race/course.ts';
-import { raceField, TRACKS } from '../src/render/track.ts';
+import { planeAxes, Race } from '../src/race/race.ts';
+import {
+  COURSES,
+  GATE_HALF_H,
+  GATE_HALF_W,
+  sixGateCourse,
+  type Course,
+} from '../src/race/course.ts';
+import { freestyle, raceField, TRACKS } from '../src/render/track.ts';
+import { buildGateMarker } from '../src/render/renderer.ts';
 import { MeshBuilder } from '../src/render/mesh.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
@@ -1109,8 +1116,9 @@ section('Race: the shipped course can actually be flown');
   for (let lap = 0; lap < 2; lap++) {
     for (const cp of sixGateCourse.checkpoints) {
       if (cp.kind === 'gate') {
-        goto_(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up);
-        goto_(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up);
+        const du = cp.dirU ?? 0;
+        goto_(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up - du * 3);
+        goto_(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up + du * 3);
       } else {
         // Past the pole on the required side, along the direction of travel.
         const offN = cp.dirN * 6;
@@ -1134,6 +1142,136 @@ section('Race: the shipped course can actually be flown');
     res.bestThree === null,
     'two laps flown, so no three-lap figure',
   );
+  // The counters the sound reads. Monotonic and never reset, so noticing a
+  // crossing is a comparison rather than a subscription — which is what keeps
+  // the audio out of the tick.
+  ok(
+    'crossings and laps are counted for anything that wants to react',
+    r.crossings === sixGateCourse.checkpoints.length * 2 && r.lapsCompleted === 2,
+    `${r.crossings} crossings, ${r.lapsCompleted} laps, last was a ${r.lastCrossing}`,
+  );
+}
+
+section('Race: every shipped course can be flown, in order, twice round');
+{
+  // The same drill for all of them, because a course is a list of coordinates
+  // and the way it goes wrong is always the same: a checkpoint facing the
+  // wrong way, or an order that asks for a line nobody can fly. Two laps, so a
+  // course that works once but cannot be re-entered from its own last gate
+  // fails here rather than in front of a pilot.
+  const dt = 0.001;
+  for (const course of COURSES) {
+    const r = new Race(course);
+    r.laps = 2;
+    r.start(0);
+    let n = course.start.north;
+    let e = course.start.east;
+    let u = 1.5;
+    r.setDt(dt);
+    r.step(n, e, u, dt);
+    const goto_ = (tn: number, te: number, tu: number): void => {
+      const d = Math.hypot(tn - n, te - e, tu - u);
+      const steps = Math.max(1, Math.round(d / 14 / dt));
+      const n0 = n;
+      const e0 = e;
+      const u0 = u;
+      for (let i = 1; i <= steps; i++) {
+        const f = i / steps;
+        n = n0 + (tn - n0) * f;
+        e = e0 + (te - e0) * f;
+        u = u0 + (tu - u0) * f;
+        r.setDt(dt);
+        r.step(n, e, u, dt);
+      }
+    };
+    for (let lap = 0; lap < 2; lap++) {
+      for (const cp of course.checkpoints) {
+        if (cp.kind === 'gate') {
+          // The vertical component matters now: a cube's floor is a
+          // checkpoint you drop through, so approaching it means being above
+          // it rather than beside it.
+          const du = cp.dirU ?? 0;
+          goto_(cp.north - cp.dirN * 3, cp.east - cp.dirE * 3, cp.up - du * 3);
+          goto_(cp.north + cp.dirN * 3, cp.east + cp.dirE * 3, cp.up + du * 3);
+        } else {
+          const acrossN = -cp.dirE * cp.passWidth * 0.5 * cp.side;
+          const acrossE = cp.dirN * cp.passWidth * 0.5 * cp.side;
+          goto_(cp.north - cp.dirN * 6 + acrossN, cp.east - cp.dirE * 6 + acrossE, 4);
+          goto_(cp.north + cp.dirN * 6 + acrossN, cp.east + cp.dirE * 6 + acrossE, 4);
+        }
+      }
+    }
+    const out = r.result();
+    ok(
+      `"${course.name}" completes two laps`,
+      r.state === 'finished' && out.laps.length === 2,
+      `${out.laps.length} laps over ${course.checkpoints.length} checkpoints`,
+    );
+    ok(
+      `  and every one of its checkpoints splits`,
+      out.laps[0]?.splits.length === course.checkpoints.length,
+      `${out.laps[0]?.splits.length ?? 0} splits`,
+    );
+  }
+}
+
+section('Race: the new courses are the shapes they claim to be');
+{
+  const thrust = COURSES.find((c) => c.name === 'Thrust line')!;
+  const gates = thrust.checkpoints.filter((c) => c.kind === 'gate');
+  const outLeg = gates.filter((c) => c.dirN > 0.5);
+  const backLeg = gates.filter((c) => c.dirN < -0.5);
+  // Consecutive gates on the out leg must march the same way, or "straight
+  // line" is a claim rather than a fact.
+  let straight = true;
+  for (let i = 1; i < outLeg.length; i++) {
+    const a = outLeg[i - 1]!;
+    const b = outLeg[i]!;
+    if (b.kind !== 'gate' || a.kind !== 'gate') continue;
+    if (Math.abs(b.east - a.east) > 0.01 || b.north <= a.north) straight = false;
+  }
+  ok(
+    'the thrust line is twenty out, twenty back, on two parallel lines',
+    outLeg.length === 20 && backLeg.length === 20 && straight,
+    `${outLeg.length} north, ${backLeg.length} south, turn round a pole between them`,
+  );
+  ok(
+    'and it is long enough to be a thrust test',
+    Math.abs((outLeg[19] as { north: number }).north - (outLeg[0] as { north: number }).north) > 250,
+    `${Math.abs((outLeg[19] as { north: number }).north - (outLeg[0] as { north: number }).north).toFixed(0)} m of straight, each way`,
+  );
+
+  const circle = COURSES.find((c) => c.name === 'Circle')!;
+  let radiusErr = 0;
+  let tangentErr = 0;
+  for (const cp of circle.checkpoints) {
+    const r = Math.hypot(cp.north, cp.east);
+    radiusErr = Math.max(radiusErr, Math.abs(r - 60));
+    // A gate on a circle faces along the tangent, so its direction must be
+    // perpendicular to the radius. This is the whole design in one dot product.
+    const dot = (cp.north / r) * cp.dirN + (cp.east / r) * cp.dirE;
+    tangentErr = Math.max(tangentErr, Math.abs(dot));
+  }
+  ok(
+    'the circle is a circle, and every gate faces along the tangent',
+    circle.checkpoints.length === 20 && radiusErr < 0.01 && tangentErr < 1e-9,
+    `20 gates at 60 m, radius error ${radiusErr.toFixed(4)} m, worst radial component ${tangentErr.toExponential(1)}`,
+  );
+
+  const drill = COURSES.find((c) => c.name === '180s')!;
+  let reversals = 0;
+  for (let i = 1; i < drill.checkpoints.length; i++) {
+    const a = drill.checkpoints[i - 1]!;
+    const b = drill.checkpoints[i]!;
+    if (a.dirN * b.dirN + a.dirE * b.dirE < -0.99) reversals++;
+  }
+  // Nine reversals per row, and the transit between rows keeps its direction —
+  // which is the point of ordering the second row the way it is.
+  ok(
+    'the 180s course really is nothing but turnarounds',
+    drill.checkpoints.length === 20 && reversals === 18,
+    `${reversals} reversals across ${drill.checkpoints.length} gates`,
+  );
 }
 
 section('Race: the drawn gates are the timed gates');
@@ -1142,31 +1280,198 @@ section('Race: the drawn gates are the timed gates');
   // no gates on it. That happened because the race ran its own course whatever
   // map was loaded — but it would happen just as badly if the mesh and the
   // checkpoint list drifted apart, so this asserts they agree.
-  const m = new MeshBuilder();
-  const obs: Obstacle[] = [];
-  raceField.build(m, obs);
-
+  // Every race map, not just the first one. They all go through the same
+  // builder now, so this asserts the property the builder exists to have.
   let worst = 0;
   let worstLabel = '';
-  sixGateCourse.checkpoints.forEach((cp, i) => {
-    let nearest = Infinity;
-    for (const o of obs) {
-      if (o.kind !== 'cylinder') continue;
-      nearest = Math.min(nearest, Math.hypot(o.north - cp.north, o.east - cp.east));
-    }
-    // A gate's nearest solid thing is its own post, one half-width away. The
-    // flag's is the pylon itself, at zero.
-    const expected = cp.kind === 'gate' ? cp.halfWidth : 0;
-    const err = Math.abs(nearest - expected);
-    if (err > worst) {
-      worst = err;
-      worstLabel = `${cp.kind} ${i + 1}: post at ${nearest.toFixed(2)} m, expected ${expected.toFixed(2)}`;
-    }
-  });
+  let checked = 0;
+  for (const track of TRACKS) {
+    if (!track.course) continue;
+    const m = new MeshBuilder();
+    const obs: Obstacle[] = [];
+    track.build(m, obs);
+    track.course.checkpoints.forEach((cp, i) => {
+      // A cube's openings are checkpoints with no frame of their own; the
+      // scenery they name is the cube, and it has no posts.
+      if (cp.kind === 'gate' && cp.frame === 'none') return;
+      checked++;
+      let nearest = Infinity;
+      for (const o of obs) {
+        if (o.kind !== 'cylinder') continue;
+        nearest = Math.min(nearest, Math.hypot(o.north - cp.north, o.east - cp.east));
+      }
+      // A gate's nearest solid thing is its own post, one half-width away. The
+      // flag's is the pylon itself, at zero.
+      const expected = cp.kind === 'gate' ? cp.halfWidth : 0;
+      const err = Math.abs(nearest - expected);
+      if (err > worst) {
+        worst = err;
+        worstLabel = `${track.name} ${cp.kind} ${i + 1}: post at ${nearest.toFixed(2)} m, expected ${expected.toFixed(2)}`;
+      }
+    });
+  }
   ok(
     'every checkpoint has its posts standing exactly where it is',
     worst < 0.05,
-    worst < 0.05 ? `all ${sixGateCourse.checkpoints.length} agree` : worstLabel,
+    worst < 0.05 ? `all ${checked} across every race map agree` : worstLabel,
+  );
+
+  // Distance to the nearest post is the same whatever angle the gate is drawn
+  // at, so the check above passed happily while the gates were snapped to the
+  // nearest axis. This one asks where the posts actually are: centre plus and
+  // minus the *true* across vector. It is the check that would have caught the
+  // circle looking wrong, and it is why the marker and the gate now share one
+  // definition of "across".
+  let postErr = 0;
+  let postLabel = '';
+  let posts = 0;
+  for (const track of TRACKS) {
+    if (!track.course) continue;
+    const m = new MeshBuilder();
+    const obs: Obstacle[] = [];
+    track.build(m, obs);
+    for (const cp of track.course.checkpoints) {
+      if (cp.kind !== 'gate' || cp.frame === 'none') continue;
+      // Right of travel, in NED.
+      const rN = -cp.dirE * cp.halfWidth;
+      const rE = cp.dirN * cp.halfWidth;
+      for (const sign of [1, -1]) {
+        const wantN = cp.north + rN * sign;
+        const wantE = cp.east + rE * sign;
+        let nearest = Infinity;
+        for (const o of obs) {
+          if (o.kind !== 'cylinder') continue;
+          nearest = Math.min(nearest, Math.hypot(o.north - wantN, o.east - wantE));
+        }
+        posts++;
+        if (nearest > postErr) {
+          postErr = nearest;
+          postLabel = `${track.name}: a post is ${nearest.toFixed(2)} m from where the aperture puts it`;
+        }
+      }
+    }
+  }
+  ok(
+    'and its posts are on the true across axis, not snapped to north or east',
+    postErr < 0.05,
+    postErr < 0.05 ? `${posts} posts, worst ${postErr.toFixed(3)} m out` : postLabel,
+  );
+
+  // MultiGP: a 5 ft square aperture, everywhere. A gate you can fly at any
+  // width teaches nothing about the one you cannot.
+  const apertures = COURSES.flatMap((c) => c.checkpoints).filter(
+    (c) => c.kind === 'gate' && c.frame !== 'none',
+  );
+  const offSpec = apertures.filter(
+    (c) => Math.abs(c.halfWidth - GATE_HALF_W) > 0.001 || Math.abs(c.halfHeight - GATE_HALF_H) > 0.001,
+  );
+  ok(
+    'every gate on every course shares one aperture',
+    offSpec.length === 0,
+    `${apertures.length} gates at ${(GATE_HALF_W * 2).toFixed(2)} x ${(GATE_HALF_H * 2).toFixed(2)} m` +
+      `${offSpec.length ? `, ${offSpec.length} off spec` : ''}`,
+  );
+  // Twice MultiGP's 5 ft in height and 30% wider than that, deliberately and on
+  // the record. Worth a check rather than a comment: these numbers are
+  // load-bearing for how every course flies, and a silent drift in either would
+  // change every lap time here.
+  ok(
+    'and it is twice a MultiGP gate tall, 30% wider than square — a stated concession',
+    Math.abs(GATE_HALF_H - 2 * 0.762) < 1e-9 && Math.abs(GATE_HALF_W / GATE_HALF_H - 1.3) < 1e-9,
+    `${(GATE_HALF_H * 2 / 0.3048).toFixed(1)} ft tall against MultiGP's 5 ft, ` +
+      `${(GATE_HALF_W / GATE_HALF_H).toFixed(2)}x as wide as tall`,
+  );
+
+  // The next-checkpoint marker has to trace the aperture it marks. It is built
+  // from the checkpoint, so it follows a resize for free — which is exactly the
+  // kind of thing that is true until someone hard-codes a number, and the
+  // gates have now been resized twice in an afternoon.
+  let markErr = 0;
+  let markLabel = '';
+  let marked = 0;
+  for (const course of COURSES) {
+    for (const cp of course.checkpoints) {
+      if (cp.kind !== 'gate') continue;
+      const data = buildGateMarker(cp);
+      // Measured in the checkpoint's own plane rather than in world axes, so
+      // the same check covers an upright gate and the flat opening in the top
+      // of a cube. The axes come from the same helper the crossing test uses.
+      const [ax, ay] = planeAxes(cp.dirN, cp.dirE, cp.dirU ?? 0);
+      let maxAcross = 0;
+      let maxAlong = 0;
+      for (let i = 0; i < data.vertices.length; i += 9) {
+        // Render to NED: north = -z, east = x, up = y.
+        const dn = -data.vertices[i + 2]! - cp.north;
+        const de = data.vertices[i]! - cp.east;
+        const du = data.vertices[i + 1]! - cp.up;
+        maxAcross = Math.max(maxAcross, Math.abs(dn * ax[0] + de * ax[1] + du * ax[2]));
+        maxAlong = Math.max(maxAlong, Math.abs(dn * ay[0] + de * ay[1] + du * ay[2]));
+      }
+      marked++;
+      const err = Math.max(
+        Math.abs(maxAcross - cp.halfWidth),
+        Math.abs(maxAlong - cp.halfHeight),
+      );
+      if (err > markErr) {
+        markErr = err;
+        markLabel = `${course.name}: marker is ${maxAcross.toFixed(2)} x ${maxAlong.toFixed(2)} against an aperture of ${cp.halfWidth.toFixed(2)} x ${cp.halfHeight.toFixed(2)}`;
+      }
+    }
+  }
+  ok(
+    'and the next-checkpoint marker traces that aperture, whatever its size',
+    markErr < 0.12,
+    markErr < 0.12
+      ? `${marked} markers, worst ${markErr.toFixed(3)} m out — bar thickness, not misplacement`
+      : markLabel,
+  );
+  // A gate must stand on the ground rather than float, and the opening must
+  // clear it — with the aperture doubled, an unchanged centre height would have
+  // put the bottom bar below the grass.
+  const floating = COURSES.flatMap((c) => c.checkpoints).filter(
+    (c) => c.kind === 'gate' && c.up - c.halfHeight < 0.2,
+  );
+  // The cube route, which is the thing a coordinate typo would break silently:
+  // a floor crossing with the wrong sign is still a valid checkpoint, it just
+  // asks the pilot to fly up through a floor they are standing on.
+  const cubeCps = sixGateCourse.checkpoints.filter((c) => c.kind === 'gate' && c.frame === 'none');
+  const single = cubeCps.filter((c) => c.kind === 'gate' && Math.abs(c.east - 16) < 3);
+  const dbl = cubeCps.filter((c) => c.kind === 'gate' && c.east < -15);
+  ok(
+    'the single cube is entered from above and left through a face',
+    single.length === 2 &&
+      single[0]!.kind === 'gate' && single[0]!.dirU === -1 &&
+      single[1]!.kind === 'gate' && (single[1]!.dirU ?? 0) === 0,
+    `${single.length} checkpoints: drop through the top, out through the side`,
+  );
+  // In low, up the shaft, then *across* both storeys. Nothing after the top is
+  // a floor crossing any more: descending the shaft you had just climbed flew
+  // as a repeat of the move you had already made.
+  const dbl2 = dbl as { dirN: number; dirE: number; dirU?: number; up: number }[];
+  ok(
+    'and the double cube goes in low, up the shaft, then across both storeys',
+    dbl.length === 5 &&
+      dbl2[0]!.dirE === -1 &&
+      dbl2[1]!.dirU === 1 &&
+      dbl2[2]!.dirU === 1 &&
+      (dbl2[3]!.dirU ?? 0) === 0 &&
+      (dbl2[4]!.dirU ?? 0) === 0 &&
+      dbl2[3]!.up > dbl2[4]!.up,
+    `${dbl.length} checkpoints: in west, up, up, then the upper storey at ` +
+      `${dbl2[3]!.up.toFixed(1)} m and the lower at ${dbl2[4]!.up.toFixed(1)} m`,
+  );
+  ok(
+    'and the cube openings carry no frame of their own',
+    cubeCps.every((c) => c.kind === 'gate' && c.frame === 'none'),
+    `${cubeCps.length} openings named in scenery that is already standing`,
+  );
+
+  ok(
+    'and no gate has its opening in the ground',
+    floating.length === 0,
+    `lowest opening sits ${Math.min(
+      ...apertures.map((c) => (c.kind === 'gate' ? c.up - c.halfHeight : Infinity)),
+    ).toFixed(2)} m up`,
   );
 
   // The flag-and-gate elements: a pole beside a gate, taken in both orders on
@@ -1209,10 +1514,23 @@ section('Race: the drawn gates are the timed gates');
     }
   }
   tightest = freeStandingNearest;
+  // Both poles still stand on a gate post — that is asserted below, from the
+  // geometry. What changed is the *order*: the second one used to be taken
+  // immediately after its gate, and the two-storey cube now sits between them,
+  // so the pilot leaves the gate, climbs the cube and comes back for the pole.
+  // Adjacency is therefore no longer the invariant; having one of each shape is.
+  const attachedPoles = cps.filter(
+    (cp) =>
+      cp.kind === 'flag' &&
+      cps.some(
+        (o) => o.kind === 'gate' && Math.hypot(o.north - cp.north, o.east - cp.east) < o.halfWidth + 0.2,
+      ),
+  ).length;
   ok(
-    'the course has a flag-and-gate element in both orders',
-    flagBeforeGate >= 1 && gateBeforeFlag >= 1,
-    `${flagBeforeGate} flag-then-gate, ${gateBeforeFlag} gate-then-flag`,
+    'the course has a flag-and-gate element taken straight, and one with a detour',
+    flagBeforeGate >= 1 && attachedPoles === 2 && gateBeforeFlag === 0,
+    `${flagBeforeGate} pole-then-gate; ${attachedPoles} poles stand on a gate post, ` +
+      `the second taken after the cube rather than straight off the gate`,
   );
   ok(
     'an attached pole stands exactly where the gate post would be',
@@ -1237,9 +1555,15 @@ section('Race: the drawn gates are the timed gates');
     'so the race can only run on a map whose gates exist',
   );
   ok(
-    'while the practice maps declare none',
-    TRACKS.filter((t) => t.course).length === 1,
-    `${TRACKS.filter((t) => t.course).length} of ${TRACKS.length} maps carry a course`,
+    'every race map carries its own course, and freestyle carries none',
+    TRACKS.filter((t) => t.course).length === TRACKS.length - 1 && freestyle.course === undefined,
+    `${TRACKS.filter((t) => t.course).length} of ${TRACKS.length} maps carry a course; ` +
+      `${TRACKS.filter((t) => !t.course).map((t) => t.name).join(', ')} does not`,
+  );
+  ok(
+    'and no two maps share a name, since the stored setting is the name',
+    new Set(TRACKS.map((t) => t.name)).size === TRACKS.length,
+    TRACKS.map((t) => t.name).join(', '),
   );
 }
 
@@ -1460,6 +1784,39 @@ section('Performance: the step has to fit inside the 1 kHz tick');
     `  step cost ${usPerStep.toFixed(2)} us — ${budgetPct.toFixed(2)}% of a 1 ms tick`,
   );
   ok('step fits the tick budget with room to spare', usPerStep < 100, `${usPerStep.toFixed(2)} us/step`);
+
+  // With a map loaded, which is the number that actually matters: contact tests
+  // every obstacle against all four contact points, every step. An empty sim
+  // says nothing about the thrust line's forty gates, and adding scenery is the
+  // easiest way to spend the tick budget without noticing.
+  let worstUs = 0;
+  let worstMap = '';
+  let worstCount = 0;
+  for (const track of TRACKS) {
+    const mesh = new MeshBuilder();
+    const obs: Obstacle[] = [];
+    track.build(mesh, obs);
+    const s2 = new FlightSim();
+    s2.obstacles = obs;
+    airborne(s2, 100);
+    const cmd = sticks({ throttle: 0.5, roll: 0.1, pitch: -0.1, yaw: 0 });
+    for (let i = 0; i < 5000; i++) s2.step(cmd);
+    const a = process.hrtime.bigint();
+    const M = 20000;
+    for (let i = 0; i < M; i++) s2.step(cmd);
+    const us = Number(process.hrtime.bigint() - a) / 1000 / M;
+    console.log(`  ${track.name.padEnd(12)} ${String(obs.length).padStart(4)} obstacles  ${us.toFixed(2)} us/step`);
+    if (us > worstUs) {
+      worstUs = us;
+      worstMap = track.name;
+      worstCount = obs.length;
+    }
+  }
+  ok(
+    'and still fits with the busiest map loaded',
+    worstUs < 100,
+    `worst is ${worstMap} at ${worstUs.toFixed(2)} us over ${worstCount} obstacles — ${((worstUs / 1000) * 100).toFixed(1)}% of the tick`,
+  );
 }
 
 // ------------------------------------------------------------------ report

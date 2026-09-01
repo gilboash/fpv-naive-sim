@@ -3,13 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%9A%81%3C/text%3E%3C/svg%3E" />
+    <!-- A quad, drawn rather than an emoji: there is no quadcopter emoji, and a
+         helicopter on an FPV trainer is the wrong aircraft in the tab strip. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Cg%20stroke='%23e8b923'%20stroke-width='3.5'%20stroke-linecap='round'%3E%3Cline%20x1='9'%20y1='9'%20x2='23'%20y2='23'/%3E%3Cline%20x1='23'%20y1='9'%20x2='9'%20y2='23'/%3E%3C/g%3E%3Cg%20fill='none'%20stroke='%23f2f2f2'%20stroke-width='2.5'%3E%3Ccircle%20cx='8'%20cy='8'%20r='5.5'/%3E%3Ccircle%20cx='24'%20cy='8'%20r='5.5'/%3E%3Ccircle%20cx='8'%20cy='24'%20r='5.5'/%3E%3Ccircle%20cx='24'%20cy='24'%20r='5.5'/%3E%3C/g%3E%3Crect%20x='12'%20y='12'%20width='8'%20height='8'%20rx='2'%20fill='%23e8b923'/%3E%3C/svg%3E"
+    />
     <title>naco.fpvsim — FPV trainer</title>
   </head>
   <body>
     <header>
       <h1>naco.fpvsim <span class="dim">/ trainer</span></h1>
       <div id="status-pills" class="pills"></div>
+      <img id="brand-logo" alt="Breaking Carbon" />
     </header>
 
     <div id="notice" class="notice" hidden></div>
@@ -25,16 +31,19 @@
       <section id="scene">
         <h2>FPV view</h2>
         <p class="hint" id="race-hint">
-          On the <strong>Race — six gates</strong> map: nine checkpoints in order. The next one
-          is outlined <strong>green</strong> when you are on the side you take it from and
-          <strong>red</strong> when you are not, so a wrong approach shows before you commit
-          to it. Gates are flown through the way their ground chevrons point; flag poles are
-          passed on the side their small arrow is on.
-          <br />
-          Two of the poles <em>are</em> one side of a gate. Since they share the same line you
-          cannot take both in one pass — go over the gate, round the pole, and back through
-          the aperture, or the reverse. Crashing respawns you where you went in so the race
+          <strong>Race maps</strong> — Race vibes, Thrust line, Circle, 180s — carry checkpoints in
+          order. The next one is outlined <strong>green</strong> when you are on the side you take
+          it from and <strong>red</strong> when you are not, so a wrong approach shows before you
+          commit to it. Gates are flown the way their ground chevrons point; flag poles are passed
+          on the side their small arrow is on. Crashing respawns you where you went in so the race
           can continue, but the lap it happened in does not count.
+          <br />
+          <strong>Race vibes</strong> is the mixed one, and two of its poles <em>are</em> one side of
+          a gate: they share a plane, so you cannot take both in one pass — over the gate, round the
+          pole, back through. <strong>Thrust line</strong> is 20 gates out, a pole to turn round and
+          20 back, for acceleration and braking. <strong>Circle</strong> is 20 gates round a 60 m
+          circle, where a lap is the circle. <strong>180s</strong> is nothing but turnarounds.
+          <strong>Freestyle</strong> has no timer: gates, ladders, chimneys to dive and arches.
         </p>
         <p class="hint">
           Rate mode, camera tilted up as on a real quad. Arm with <strong>A</strong>
@@ -42,6 +51,10 @@
           The physics is unchanged by any of this — the scene reads simulator state and
           never writes it, except to place the quad on the start line.
         </p>
+        <div class="row">
+          <button id="audio-toggle" type="button" aria-pressed="true">Sound: on</button>
+          <span class="dim">or press <kbd>M</kbd> — works in fullscreen too</span>
+        </div>
         <div id="scene-view"></div>
         <div id="race-panel"></div>
         <div id="flight-live"></div>
@@ -107,12 +120,49 @@
       </section>
 
 
+      <section id="sound">
+        <h2>Sound</h2>
+        <p class="hint">
+          Motor noise synthesised from the model's own rotor speeds — one tone per motor at
+          blade-pass frequency, so it beats and swells the way a real quad does under load,
+          and impacts you can hear. There is nothing to download; it is generated as you fly.
+          <strong>Turned off, it is exactly as before:</strong> the audio graph is closed
+          rather than muted, so nothing runs at all.
+        </p>
+        <div class="row">
+          <label><input type="checkbox" id="sound-enabled" checked /> Motor sound</label>
+          <label>Volume
+            <input type="range" id="sound-volume" min="0" max="100" step="1" />
+          </label>
+          <span id="sound-state" class="dim"></span>
+        </div>
+      </section>
+
+      <section id="telemetry">
+        <h2>Improving the simulator</h2>
+        <p class="hint">
+          This sends a short summary to the machine hosting this page — which maps you flew and
+          for how long, your rates and PIDs, lap times and crash count. It is used to improve
+          the simulator and goes nowhere else. No inputs, no positions and no recording of the
+          flight itself; you are identified by a random id, which
+          <em>Reset everything</em> below erases.
+        </p>
+        <div class="row">
+          <label><input type="checkbox" id="telemetry-enabled" checked /> Share usage data</label>
+          <label>Name (optional)
+            <input type="text" id="pilot-name" maxlength="60" placeholder="so it is not just an id" />
+          </label>
+        </div>
+        <p class="hint" id="telemetry-state"></p>
+      </section>
+
       <section id="reset-all">
         <h2>Reset everything</h2>
         <p class="hint">
           Puts every setting back to its default — channel mapping and calibration, rates,
-          PIDs and filters, camera and map. Nothing here leaves your browser, so this only
-          affects you, and it cannot be undone. The page reloads afterwards.
+          PIDs and filters, camera and map — and erases your pilot id, so the next session
+          is a new pilot as far as the host is concerned. It only affects this browser, and
+          it cannot be undone. The page reloads afterwards.
         </p>
         <div class="row">
           <button id="reset-all-btn" type="button" class="danger">Reset all settings</button>
@@ -214,6 +264,11 @@
         </section>
       </div>
     </main>
+
+    <footer class="site-footer">
+      naco.fpvsim by
+      <a href="https://www.instagram.com/nacofpv" target="_blank" rel="noopener noreferrer">@nacofpv</a>
+    </footer>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

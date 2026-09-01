@@ -15,6 +15,18 @@ import type { Checkpoint } from './race/course.ts';
 import { Osd } from './osd.ts';
 import type { Commands, StickMode } from './mapping.ts';
 
+/**
+ * Maps that changed name, so a pilot's stored choice survives the rename.
+ *
+ * Storing by name rather than by index is what makes this a two-line table
+ * instead of a silent repointing: an index is not an identifier, and this file
+ * has been bitten by that twice.
+ */
+const RENAMED: Record<string, string> = {
+  'Race — six gates': 'Race vibes',
+  Circuit: 'Freestyle',
+};
+
 const STORAGE_KEY = 'fpvsim.scene.v1';
 
 interface StoredScene {
@@ -25,7 +37,7 @@ interface StoredScene {
    * Stored by NAME, not by index.
    *
    * It was an index, and adding the race map at position 0 silently repointed
-   * every saved setting at a different map — someone who had chosen the circuit
+   * every saved setting at a different map — someone who had chosen the loop
    * came back to the gate run. An index is not an identifier; it is a fact
    * about the current order of a list.
    */
@@ -212,15 +224,19 @@ export class SceneView {
       if (Number.isFinite(st.fovDeg)) this.fovDeg = Math.max(50, Math.min(130, st.fovDeg));
       if (Number.isFinite(st.tiltDeg)) this.tiltDeg = Math.max(0, Math.min(60, st.tiltDeg));
       if (st.resetMode === 'start' || st.resetMode === 'inPlace') this.resetMode = st.resetMode;
-      const byName = st.trackName ? TRACKS.find((t) => t.name === st.trackName) : undefined;
+      const wanted = st.trackName ? RENAMED[st.trackName] ?? st.trackName : undefined;
+      const byName = wanted ? TRACKS.find((t) => t.name === wanted) : undefined;
       if (byName) this.track = byName;
       else if (typeof st.track === 'number') {
         // One-time migration from the index era. The order at the time was
         // [openField, gateRun, circuit]; the race map went in front of it.
         const legacy = ['Open field', 'Gate run', 'Circuit'][st.track];
-        const t = TRACKS.find((x) => x.name === legacy);
+        const t = legacy ? TRACKS.find((x) => x.name === (RENAMED[legacy] ?? legacy)) : undefined;
         if (t) this.track = t;
       }
+      // A name that is neither current nor renamed is a map that no longer
+      // exists — Open field and Gate run went when the race maps arrived. The
+      // default stands, which is why this is not an error.
     } catch {
       // A corrupt stored setting should cost the defaults, not the page.
     }

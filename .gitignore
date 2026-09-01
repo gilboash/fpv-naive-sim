@@ -11,3 +11,8 @@ build/
 
 # screen(1) capture, not project content
 /screenlog.0
+
+# Collected usage summaries, if serve.py is ever run from the repo root.
+# Anchored: an unanchored `data/` matches a directory of that name at any depth,
+# which silently swallowed two different datasets in ../genius-invester.
+/data/

@@ -104,6 +104,82 @@ export class MeshBuilder {
     }
   }
 
+  /**
+   * A cylinder between two arbitrary points, with end caps.
+   *
+   * `cylinder` above is vertical only, which is all a post needs; a gate's top
+   * and bottom rails run horizontally at whatever heading the gate faces, so
+   * they need the general case. Normals are radial, so it lights like a tube
+   * rather than like a flat bar.
+   */
+  rod(
+    a: readonly [number, number, number],
+    b: readonly [number, number, number],
+    radius: number,
+    segments: number,
+    r: number,
+    g: number,
+    bl: number,
+  ): void {
+    let dx = b[0] - a[0];
+    let dy = b[1] - a[1];
+    let dz = b[2] - a[2];
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-9) return;
+    dx /= len;
+    dy /= len;
+    dz /= len;
+    // Any vector not parallel to the axis will do to start the frame; picking
+    // the world axis the rod points at least along keeps it well conditioned.
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+    const az = Math.abs(dz);
+    const hx = ax < ay && ax < az ? 1 : 0;
+    const hy = ay <= ax && ay < az ? 1 : 0;
+    const hz = hx === 0 && hy === 0 ? 1 : 0;
+    // u = normalise(d x h), v = d x u.
+    let ux = dy * hz - dz * hy;
+    let uy = dz * hx - dx * hz;
+    let uz = dx * hy - dy * hx;
+    const ul = Math.hypot(ux, uy, uz) || 1;
+    ux /= ul;
+    uy /= ul;
+    uz /= ul;
+    const vx = dy * uz - dz * uy;
+    const vy = dz * ux - dx * uz;
+    const vz = dx * uy - dy * ux;
+
+    for (let i = 0; i < segments; i++) {
+      const t0 = (i / segments) * Math.PI * 2;
+      const t1 = ((i + 1) / segments) * Math.PI * 2;
+      const n0x = ux * Math.cos(t0) + vx * Math.sin(t0);
+      const n0y = uy * Math.cos(t0) + vy * Math.sin(t0);
+      const n0z = uz * Math.cos(t0) + vz * Math.sin(t0);
+      const n1x = ux * Math.cos(t1) + vx * Math.sin(t1);
+      const n1y = uy * Math.cos(t1) + vy * Math.sin(t1);
+      const n1z = uz * Math.cos(t1) + vz * Math.sin(t1);
+      const base = this.vertexCount;
+      this.push(a[0] + n0x * radius, a[1] + n0y * radius, a[2] + n0z * radius, n0x, n0y, n0z, r, g, bl);
+      this.push(a[0] + n1x * radius, a[1] + n1y * radius, a[2] + n1z * radius, n1x, n1y, n1z, r, g, bl);
+      this.push(b[0] + n1x * radius, b[1] + n1y * radius, b[2] + n1z * radius, n1x, n1y, n1z, r, g, bl);
+      this.push(b[0] + n0x * radius, b[1] + n0y * radius, b[2] + n0z * radius, n0x, n0y, n0z, r, g, bl);
+      this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+
+      // Caps, as a fan of degenerate quads. Usually buried inside whatever the
+      // rod meets, and cheap enough not to reason about when they are not.
+      for (const [p, sign] of [[a, -1], [b, 1]] as [readonly [number, number, number], number][]) {
+        const c = this.vertexCount;
+        const nx = dx * sign;
+        const ny = dy * sign;
+        const nz = dz * sign;
+        this.push(p[0], p[1], p[2], nx, ny, nz, r, g, bl);
+        this.push(p[0] + n0x * radius, p[1] + n0y * radius, p[2] + n0z * radius, nx, ny, nz, r, g, bl);
+        this.push(p[0] + n1x * radius, p[1] + n1y * radius, p[2] + n1z * radius, nx, ny, nz, r, g, bl);
+        this.idx.push(c, c + 1, c + 2);
+      }
+    }
+  }
+
   /** Flat quad on the ground plane. */
   groundQuad(
     x0: number,

@@ -21,6 +21,37 @@ body {
   font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+/* The logo sits hard right, with the pill pushed left of it. The header is a
+   flex row and `margin-left: auto` on the last item is what keeps the logo
+   there whatever the pill says. */
+#brand-logo {
+  height: 30px;
+  width: auto;
+  margin-left: auto;
+  border-radius: 3px;
+  /* The artwork is white on black; on a dark header that reads as a plate
+     rather than as a mark, so the black is knocked back. */
+  mix-blend-mode: screen;
+  opacity: 0.92;
+}
+
+.site-footer {
+  padding: 18px 20px 26px;
+  color: var(--dim);
+  font-size: 13px;
+  text-align: center;
+  border-top: 1px solid var(--line);
+  margin-top: 26px;
+}
+
+.site-footer a {
+  color: #ffd24a;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.site-footer a:hover { text-decoration: underline; }
+
 header {
   display: flex;
   flex-wrap: wrap;
@@ -478,11 +509,17 @@ tbody tr:hover { background: var(--panel-2); }
   margin: 10px 0;
 }
 
+/* Long courses have many columns; the table scrolls, the page does not. */
+.race-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  margin-bottom: 8px;
+}
+
 .race-table {
   border-collapse: collapse;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  margin-bottom: 8px;
 }
 
 .race-table th {
@@ -502,7 +539,11 @@ tbody tr:hover { background: var(--panel-2); }
 
 .race-table td.best { color: #35c46b; font-weight: 600; }
 .race-table td.laptime { color: #4a9eff; font-weight: 600; }
-.race-table tr.invalid td { color: #5c6675; text-decoration: line-through; }
+/* Dimmed, not struck through. A voided lap still has a time worth reading —
+   and a line through tabular figures is exactly the thing that makes them hard
+   to read. The ✗ and the respawn count beside it say it does not count. */
+.race-table tr.invalid td { color: #7d8899; }
+.race-table tr.invalid td:first-child { color: #ff8a8a; }
 
 /* -------------------------------------------------------------------- OSD */
 
@@ -564,6 +605,49 @@ tbody tr:hover { background: var(--panel-2); }
 .fpv-stage:fullscreen .osd-item { font-size: 18px; }
 
 .osd-count.crashed { font-size: 44px; color: #ff6b6b; letter-spacing: 0.08em; }
+
+/* The finish summary, centred on the video for a few seconds after the line. */
+.osd-summary {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 260px;
+  padding: 14px 18px;
+  background: rgba(8, 11, 14, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  font: 600 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #f2f6fb;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
+.osd-sum-head {
+  color: #ffd24a;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.osd-sum-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.osd-sum-row em { font-style: normal; color: #ff8a8a; font-size: 12px; }
+.osd-sum-row.void { color: #96a1b0; }
+.osd-sum-row.best { color: #56d67f; }
+.osd-sum-row.total {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffd24a;
+}
 
 /* A disabled control has to look disabled. "Start race" was correctly refusing
    clicks on a map with no course, but nothing styled it, so it read as a button

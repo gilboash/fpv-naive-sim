@@ -30,6 +30,9 @@ export class Osd {
   private battery: HTMLElement;
   private alt: HTMLElement;
   private speed: HTMLElement;
+  private summary: HTMLElement;
+  /** When the race finished, so the summary can take itself away. */
+  private finishedAt = 0;
 
   constructor(parent: HTMLElement) {
     const root = el('div', 'osd');
@@ -57,6 +60,17 @@ export class Osd {
     // countdown instead of replacing it.
     this.armWarn = el('div', 'osd-armwarn', '');
     root.appendChild(this.armWarn);
+
+    // The result, on the video, for a few seconds after the last gate.
+    //
+    // The table under the scene has the splits and is the right place to study
+    // a race; this is the right place to *finish* one. In fullscreen the panel
+    // does not exist, and a pilot who has just crossed the line is still
+    // looking at the picture — so hole shot, the laps, and the total, and
+    // nothing per gate.
+    this.summary = el('div', 'osd-summary', '');
+    this.summary.style.display = 'none';
+    root.appendChild(this.summary);
 
     parent.appendChild(root);
   }
@@ -110,12 +124,61 @@ export class Osd {
 
     const cp = race.activeCheckpoint;
     const total = race.course.checkpoints.length;
+    // A cube opening is not "gate 4": the number would count checkpoints while
+    // the blocks beside a gate count gates, and the two stopped agreeing when
+    // the cubes went into the order. Say what the next thing actually is.
+    const label =
+      cp?.kind === 'flag'
+        ? 'FLAG'
+        : cp?.frame === 'none'
+          ? cp.dirU
+            ? `CUBE ${cp.dirU > 0 ? 'UP' : 'DOWN'}`
+            : 'CUBE'
+          : `GATE ${race.gateNumber(race.next)}`;
     this.next.textContent =
-      race.state === 'finished'
-        ? 'FINISHED'
-        : `${cp?.kind === 'flag' ? 'FLAG' : `GATE ${race.next + 1}`}  ${race.next + 1}/${total}`;
+      race.state === 'finished' ? 'FINISHED' : `${label}  ${race.next + 1}/${total}`;
 
     const done = race.completed[race.completed.length - 1];
     this.last.textContent = done ? `LAST ${fmt(done.time)}${done.invalid ? ' ✗' : ''}` : '';
+
+    this.renderSummary(race);
+  }
+
+  /** How long the finish summary stays up, seconds. */
+  private static readonly SUMMARY_S = 9;
+
+  private renderSummary(race: Race): void {
+    if (race.state !== 'finished') {
+      this.finishedAt = 0;
+      this.summary.style.display = 'none';
+      return;
+    }
+    const now = performance.now();
+    if (this.finishedAt === 0) {
+      this.finishedAt = now;
+      const res = race.result();
+      const rows = [`<div class="osd-sum-head">RACE COMPLETE</div>`];
+      rows.push(`<div class="osd-sum-row"><span>HOLE SHOT</span><span>${fmt(res.holeShot)}</span></div>`);
+      for (const lap of res.laps) {
+        // A struck-out lap says why, here as well as in the table: the pilot
+        // who most needs to know is the one who just finished the race.
+        const why = lap.invalid ? ` <em>${lap.respawns} respawn${lap.respawns === 1 ? '' : 's'}</em>` : '';
+        rows.push(
+          `<div class="osd-sum-row${lap.invalid ? ' void' : ''}">` +
+            `<span>LAP ${lap.number}${why}</span><span>${fmt(lap.time)}</span></div>`,
+        );
+      }
+      if (res.best !== null) {
+        rows.push(`<div class="osd-sum-row best"><span>BEST</span><span>${fmt(res.best)}</span></div>`);
+      }
+      if (res.bestThree !== null) {
+        rows.push(`<div class="osd-sum-row"><span>BEST 3</span><span>${fmt(res.bestThree)}</span></div>`);
+      }
+      rows.push(`<div class="osd-sum-row total"><span>TOTAL</span><span>${fmt(res.total)}</span></div>`);
+      // Built once, on the edge. Rebuilding this at 30 Hz would be a DOM churn
+      // for a thing that cannot change once the race is over.
+      this.summary.innerHTML = rows.join('');
+    }
+    this.summary.style.display = (now - this.finishedAt) / 1000 < Osd.SUMMARY_S ? '' : 'none';
   }
 }

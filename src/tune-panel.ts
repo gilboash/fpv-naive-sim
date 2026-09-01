@@ -308,6 +308,22 @@ export class TunePanel {
     }
   }
 
+  /**
+   * The tune as it is being flown right now, copied.
+   *
+   * Reading `fpvsim.tune.v1` instead would miss a pilot who has never edited
+   * anything — the key is absent until the first change — and would report the
+   * defaults as though they had been chosen.
+   */
+  snapshot(): { rates: RateProfile; pids: PidProfile } {
+    // Deep, not spread: the rate triples are arrays this panel edits in place,
+    // so a shallow copy would hand out a live view of them.
+    return JSON.parse(JSON.stringify({ rates: this.rates, pids: this.pids })) as {
+      rates: RateProfile;
+      pids: PidProfile;
+    };
+  }
+
   private save(): void {
     try {
       const s: Stored = { version: 1, rates: this.rates, pids: this.pids };

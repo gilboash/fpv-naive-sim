@@ -1,4 +1,28 @@
+import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
+
+/**
+ * A build stamp, so a session report can be tied to what was actually running.
+ * Without it "a pilot reported X" is unanswerable a week later, because the
+ * deployed bundle has moved on and nothing records which one they flew.
+ *
+ * Falls back to the date when git is unavailable — a tarball build should not
+ * fail over a missing stamp.
+ */
+function buildId(): string {
+  const day = new Date().toISOString().slice(0, 10);
+  try {
+    const sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+    const dirty = execSync('git status --porcelain', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim().length > 0;
+    return `${day}-${sha}${dirty ? '+' : ''}`;
+  } catch {
+    return day;
+  }
+}
 
 // COOP/COEP are set so SharedArrayBuffer / Atomics.wait are available.
 // M0 uses them for a precise worker ticker; M1 needs them for the
@@ -33,5 +57,6 @@ export default defineConfig({
       .map((h) => h.trim())
       .filter((h) => h.length > 0),
   },
+  define: { __FPVSIM_BUILD__: JSON.stringify(buildId()) },
   build: { target: 'esnext' },
 });

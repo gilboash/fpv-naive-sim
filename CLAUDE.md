@@ -470,6 +470,11 @@ drops out of the sky.
 Respawn is forced in place during a race (`scene.forceInPlace`); outside one the
 selector applies.
 
+**The same radio flakes the smoke check.** Its "your throttle is not calibrated"
+banner is about the *pilot's* radio, not the deployment, so an isolated page can
+legitimately be showing one — and did, once, against the live box. The check
+now judges the notice's text rather than merely whether anything is shown.
+
 A note on testing this: the browser check cannot assert "always comes back
 armed", because headless here sees Gilboa's real Radiomaster and its
 availability flickers — and the failsafe disarming on a lost link is correct.
@@ -580,18 +585,17 @@ deselects repeatedly until the disconnected state is actually observed.
 
 **Next, roughly in order:**
 
-1. **Map generation** — the half of "laps and maps" still outstanding. Race mode
-   landed 2026-08-30 on a hand-built six-gate course.
+1. **Map generation** — still outstanding, and now less pressing: four
+   hand-built race maps landed 2026-09-01 (thrust line, circle, 180s, plus the
+   original), so the shape of what a generator would produce is at least known.
 2. **Respawn from the last gate passed** — the third variant, and the only one
    still missing. *In place* landed 2026-08-29 and is now the default, ahead of
    the pilot feedback round; *start line* is the selector's other option. The
    part still worth designing rather than bolting on is that a respawn has to
    invalidate the lap, or the timing added in step 1 measures nothing — so this
    and lap timing are entangled and should be built together.
-3. **Motor sound.** A real flight cue: pilots hear throttle and RPM before they
-   see the response. The model already produces per-rotor RPM, so this is
-   probably the largest immersion-per-effort item left.
-4. **An OSD** — battery, timer, speed.
+3. ~~**Motor sound.**~~ Done 2026-09-01 — see Sound below.
+4. ~~**An OSD**~~ — done 2026-08-30.
 5. **Lens distortion.** The projection is rectilinear where real FPV cameras are
    wide and barrel-distorted; currently mitigated by keeping the FOV modest.
 
@@ -690,7 +694,7 @@ are frequently wrong too.
 ## Hosting for other pilots (2026-08-29)
 
 Gilboa wanted 2-3 pilots to try it remotely. It is entirely client-side —
-verified, no network calls of any kind, four files and ~80 KB — so the host does
+verified, no network calls of any kind, six files and ~170 KB — so the host does
 nothing per pilot. Three things had to be fixed first, all of them silent:
 
 - **Vite blocks tunnel hostnames.** It answers only to localhost and bare IPs
@@ -726,7 +730,7 @@ figure in the README is the atomics backend and the fallback is described as
 serving **127.0.0.1:5180** for a Cloudflare tunnel to point at.
 
 **The box has no Node and does not need one.** The Mac builds; Windows serves
-four static files with `tools/serve.py`, stdlib only. Cloning the repo there
+the built files with `tools/serve.py`, stdlib only. Cloning the repo there
 would not help — it would deliver TypeScript that nothing on that machine can
 compile.
 
@@ -762,9 +766,10 @@ The server process runs as **python3.13**, not `python.exe` — `tasklist` and
 `Get-Process python` both miss it. Find it via
 `Get-NetTCPConnection -LocalPort 5180`.
 
-**Per-pilot state** lives in three localStorage keys: `fpvsim.mappings.v1`
-(per device id), `fpvsim.tune.v1`, and `fpvsim.scene.v1` (FOV, camera tilt, map,
-reset mode). The last of those was added 2026-08-29 — camera tilt and FOV were
+**Per-pilot state** lives in localStorage: `fpvsim.mappings.v1` (per device id),
+`fpvsim.tune.v1`, `fpvsim.scene.v1` (FOV, camera tilt, map, reset mode),
+`fpvsim.tab.v1`, and since 2026-08-31 `fpvsim.pilot.v1` and
+`fpvsim.telemetry.v1` — see Usage collection below. The last of those was added 2026-08-29 — camera tilt and FOV were
 being reset on every reload, which is exactly the kind of friction that gets a
 tool abandoned rather than reported. Note that localStorage is **per origin**,
 so a pilot who sets up on the LAN address and then moves to the Cloudflare one
@@ -777,6 +782,318 @@ all tasks, 2.6 MB heap. The server does nothing per visitor beyond handing over
 
 **Known limitation:** it is a bare background process, so it does not survive a
 reboot. A Scheduled Task or the Docker path would fix that when it matters.
+
+## Usage collection (2026-08-31)
+
+Gilboa wanted to see who is actually flying the thing he lent out: which
+profiles exist, what rates and PIDs they use, which maps and for how long. So
+**the page is no longer purely client-side**, and that was the whole design
+constraint — it had been a deliberate property, defended in the README, rather
+than a gap.
+
+The shape: `src/telemetry.ts` accumulates a session summary and POSTs it to
+`/api/session` (relative, so no third party); `tools/serve.py` grew a `do_POST`
+that appends a line to `data/sessions.jsonl`; `tools/admin.py` reads them back
+as one page on **127.0.0.1:5181**. Settings has a toggle, on by default, and an
+optional pilot name beside a random id in `fpvsim.pilot.v1`.
+
+Four things worth keeping:
+
+- **The tunnel makes every visitor local.** Cloudflare connects to 127.0.0.1, so
+  a "is the client localhost?" check on 5180 would have admitted the internet,
+  and a secret path there would be carried by the tunnel like everything else.
+  The admin view's access control is that the tunnel forwards 5180 and only
+  5180, so 5181 has no route from outside whatever it binds. An address, not a
+  secret — and there is no password on that page, so the address is the whole
+  of it.
+
+  **Bound to 0.0.0.0 since 2026-08-31, at Gilboa's request**, so it answers on
+  `192.168.7.54:5181` from the house network (firewall rule `fpvsim admin
+  5181`). That widens it to everything on that LAN, which is a decision about a
+  home network rather than a general one. `--host 127.0.0.1` on `admin.py`, or
+  passing `127.0.0.1` to the bat, puts it back to the box plus an `ssh -L`. The
+  page is read-only, so what is exposed is the data, not the collection.
+- **`robocopy /MIR` would have deleted the collection on every deploy.** The box
+  now holds state for this app where it previously held none, which is exactly
+  the assumption the old comment in `deploy-windows.sh` was written on. `/XD
+  <dest>\data` is load-bearing; verified by posting a record, deploying twice,
+  and finding it still there.
+- **Whole summaries, resent, deduplicated by session id.** A lost beacon then
+  costs nothing and the reader takes the newest rather than summing — summing
+  would multiply a flight by the number of heartbeats it survived. `send()` also
+  skips an unchanged summary, which is what stops `pagehide` and
+  `visibilitychange` from each leaving a copy: they both fire when a tab closes,
+  and the first end-to-end run put two identical records in the file.
+- **Do not edit `sessions.jsonl` with PowerShell.** `Set-Content -Encoding utf8`
+  writes a BOM, and a BOM on the first line makes that line unparseable while
+  the file looks perfectly normal in an editor — the admin page went from one
+  pilot to "1 unreadable line" for exactly that reason. The box has python;
+  use it. `admin.py` now reads `utf-8-sig` so the same mistake is survivable.
+- **The deploy's restart step no longer returns.** The bat detaches its servers
+  with `Start-Process`, and with two of them the SSH channel stays open behind
+  them, so the deploy hangs *after having already succeeded* — the confusing
+  kind of failure. Redirecting the remote output does not help; it was tried.
+  The script now backgrounds that call and cuts it loose after 8 s, which is
+  safe precisely because `Start-Process` detaches (the servers were still up
+  after the first hung run was killed). Verification is a separate connection,
+  so what it reports is the box's state rather than that call's exit code.
+- **Names are stored exactly as typed and escaped only on the way out.**
+  Sanitising on the way in would have hidden the fact that the admin page is
+  where a `<script>` in a name would run. There is a check for each half.
+
+Armed seconds, not page seconds. The counter is in the tick behind
+`flight.sim.armed`, so a tab left open all afternoon reports nothing.
+
+A trap when checking that: headless has no radio, so the failsafe disarms the
+model on the very next tick and the counter correctly reads zero. The browser
+check holds `poller.connected` true for the measurement, or it would be
+measuring the failsafe.
+
+## Sound (2026-09-01)
+
+Synthesised, not sampled (`src/audio.ts`). Four oscillators, one per motor, at
+blade-pass frequency (`rpm/60 x blades`) with a few harmonics, through a lowpass
+that opens with load, plus band-limited noise for the disc and airspeed. The
+beating between the four as the mixer splits them is the sound; one tone at mean
+rpm is a hair dryer.
+
+**"Off is exactly like now" was the requirement, so off closes the
+AudioContext** rather than muting it — no graph, nothing on the audio thread,
+one property check per rendered frame. There is a check asserting `state ===
+'closed'`, zero oscillators, and `update()` still safe to call.
+
+Nothing audio touches the 1 kHz tick: a crash sets a flag there and the render
+loop builds the voices. `update()` runs at 30 Hz with `setTargetAtTime`
+smoothing, so the update rate is inaudible.
+
+Three things worth keeping:
+
+- **Browsers will not start audio without a gesture**, and a pilot flying from a
+  radio may never make one. The context is built on the first pointerdown or
+  keydown, and the Settings text says so rather than leaving a silent toggle
+  that reads as broken.
+- **Headless needs `--autoplay-policy=no-user-gesture-required`.** Without it the
+  context stays suspended and every sound assertion passes vacuously.
+- **A parameter read is not a hearing test.** `audio.debug()` says the graph was
+  *asked* for 1 200 Hz, which is just as true of a graph that is silent or
+  clipping. `tools/sound-preview.mjs` taps the mix in a real browser and writes a
+  WAV — that is what `FlightAudio.output` is exposed for.
+
+**Checkpoint chimes (2026-09-01):** a gate, a flag and a completed lap each have
+their own blip, queued from the tick by comparing `Race.crossings` /
+`Race.lapsCompleted` — monotonic counters that never reset, so noticing a
+crossing is a comparison rather than a subscription, and the tick allocates
+nothing. A lap wins over the gate that completed it; they land on the same
+crossing and two sounds at once is noise rather than feedback.
+
+**The first pitches were wrong and the mix proved it.** A gate at 1 568 Hz and a
+flag at 1 244 sat straight on top of blade pass at full throttle (~1.4 kHz with
+harmonics above), so in the recording the chime was indistinguishable from the
+motor sweeping past the same note. They are 2 349 / 1 760 / arpeggio now, with a
+6% downward glide — a dead-steady tone reads as part of the motor noise, a
+falling one reads as an event. Measured in the WAV: they now stand 5-30x above
+the rotor band depending on throttle.
+
+A trap when checking it: the page's own render loop calls `update()` at 30 Hz
+with the live model, so any before/after measurement that yields to the event
+loop is a race and gets overwritten. The mapping check feeds a stand-in
+telemetry object and then *blocks* the main thread while the ramp settles — the
+audio thread keeps running, so the reading is of what is actually heard.
+
+## Four more maps (2026-09-01)
+
+`TRACKS` is now `[raceField, thrustLine, circleTrack, oneEightyTrack,
+freestyle]`. Race vibes (was "Race — six gates"), plus three new race courses,
+plus Freestyle (was "Circuit"). Open field and Gate run are gone — the first was
+an empty scene, the second is what the thrust line now does properly and times.
+
+- **Thrust line**: 20 gates over 266 m, a pole to turn round, 20 back on a
+  parallel line. One lap.
+- **Circle**: 20 gates round a 60 m circle, each facing along the tangent, so a
+  lap is the circle. A mast at the centre, because without one fixed feature a
+  circle and a spiral look the same.
+- **180s**: two combs of ten gates 12 m apart, direction alternating, so the
+  course is nothing but turnarounds. The second row is ordered so the transit
+  between rows keeps its direction rather than adding an eleventh turn.
+- **Freestyle**: the old circuit plus ladders (gaps as windows), chimneys (open
+  shafts on legs, dive in the top and out the bottom) and arches.
+
+**One aperture everywhere, 3.96 x 3.05 m** (`GATE_HALF_W`, `GATE_HALF_H`), race
+and freestyle alike, with the frame proportioned round it — the whole gate
+scales with those two numbers, and `GATE_UP = GATE_HALF_H + 0.53` keeps the
+bottom of the opening half a metre off the grass however the aperture changes.
+The frame is tube throughout: uprights banded yellow/white like the flag poles,
+rails drawn with `MeshBuilder.rod` (a cylinder between two arbitrary points —
+`cylinder` is vertical only, and a gate's rails run at whatever heading the gate
+faces). Rails are the **same radius as the posts** and run post-axis to
+post-axis, which is what removes the seam: the post's end cap ends up inside the
+rail's surface. They also sit clear of the aperture — top rail underside at the
+top of the opening — so the hole a pilot sees is the hole the timer uses.
+
+Contact is unchanged by any of that: a rail is still a run of AABBs, one for an
+axis-aligned rail and three for a diagonal.
+
+It went through three sizes in an afternoon, all on Gilboa flying it: MultiGP's
+exact 5 ft square at his request, doubled when that read as slots rather than
+gates, then 30% wider still. **Recorded as "twice MultiGP, 30% wider than
+square" rather than relabelled**, with checks on both numbers: the shape is the
+standard one, the size is a concession, and a silent drift in either would
+change every lap time here.
+
+The lesson from doing it three times is that the *marker* never needed touching.
+It is built from the checkpoint, so it traced each new aperture for free — and
+there is now a check asserting that, because "it happens to share the numbers"
+holds only until someone hard-codes one.
+
+Doubling it also needed the centre height to move — at the old `GATE_UP` the
+bottom bar would have been under the grass. There is a check for that now
+too, which is the kind of thing that only becomes possible to get wrong once a
+size is a variable.
+
+Things that came out of building it:
+
+- **Renaming a map needs a migration, because the stored setting is the name.**
+  `RENAMED` in scene-view.ts maps the two old names forward. Storing by name is
+  what made this a two-line table instead of the silent repointing an index gave
+  twice before.
+- **All four race maps go through one `raceScenery(m, obs, course)`.** The
+  drawn-vs-timed check now runs over every race map — 90 checkpoints — rather
+  than the one it was written for.
+- **`raceGate` snapped to an axis, and read its direction out of
+  `sixGateCourse` by index.** Both were invisible while there was one race map
+  with axis-aligned gates. On the circle every gate faces a different way, so
+  every one was drawn facing the nearest axis — which is why Gilboa saw the
+  next-checkpoint marker "tilted" relative to the gate. **The marker was right
+  and the gate was wrong**; they now share one definition of across, `(dirN,
+  dirE)` in render space. The old check measured *distance* to the nearest post,
+  which is halfWidth at any angle and so passed throughout; there is now one
+  that asks where the posts actually are.
+- **Splitting a beam into collision boxes is not free.** Five boxes per bar took
+  the busiest map to 15 us/step. An axis-aligned beam is exactly one box and
+  only a diagonal one needs three, which halves it — and there is now a
+  performance check that loads each map's obstacles rather than measuring an
+  empty sim, because adding scenery is the easiest way to spend the tick budget
+  without noticing. Worst map is 8.3 us, 0.8% of the tick.
+- **An arch cannot be built from axis-aligned boxes**; `quadColored` takes
+  arbitrary corners, so the drawn surface follows the curve and collision stays
+  one AABB per segment. Contact does not care what it looks like.
+- **41 checkpoints means 43 table columns.** The results table needed a
+  scrolling wrapper, or the panel and the page grow sideways. A long course was
+  not a case the table had ever seen.
+- The headless screenshot tool wants `camera.tiltDeg` **negative** to look down —
+  positive is up, as a real FPV camera is tilted. And CDP's screenshot `clip` is
+  in page coordinates, so `scrollX/scrollY` have to be added back after a
+  `scrollIntoView`.
+
+## Finish OSD, the strikethrough, and the page furniture (2026-09-01)
+
+**Every lap came back struck through and Gilboa asked why.** The timer was not
+inventing it — a browser check now flies a clean race through the page with
+nothing to hit and asserts zero invalid laps — but nothing *said* why, and in
+fullscreen the table with the legend does not exist. A lap is voided only by a
+respawn, so `Lap` carries `respawns` now and both the table and the OSD say
+"✗ 2 respawns" rather than just striking the row out. A crash respawns
+automatically, which is the case a pilot does not connect to a void lap.
+
+**The result goes on the video** for nine seconds after the last gate: hole
+shot, each lap, best, best three, total — and no splits, because the panel
+underneath is where a race is studied and the video is where one is finished.
+Built once on the edge into `finishedAt` rather than rebuilt at 30 Hz.
+
+**The header lost three pills.** `ticker:`, `isolated:` and `polls:` were
+developer instrumentation shown to visiting pilots, who read "isolated: no" as
+something they did wrong and "polls: 61,204" as nothing at all. The banner
+already says both in words when they matter. They live on
+`document.documentElement.dataset` now so `check:browser` can still assert them
+against a production build, where there is no debug handle — that is the whole
+reason they are not simply gone.
+
+Also: Breaking Carbon's logo hard right in the header (`src/assets/`, bundled by
+Vite, `mix-blend-mode: screen` so white-on-black artwork does not read as a
+plate), an Instagram footer, and a **drawn SVG quad favicon** — there is no
+quadcopter emoji, and a helicopter on an FPV trainer is the wrong aircraft.
+
+**Cubes on Race vibes** (`cube()` in track.ts): four square openings from the
+same tube as the gates, side = the gate's *height* so a face is as tall as a
+gate and noticeably narrower, which is what stops it reading as a gate with
+extra sides. One single, one two-storey, either side of the course.
+**Deliberately not checkpoints** — there is a check asserting the course is
+still nine — so a line through them can be found by flying before anything is
+timed through them.
+
+Two checks fixed while in there, both of which had been quietly wrong:
+
+- **The quad-view direction checks drove the model on `performance.now()`**, so
+  the angle depended on how fast the machine drew: 40 frames turned 100 degrees
+  on a good run and 240 on a slow one, which failed as an apparent reversal.
+  They drive a synthetic clock now, and 12 frames of 16 ms at 500 deg/s is
+  exactly 96 degrees on any machine.
+- **`/\s+/` inside a template literal bound for the page is `/s+/`.** One
+  backslash is eaten by the literal, so the check's footer text had every "s"
+  replaced with a space and read "naco.fpv im by". Cosmetic here; the same slip
+  in an assertion would not be.
+
+## Cubes on the course, and a checkpoint you drop through (2026-09-01)
+
+Race vibes now routes through both cubes, which needed the checkpoint model to
+grow a dimension it had assumed away since the first gate.
+
+**`Gate.dirU` makes a checkpoint a horizontal plane.** Zero — the default — is
+the gate everyone means: a frame flown through sideways. ±1 is the open top of a
+cube, dropped through. The crossing test used to assume a horizontal normal and
+hard-code across-and-up as the in-plane axes; both now come from `planeAxes()`,
+which the renderer's marker imports too, so the marker traces the plane the test
+uses. That was already the rule; it is now the same function.
+
+**`Gate.frame: 'none'`** says the scenery is already standing and this
+checkpoint only names an opening in it. Without it the map drew a gate frame
+inside the cube it belonged to.
+
+The route, all of it Gilboa's: off gate 2, climb and **drop into the single cube
+through its open top**, out through the west face. Off gate 5, **into the double
+cube at ground level through the face nearest the course, up the shaft and out
+of the top**, then across — in through the upper storey's north face and out its
+south side, then round and north through the ground storey — and only then the
+pole that stands on gate 5. Sixteen checkpoints.
+
+Descending the shaft you had just climbed was the first version and Gilboa cut
+it after flying it: it read as a repeat of the move already made. Going *across*
+both storeys instead is a different problem each time.
+
+**Cube panels are `CUBE_HALF = GATE_HALF_H * 1.2`**, so an opening is 3.66 m
+square against a gate's 3.05 m of height — larger than a gate on purpose,
+because a cube face is taken at an angle far more often than a gate is, and the
+top one is entered blind.
+
+Three things fell out of it:
+
+- **`cubeFace` needs the wall and the direction separately.** Conflating them
+  put the entry plane on the *far* wall, so the cube could be "entered" by
+  flying past it. Entering and leaving by the same face is the whole point and a
+  single heading cannot express it.
+- **The marker tint ignored the vertical.** `ahead` was a horizontal dot
+  product, which is identically zero when dirN and dirE are, so every cube floor
+  sat exactly on the boundary and the colour said nothing about the one
+  checkpoint where the side you are on means above or below. It is
+  `Renderer.markerTint()` now, so a check can ask it directly instead of
+  counting pixels through a camera.
+- **Checkpoint index stopped being gate number.** The blocks beside a gate count
+  gates; the OSD was counting checkpoints. `Race.gateNumber()` counts only the
+  ones that stand as gates, and a cube opening reads "CUBE DOWN" rather than
+  "GATE 4".
+
+**A block of cubes on Freestyle**: a 3x3 grid of one, two and three storeys,
+joined side to side so the faces line up. Deliberately a block rather than
+cubes standing apart — the interesting line is the one that goes through
+several without coming out, and that only exists when they are joined. It took
+the map from 201 obstacles to 333 and the step from 7.5 to 13 us, which is 1.3%
+of the tick and is why that check measures maps rather than an empty sim.
+
+**Strikethrough is gone from voided laps.** Gilboa asked twice — the second time
+about the styling rather than the cause. A line through tabular figures is
+exactly what makes them unreadable, and a voided lap still has a time worth
+seeing. Dimmed, with the ✗ and the respawn count doing the work, in the table
+and on the video alike.
 
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:

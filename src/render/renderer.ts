@@ -25,6 +25,7 @@ import { mat4, multiply, perspective, viewFromBasis, type Mat4 } from './mat4.ts
 import type { Track } from './track.ts';
 import type { Obstacle } from '../flight/collision.ts';
 import type { Checkpoint, Flag, Gate } from '../race/course.ts';
+import { planeAxes } from '../race/race.ts';
 
 const VERT = `#version 300 es
 precision highp float;
@@ -201,6 +202,25 @@ export class Renderer {
    * One buffer, re-filled. Creating a fresh VAO per checkpoint would leak one
    * per gate for the length of a session.
    */
+  /**
+   * Which side of the next checkpoint the quad is on.
+   *
+   * A method rather than three lines inline so the checks can ask it without a
+   * camera and a pixel count — and the vertical term matters: for a cube's
+   * floors dirN and dirE are both zero, so the horizontal dot product is
+   * identically zero and the tint would sit on the boundary, saying nothing
+   * about the one checkpoint where the side you are on means above or below.
+   */
+  markerTint(cp: Checkpoint, sim: FlightSim): 'green' | 'red' {
+    const up = cp.kind === 'gate' ? cp.up : cp.height;
+    const dU = cp.kind === 'gate' ? (cp.dirU ?? 0) : 0;
+    const ahead =
+      (sim.pos.x - cp.north) * cp.dirN +
+      (sim.pos.y - cp.east) * cp.dirE +
+      (-sim.pos.z - up) * dU;
+    return ahead < 0 ? 'green' : 'red';
+  }
+
   private uploadMarker(data: MeshData): void {
     const gl = this.gl;
     if (!this.marker) {
@@ -362,9 +382,7 @@ export class Renderer {
       // pilot they are on the wrong side costs a uniform rather than a rebuilt
       // mesh every frame.
       const cp = this.markerCp;
-      const ahead =
-        (sim.pos.x - cp.north) * cp.dirN + (sim.pos.y - cp.east) * cp.dirE;
-      if (ahead < 0) gl.uniform3f(this.uTint, 0.16, 1.0, 0.42);
+      if (this.markerTint(cp, sim) === 'green') gl.uniform3f(this.uTint, 0.16, 1.0, 0.42);
       else gl.uniform3f(this.uTint, 1.0, 0.24, 0.24);
 
       gl.uniform1f(this.uUnlit, 1);
@@ -436,7 +454,12 @@ function bar(
  * accept and points an arrow the way it must be taken, so the marker is the
  * instruction rather than a hint at one.
  */
-function buildGateMarker(gate: Gate): MeshData {
+/**
+ * Exported so the headless checks can measure it. The marker has to trace the
+ * aperture it marks — that is the whole of what it promises — and the only way
+ * to assert that without a GPU is to build the mesh and read its corners.
+ */
+export function buildGateMarker(gate: Gate): MeshData {
   const m = new MeshBuilder();
   // NED to render, and the gate's across-axis in render space.
   const cx = gate.east;
@@ -446,16 +469,19 @@ function buildGateMarker(gate: Gate): MeshData {
   // x = east and z = -north, gives (dirN, dirE). Getting these two the wrong
   // way round drew the frame across the direction of flight instead of across
   // the gate, which looked like a skewed sliver rather than a rectangle.
-  const ux = gate.dirN;
-  const uz = gate.dirE;
+  // Both in-plane axes come from the shared helper, so a horizontal checkpoint
+  // — the open top of a cube — traces a rectangle lying flat rather than a
+  // frame standing on edge. NED to render on the way out: x = east, y = up,
+  // z = -north.
+  const [axN, ayN] = planeAxes(gate.dirN, gate.dirE, gate.dirU ?? 0);
+  const ax: [number, number, number] = [axN[1], axN[2], -axN[0]];
+  const ay: [number, number, number] = [ayN[1], ayN[2], -ayN[0]];
   const w = gate.halfWidth;
   const h = gate.halfHeight;
-  const y0 = gate.up - h;
-  const y1 = gate.up + h;
   const corner = (sx: number, sy: number): [number, number, number] => [
-    cx + ux * w * sx,
-    sy > 0 ? y1 : y0,
-    cz + uz * w * sx,
+    cx + ax[0] * w * sx + ay[0] * h * sy,
+    gate.up + ax[1] * w * sx + ay[1] * h * sy,
+    cz + ax[2] * w * sx + ay[2] * h * sy,
   ];
   const t = 0.07;
   bar(m, corner(-1, -1), corner(1, -1), t, MARK);
