@@ -320,21 +320,64 @@ function joinTurn(exit: Vec, exitDir: Vec, entry: Vec, entryDir: Vec, radius: nu
   // about direction, not distance.
   if (ahead > 0.25 && opposed > 0) return [];
 
-  // Which side to swing: whichever the next checkpoint already lies toward.
-  const perpN = -exitDir.e;
-  const perpE = exitDir.n;
-  const side = dN * perpN + dE * perpE >= 0 ? 1 : -1;
+  // Two constructions, because one did not serve both.
+  //
+  // A turn between two level checkpoints is a horizontal swing at the height
+  // between them: that is what a pilot flies and what the thrust line's
+  // hairpin needs. Generalising it to three dimensions tilted the swing, and
+  // the aircraft — already spending its thrust on the turn — sank into the
+  // ground at 165 m north.
+  //
+  // A turn into the top of a cube is not horizontal at all, and cannot be
+  // expressed that way. That one gets the general construction.
+  const vertical = Math.abs(exitDir.u) > 0.5 || Math.abs(entryDir.u) > 0.5;
   const midU = (exit.u + entry.u) / 2;
+  if (!vertical) {
+    const perpN = -exitDir.e;
+    const perpE = exitDir.n;
+    const side = dN * perpN + dE * perpE >= 0 ? 1 : -1;
+    return [
+      {
+        n: exit.n + exitDir.n * radius + perpN * radius * side,
+        e: exit.e + exitDir.e * radius + perpE * radius * side,
+        u: midU,
+      },
+      {
+        n: entry.n - entryDir.n * radius + perpN * radius * side,
+        e: entry.e - entryDir.e * radius + perpE * radius * side,
+        u: midU,
+      },
+    ];
+  }
+
+  let pN = dN - ahead * len * exitDir.n;
+  let pE = dE - ahead * len * exitDir.e;
+  let pU = dU - ahead * len * exitDir.u;
+  const pl = Math.hypot(pN, pE, pU);
+  if (pl < 1e-6) {
+    // Exactly reversing, with no offset to swing toward: pick the horizontal
+    // perpendicular, which is what a pilot would do rather than a vertical
+    // loop.
+    pN = -exitDir.e;
+    pE = exitDir.n;
+    pU = 0;
+  } else {
+    pN /= pl;
+    pE /= pl;
+    pU /= pl;
+  }
+  const uAt = (base: number, dirU: number): number =>
+    Math.max(1, base + dirU * radius + pU * radius);
   return [
     {
-      n: exit.n + exitDir.n * radius + perpN * radius * side,
-      e: exit.e + exitDir.e * radius + perpE * radius * side,
-      u: midU,
+      n: exit.n + exitDir.n * radius + pN * radius,
+      e: exit.e + exitDir.e * radius + pE * radius,
+      u: uAt(exit.u, exitDir.u),
     },
     {
-      n: entry.n - entryDir.n * radius + perpN * radius * side,
-      e: entry.e - entryDir.e * radius + perpE * radius * side,
-      u: midU,
+      n: entry.n - entryDir.n * radius + pN * radius,
+      e: entry.e - entryDir.e * radius + pE * radius,
+      u: uAt(entry.u, -entryDir.u),
     },
   ];
 }
@@ -626,6 +669,31 @@ function main(): number {
     let bestResult = flyLap(course, best, laps, rates);
     let bestScore = score(bestResult, course, laps);
     report('centres', bestResult);
+
+    // A coarse scan before the descent, over the two parameters that decide
+    // whether a lap completes at all.
+    //
+    // Coordinate descent needs somewhere to start, and once thrust-to-weight
+    // was measured rather than guessed the default plan became aggressive
+    // enough that some courses do not finish from it — the thrust line's
+    // hairpin in particular. Unfinished laps score by how far they got, which
+    // is a gradient of sorts, but a scan finds the flyable region in fifteen
+    // evaluations rather than hoping to crawl there.
+    if (forcedGrip === undefined && forcedVmax === undefined) {
+      for (const grip of [0.12, 0.2, 0.28, 0.35, 0.5]) {
+        for (const vMax of [20, 28, 36]) {
+          const trial: LapParams = { ...best, offsets: [...best.offsets], grip, vMax };
+          const r = flyLap(course, trial, laps, rates);
+          const sc = score(r, course, laps);
+          if (sc < bestScore - 1e-4) {
+            best = trial;
+            bestResult = r;
+            bestScore = sc;
+          }
+        }
+      }
+      report('best of a scan', bestResult);
+    }
 
     if (iterations > 0) {
       // Coordinate descent with a shrinking step. Crude, and it does not need
