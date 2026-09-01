@@ -509,31 +509,6 @@ tbody tr:hover { background: var(--panel-2); }
   margin: 10px 0;
 }
 
-/* The bot reference lap, below the pilot's own result. */
-.race-reference {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-}
-
-.race-ref-head {
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #7d8899;
-  margin: 0 0 8px;
-}
-
-.race-ref-video {
-  display: block;
-  width: 100%;
-  max-width: 640px;
-  margin: 10px 0 4px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #000;
-}
-
 /* Long courses have many columns; the table scrolls, the page does not. */
 .race-scroll {
   overflow-x: auto;

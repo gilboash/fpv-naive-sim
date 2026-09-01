@@ -1113,6 +1113,53 @@ exactly what makes them unreadable, and a voided lap still has a time worth
 seeing. Dimmed, with the ✗ and the respawn count doing the work, in the table
 and on the video alike.
 
+## The bot pilot, parked (2026-09-01)
+
+Built, shown to Gilboa, and **taken out of the product on his call**: the Circle
+looked right and everything else looked like an aircraft recovering rather than
+flying. He was right, and a reference nobody should measure themselves against
+is worse than no reference. Nothing reached the box — pilots never saw it.
+
+**Kept**: `src/flight/autopilot.ts`, `tools/optimal-lap.ts`,
+`tools/replay-video.mjs`, `tools/write-reference.mjs`, `npm run reference`.
+**Removed**: the panel block, its styles, `src/race/reference*.ts`, and the
+browser checks for them. The machinery is worth keeping; the half-good feature
+was not.
+
+Times reached, for whoever picks this up: Circle 11.29 s, Thrust line 22.07 s,
+180s 71.52 s. Race vibes never completed — it stops at the cube drop-through.
+
+**Why it looks wrong, as far as the diagnosis got.** These are the things a
+better attempt should start from rather than rediscover:
+
+- **The line is geometry, not a trajectory.** It is a spline through the
+  apertures with a velocity profile bolted on, and nothing in it knows the
+  aircraft has attitude. So the corner exists before the aircraft is pointing at
+  it, and the controller spends every transition catching up. That is exactly
+  what "flies weird" looks like from outside. The real formulation is
+  time-optimal control over the actual dynamics (the drone-racing literature
+  does this with complementary progress constraints and an NLP solver), and it
+  is a different program, not a tuning of this one.
+- **Tracking error, not thrust, is the binding constraint.** Peak cross-track
+  error on the circle grows with speed — 2.5 m at 32 m/s, 3.8 at 36, 5.8 at 40 —
+  against a 1.98 m aperture half-width. The aircraft misses the gate before it
+  runs out of anything physical. Every "why not faster" question ends here.
+- **Feedforward is built and switched off** (`ffWeight`, default 0). At full
+  weight the numerically differentiated spline costs more in noise than it buys
+  in lead. It is the right idea against the wrong line: differentiating a
+  smooth *trajectory* would work, differentiating this one does not.
+- **Pure pursuit cuts hairpins** unless the search window is bounded by arc
+  length, and the approach-stub length is worth 15.9 s against 29.1 s on the
+  same course, which is a sign the line generator is doing too much of the work
+  that the optimiser should be doing.
+
+Three bugs that cost real time and are already fixed, so at least they are paid
+for: north-east-up is left-handed and every cross product in the attitude error
+came out backwards; correcting along-track error as if it were cross-track
+demanded 25 m/s^2 to fly at 12; and thrust-to-weight was assumed at 3.2 when the
+model has **8.1** (hover 9 428 rpm against 28 046 at full throttle, thrust as
+rpm squared — hover is 11% of maximum).
+
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:
 
