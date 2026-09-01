@@ -122,6 +122,14 @@ const setup = await evaluate(`(async () => {
   // The page owns the physics; for a replay it must not. Making the step a
   // no-op is simpler and more reliable than racing it every frame.
   flight.sim.step = () => {};
+
+  // And it owns the stick overlay, which it redraws every frame from the live
+  // radio — with no radio that is four zeroes, so it quietly wiped the recorded
+  // sticks between the moment they were set and the moment the screenshot was
+  // taken. The first video showed a motionless left stick for a whole lap.
+  // Neutralised the same way, with the real one kept for the replay to call.
+  globalThis.__replayUpdateSticks = scene.updateSticks.bind(scene);
+  scene.updateSticks = () => {};
   flight.sim.armed = true;
   flight.sim.crashed = false;
   racePanel.race.reset();
@@ -162,7 +170,7 @@ for (let i = 0; i < frames.length; i += stride) {
     s.telemetry.batteryV = ${f.batteryV};
     s.telemetry.batteryA = ${f.batteryA};
     scene.render();
-    scene.updateSticks({ throttle: ${f.throttle}, roll: ${f.roll}, pitch: ${f.pitch}, yaw: ${f.yaw} }, mapping.mode);
+    globalThis.__replayUpdateSticks({ throttle: ${f.throttle}, roll: ${f.roll}, pitch: ${f.pitch}, yaw: ${f.yaw} }, mapping.mode);
   })()`);
   const shot = await send('Page.captureScreenshot', { format: 'png', clip: setup.clip }, sessionId);
   writeFileSync(join(shots, `f${String(n).padStart(5, '0')}.png`), Buffer.from(shot.result.data, 'base64'));

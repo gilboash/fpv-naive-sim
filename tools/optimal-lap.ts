@@ -124,29 +124,54 @@ function waypointFor(cp: Checkpoint, across: number, up: number, inStub: number,
   ];
 }
 
-/** Catmull-Rom through the waypoints, resampled at a fixed spacing. */
+/**
+ * Centripetal Catmull-Rom through the waypoints, resampled at a fixed spacing.
+ *
+ * Centripetal — knots spaced by the square root of the distance between points
+ * — rather than uniform, and the difference is not cosmetic. The waypoints are
+ * unevenly spaced by construction: an entry and exit stub a few metres apart,
+ * then ten metres to the next pair. Uniform Catmull-Rom overshoots badly on
+ * that, and the wiggles it produces have real curvature: the feedforward
+ * averaged 21.7 m/s^2 round a circle that needs 12.2, swinging plus and minus
+ * 28, which is a controller instruction to hunt. Centripetal parameterisation
+ * is the standard answer and provably cannot cusp or self-intersect within a
+ * segment.
+ */
 function spline(points: Vec[]): Vec[] {
   const out: Vec[] = [];
   const at = (i: number): Vec => points[Math.max(0, Math.min(points.length - 1, i))]!;
+  const knot = (t: number, a: Vec, b: Vec): number =>
+    t + Math.max(1e-4, Math.hypot(b.n - a.n, b.e - a.e, b.u - a.u) ** 0.5);
+
   for (let i = 0; i < points.length - 1; i++) {
     const p0 = at(i - 1);
     const p1 = at(i);
     const p2 = at(i + 1);
     const p3 = at(i + 2);
+    const t0 = 0;
+    const t1 = knot(t0, p0, p1);
+    const t2 = knot(t1, p1, p2);
+    const t3 = knot(t2, p2, p3);
+
     const seg = Math.hypot(p2.n - p1.n, p2.e - p1.e, p2.u - p1.u);
     const steps = Math.max(2, Math.ceil(seg / STEP_M));
     for (let s = 0; s < steps; s++) {
-      const t = s / steps;
-      const t2 = t * t;
-      const t3 = t2 * t;
-      const f = (a: number, b: number, c: number, d: number): number =>
-        0.5 *
-        (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
-      out.push({
-        n: f(p0.n, p1.n, p2.n, p3.n),
-        e: f(p0.e, p1.e, p2.e, p3.e),
-        u: f(p0.u, p1.u, p2.u, p3.u),
-      });
+      const t = t1 + ((t2 - t1) * s) / steps;
+      // Barry-Goldman: three nested linear interpolations.
+      const lerp = (a: Vec, b: Vec, ta: number, tb: number): Vec => {
+        const f = (t - ta) / (tb - ta);
+        return {
+          n: a.n + (b.n - a.n) * f,
+          e: a.e + (b.e - a.e) * f,
+          u: a.u + (b.u - a.u) * f,
+        };
+      };
+      const a1 = lerp(p0, p1, t0, t1);
+      const a2 = lerp(p1, p2, t1, t2);
+      const a3 = lerp(p2, p3, t2, t3);
+      const b1 = lerp(a1, a2, t0, t2);
+      const b2 = lerp(a2, a3, t1, t3);
+      out.push(lerp(b1, b2, t1, t2));
     }
   }
   out.push(points[points.length - 1]!);
@@ -189,6 +214,64 @@ function profile(line: Vec[], aLat: number, aLong: number, vMax: number): number
   return v;
 }
 
+/**
+ * The acceleration the line demands at each point: centripetal from its
+ * curvature, tangential from the speed changing along it.
+ *
+ * This is what turns the autopilot from something that chases the line into
+ * something that follows it. Both terms come out of geometry that is already
+ * computed for the velocity profile, so it costs nothing to hand over.
+ */
+function withFeedforward(line: Vec[], v: number[]): PathPoint[] {
+  const out: PathPoint[] = [];
+  for (let i = 0; i < line.length; i++) {
+    // A wide stencil, and it has to be wide. A second difference over the 0.3 m
+    // sample spacing divides by ds^2, so it multiplies any wobble in the spline
+    // by about eleven — the first version asked for hundreds of m/s^2 and the
+    // aircraft never left the first gate. Two metres of arc is smooth enough to
+    // differentiate twice.
+    const span = Math.max(1, Math.round(2 / STEP_M));
+    const a = line[Math.max(0, i - span)]!;
+    const b = line[i]!;
+    const c = line[Math.min(line.length - 1, i + span)]!;
+    // Tangent, and the derivative of the tangent along the line, which is
+    // curvature times the normal.
+    let tN = c.n - a.n;
+    let tE = c.e - a.e;
+    let tU = c.u - a.u;
+    const tl = Math.hypot(tN, tE, tU) || 1;
+    tN /= tl;
+    tE /= tl;
+    tU /= tl;
+    const ds = (dist(a, b) + dist(b, c)) / 2 || 1;
+    // Second difference gives curvature times the normal, in one step.
+    const kN = (c.n - 2 * b.n + a.n) / (ds * ds);
+    const kE = (c.e - 2 * b.e + a.e) / (ds * ds);
+    const kU = (c.u - 2 * b.u + a.u) / (ds * ds);
+    const speed = v[i]!;
+    const vPrev = v[Math.max(0, i - span)]!;
+    const vNext = v[Math.min(v.length - 1, i + span)]!;
+    // v dv/ds along the tangent.
+    const dvds = (vNext - vPrev) / (2 * ds);
+    const along = speed * dvds;
+    let fN = kN * speed * speed + tN * along;
+    let fE = kE * speed * speed + tE * along;
+    let fU = kU * speed * speed + tU * along;
+    // Clamped to what the airframe has. A feedforward the aircraft cannot
+    // deliver is worse than none: it saturates the attitude loop and the
+    // feedback term loses its authority entirely.
+    const fMag = Math.hypot(fN, fE, fU);
+    const cap = 30;
+    if (fMag > cap) {
+      fN *= cap / fMag;
+      fE *= cap / fMag;
+      fU *= cap / fMag;
+    }
+    out.push({ north: b.n, east: b.e, up: b.u, speed, accN: fN, accE: fE, accU: fU });
+  }
+  return out;
+}
+
 function dist(a: Vec, b: Vec): number {
   return Math.hypot(b.n - a.n, b.e - a.e, b.u - a.u);
 }
@@ -206,7 +289,7 @@ function profileTime(line: Vec[], v: number[]): number {
 
 /** The centre line, exported so a debug run can fly the same thing. */
 export function buildDebugPath(course: Course): PathPoint[] {
-  return buildPath(course, { offsets: new Array<number>(course.checkpoints.length * 2).fill(0), grip: 0.55, vMax: 28, turnRadius: 7 }, 2);
+  return buildPath(course, { offsets: new Array<number>(course.checkpoints.length * 2).fill(0), grip: 0.35, vMax: 30, turnRadius: 7 }, 2);
 }
 
 /**
@@ -280,6 +363,32 @@ function pairFor(cps: Checkpoint[], i: number, offsets: number[]): Vec[] {
   );
 }
 
+/**
+ * Thrust-to-weight, measured from the model rather than assumed.
+ *
+ * It was hard-coded at 3.2, and the Kronos has **8.1** — so the planner spent
+ * every lap asking for a third of the acceleration the aircraft had, which is
+ * why the reference flew at a third of full throttle and Gilboa said so on
+ * sight. Eight is not a typo: his own logs put hover at 9 428 rpm against
+ * 28 046 at full throttle, and thrust goes as rpm squared, so hover is 11% of
+ * maximum.
+ */
+let cachedTwr = 0;
+function measuredTwr(): number {
+  if (cachedTwr > 0) return cachedTwr;
+  const af = kronos();
+  const sim = new FlightSim({ airframe: af });
+  sim.pos.z = -50;
+  sim.arm({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
+  let peak = 0;
+  for (let i = 0; i < 3000; i++) {
+    sim.step({ throttle: 1, roll: 0, pitch: 0, yaw: 0 });
+    peak = Math.max(peak, sim.telemetry.totalThrustN);
+  }
+  cachedTwr = peak / (af.mass * G);
+  return cachedTwr;
+}
+
 function buildPath(course: Course, p: LapParams, laps: number): PathPoint[] {
   const pts: Vec[] = [{ n: course.start.north, e: course.start.east, u: 1.2 }];
   const cps = course.checkpoints;
@@ -307,11 +416,10 @@ function buildPath(course: Course, p: LapParams, laps: number): PathPoint[] {
   // Thrust-to-weight sets what the profile may plan for. The lateral figure is
   // what is left after holding the aircraft up, which is why it is a difference
   // of squares rather than the whole of it.
-  const twr = 3.2;
+  const twr = measuredTwr();
   const aLat = Math.sqrt(Math.max(0.5, (twr * G) ** 2 - G * G)) * p.grip;
-  const aLong = aLat;
-  const v = profile(line, aLat, aLong, p.vMax);
-  return line.map((q, i) => ({ north: q.n, east: q.e, up: q.u, speed: v[i]! }));
+  const v = profile(line, aLat, aLat, p.vMax);
+  return withFeedforward(line, v);
 }
 
 export interface FrameSample {
@@ -361,8 +469,8 @@ function lapBound(course: Course, p: LapParams): number {
   );
   pts.push(...pair);
   const line = spline(pts);
-  const twr = 3.2;
-  const aLat = Math.sqrt(Math.max(0.5, (twr * G) ** 2 - G * G)) * p.grip;
+  const aLat =
+    Math.sqrt(Math.max(0.5, (measuredTwr() * G) ** 2 - G * G)) * p.grip;
   const v = profile(line, aLat, aLat, p.vMax);
   // A flying lap, not one from a standstill: the ends are not pinned to zero.
   v[0] = v[1] ?? v[0]!;
@@ -486,8 +594,8 @@ function main(): number {
     console.log(`\n\x1b[1m${course.name}\x1b[0m — ${course.checkpoints.length} checkpoints`);
     let best: LapParams = {
       offsets: new Array<number>(course.checkpoints.length * 2).fill(0),
-      grip: 0.55,
-      vMax: 28,
+      grip: 0.35,
+      vMax: 30,
       turnRadius: 7,
     };
     let bestResult = flyLap(course, best, laps, rates);
@@ -510,9 +618,9 @@ function main(): number {
             if (k < best.offsets.length) {
               trial.offsets[k] = Math.max(-1, Math.min(1, (trial.offsets[k] ?? 0) + sign * stepSize));
             } else if (k === best.offsets.length) {
-              trial.grip = Math.max(0.2, Math.min(1.1, trial.grip + sign * stepSize * 0.2));
+              trial.grip = Math.max(0.1, Math.min(1.0, trial.grip + sign * stepSize * 0.15));
             } else {
-              trial.vMax = Math.max(8, Math.min(45, trial.vMax + sign * stepSize * 10));
+              trial.vMax = Math.max(8, Math.min(60, trial.vMax + sign * stepSize * 10));
             }
             const r = flyLap(course, trial, laps, rates);
             const sc = score(r, course, laps);
@@ -544,8 +652,8 @@ function main(): number {
         `${(best.grip * 100).toFixed(0)}% of the available acceleration`,
     );
     console.log(
-      `  grip ${best.grip.toFixed(2)}, vMax ${best.vMax.toFixed(1)} m/s, ` +
-        `turn radius ${best.turnRadius.toFixed(1)} m`,
+      `  grip ${best.grip.toFixed(2)} of a measured ${measuredTwr().toFixed(1)} thrust-to-weight, ` +
+        `vMax ${best.vMax.toFixed(1)} m/s, turn radius ${best.turnRadius.toFixed(1)} m`,
     );
 
     if (recordTo) {

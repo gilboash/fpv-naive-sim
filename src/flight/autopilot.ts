@@ -40,6 +40,17 @@ export interface PathPoint {
   up: number;
   /** Target speed here, m/s. */
   speed: number;
+  /**
+   * The acceleration following the line at that speed *requires* — centripetal
+   * for the corner, tangential for the speed change. Optional, and supplying it
+   * is the difference between a controller that follows a line and one that
+   * chases it: without feedforward the corner can only be discovered as an
+   * error, so the aircraft is permanently late and hunts. It hunted at 1.57 Hz
+   * and half stick.
+   */
+  accN?: number;
+  accE?: number;
+  accU?: number;
 }
 
 export interface AutopilotGains {
@@ -59,6 +70,16 @@ export interface AutopilotGains {
   maxCorrection: number;
   /** Ceiling on commanded acceleration, m/s^2. Roughly what the airframe has. */
   maxAccel: number;
+  /**
+   * How much of the line's own acceleration to feed forward, 0..1.
+   *
+   * Zero is pure feedback, and is what currently flies. The feedforward is
+   * derived from a numerically differentiated spline, and at full weight it
+   * costs more in noise than it buys in lead — see the note in optimal-lap.ts.
+   * Kept as a dial rather than deleted because the *idea* is right: a corner
+   * that can only be discovered as an error is a corner taken late.
+   */
+  ffWeight: number;
   /** Ceiling on the rate the controller will ask for, deg/s. */
   maxRateDps: number;
   /** Ceiling on tilt from vertical, degrees. Beyond this a quad falls. */
@@ -75,6 +96,7 @@ export function defaultGains(): AutopilotGains {
     lookaheadS: 0.22,
     maxCorrection: 9,
     maxAccel: 26,
+    ffWeight: 0,
     maxRateDps: 800,
     maxTiltDeg: 78,
   };
@@ -237,9 +259,13 @@ export class Autopilot {
     const vE = tE * speed + (crossE / cl) * corr;
     const vU = tU * speed + (crossU / cl) * corr;
 
-    let aN = (vN - sim.vel.x) * g.kVel;
-    let aE = (vE - sim.vel.y) * g.kVel;
-    let aU = (vU - -sim.vel.z) * g.kVel;
+    // Feedforward from where the aircraft *is*, not from the carrot. The carrot
+    // is a lead term for direction and speed; applying the corner's centripetal
+    // acceleration before reaching the corner just pushes the aircraft off the
+    // line early, which is what it did.
+    let aN = (here.accN ?? 0) * g.ffWeight + (vN - sim.vel.x) * g.kVel;
+    let aE = (here.accE ?? 0) * g.ffWeight + (vE - sim.vel.y) * g.kVel;
+    let aU = (here.accU ?? 0) * g.ffWeight + (vU - -sim.vel.z) * g.kVel;
     // Clamped to what the aircraft has. Asking for more does not make it go
     // faster, it just saturates the attitude loop and throws away control.
     const aMag = Math.hypot(aN, aE, aU);
