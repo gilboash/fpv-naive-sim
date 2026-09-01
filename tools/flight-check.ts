@@ -1623,6 +1623,67 @@ section('Race: the drawn gates are the timed gates');
 
 // ----------------------------------------------------------- aux switches
 
+section('Contact: hitting scenery is reported, once per collision');
+{
+  // The gong is triggered off this, and contact against a post lasts for over
+  // a second — so the interesting property is not that a strike is reported
+  // but that a *single* strike is not reported a thousand times.
+  const m = new MeshBuilder();
+  const obs: Obstacle[] = [];
+  TRACKS.find((t) => t.name === 'Race vibes')!.build(m, obs);
+  const post = obs.find((o) => o.kind === 'cylinder' && o.height > 2)!;
+  const at = post as { north: number; east: number };
+
+  const sim = new FlightSim({ airframe: kronos() });
+  sim.obstacles = obs;
+  sim.pos.x = at.north - 12;
+  sim.pos.y = at.east;
+  sim.pos.z = -2;
+  sim.vel.x = 9;
+  sim.arm({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
+
+  let ticks = 0;
+  let peak = 0;
+  let fired = 0;
+  let cooldown = 0;
+  for (let i = 0; i < 4000; i++) {
+    sim.step(sticks({ throttle: 0.16, roll: 0, pitch: 0, yaw: 0 }));
+    if (cooldown > 0) cooldown -= sim.dt;
+    if (sim.obstacleImpact > 0) {
+      ticks++;
+      peak = Math.max(peak, sim.obstacleImpact);
+    }
+    if (sim.obstacleImpact > 1.5 && cooldown <= 0) {
+      fired++;
+      cooldown = 1.5;
+    }
+  }
+  ok(
+    'flying into a gate post reports an impact against scenery',
+    ticks > 0 && peak > 5,
+    `${ticks} ticks in contact, hardest ${peak.toFixed(1)} m/s`,
+  );
+  ok(
+    'and the cooldown turns that into one strike, not a drum roll',
+    fired === 1,
+    `${fired} strike from ${ticks} ticks of contact`,
+  );
+
+  // The ground is not scenery: landing must not sound like hitting a gate.
+  const lander = new FlightSim({ airframe: kronos() });
+  lander.pos.z = -3;
+  let groundTicks = 0;
+  for (let i = 0; i < 3000; i++) {
+    lander.step(sticks({ throttle: 0, roll: 0, pitch: 0, yaw: 0 }));
+    if (lander.obstacleImpact > 0) groundTicks++;
+  }
+  ok(
+    'while hitting the ground is not a strike',
+    groundTicks === 0,
+    'dropped 3 m onto the grass, no scenery impact reported',
+  );
+}
+
 section('Aux: arming from a switch behaves like a flight controller');
 {
   const bind = (): Mapping => {

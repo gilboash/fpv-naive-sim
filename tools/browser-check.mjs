@@ -1558,6 +1558,32 @@ const main = async () => {
     `${chime.crossed} crossing(s) counted in the tick, ${chime.peak} voice(s) heard on the render path`,
   );
 
+  // The gong: hitting scenery sounds, and does so on top of the crash rather
+  // than instead of it.
+  const gong = await evaluate(`(async () => {
+    const { audio } = globalThis.__fpvsim;
+    audio.setEnabled(true);
+    // Give the sample a moment to fetch and decode; it is loaded lazily, only
+    // once a context exists, so a page with sound off never downloads it.
+    for (let i = 0; i < 40 && !audio.gongReady; i++) await new Promise((r) => setTimeout(r, 50));
+    const before = audio.debug().voices;
+    audio.noteStrike(6);
+    audio.update({ telemetry: { motorRpm: [0, 0, 0, 0], speed: 0 } });
+    let peak = 0;
+    for (let i = 0; i < 10; i++) {
+      peak = Math.max(peak, audio.debug().voices);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    return { ready: audio.gongReady, before, peak };
+  })()`);
+  check(
+    'hitting scenery sounds the gong',
+    gong.ready === true && gong.peak > gong.before,
+    gong.ready
+      ? `sample decoded, ${gong.peak} voice(s) while it rings`
+      : 'the gong never decoded',
+  );
+
   const bang = await evaluate(`(async () => {
     const { audio, flight } = globalThis.__fpvsim;
     audio.noteCrash(9);

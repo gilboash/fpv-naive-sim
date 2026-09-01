@@ -4,3 +4,13 @@
  * at runtime — there is nothing to fetch and nothing to fail.
  */
 declare const __FPVSIM_BUILD__: string;
+
+/**
+ * Audio assets Vite hashes into the build. Declared here because `vite/client`
+ * does not cover every container, and an undeclared import is a type error
+ * rather than a runtime one — which is the right way round.
+ */
+declare module '*.m4a' {
+  const src: string;
+  export default src;
+}

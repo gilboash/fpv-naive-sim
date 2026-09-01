@@ -23,6 +23,7 @@
  */
 
 import type { FlightSim } from './flight/sim.ts';
+import gongUrl from './assets/gong.m4a';
 
 const STORAGE_KEY = 'fpvsim.audio.v1';
 
@@ -71,6 +72,9 @@ export class FlightAudio {
   /** Set from the tick, consumed by update(). See the file header. */
   private pendingCrash = 0;
   private pendingChime: 'gate' | 'flag' | 'lap' | null = null;
+  private pendingStrike = 0;
+  /** The gong, decoded once. Null until it has been fetched and decoded. */
+  private gong: AudioBuffer | null = null;
 
   /** Live voices, so a check can see that a crash actually made a sound. */
   private voices = 0;
@@ -114,6 +118,11 @@ export class FlightAudio {
   /** 'running', 'suspended', or 'closed' when there is no context. */
   get state(): string {
     return this.ctx ? this.ctx.state : 'closed';
+  }
+
+  /** Whether the gong has been fetched and decoded. For the checks. */
+  get gongReady(): boolean {
+    return this.gong !== null;
   }
 
   get liveVoices(): number {
@@ -175,6 +184,18 @@ export class FlightAudio {
   /** Called from the tick. Records the impact; makes no sound and no garbage. */
   noteCrash(speed: number): void {
     if (speed > this.pendingCrash) this.pendingCrash = speed;
+  }
+
+  /**
+   * Scenery was struck — a gate, a flag pole, a cube. Queued like the others.
+   *
+   * Separate from `noteCrash` on purpose: a strike and a crash are different
+   * events and can happen together, in which case both sound. Clipping a gate
+   * hard enough to hear but not hard enough to break something is a real and
+   * common outcome, and it deserves to be audible.
+   */
+  noteStrike(speed: number): void {
+    if (speed > this.pendingStrike) this.pendingStrike = speed;
   }
 
   /**
@@ -264,6 +285,7 @@ export class FlightAudio {
     this.airFilter = air;
     this.airGain = airGain;
 
+    this.loadGong(ctx);
     if (ctx.state === 'suspended') void ctx.resume();
     this.onChange?.();
   }
@@ -290,6 +312,8 @@ export class FlightAudio {
     this.wave = null;
     this.voices = 0;
     this.pendingCrash = 0;
+    this.pendingStrike = 0;
+    this.gong = null;
     if (!ctx) return;
     // close() releases the audio thread entirely. Suspending would leave the
     // graph alive and the promise of "exactly like now when off" unkept.
@@ -347,6 +371,56 @@ export class FlightAudio {
       this.chime(this.pendingChime);
       this.pendingChime = null;
     }
+    if (this.pendingStrike > 0) {
+      this.strike(this.pendingStrike);
+      this.pendingStrike = 0;
+    }
+  }
+
+  /**
+   * The gong, over whatever else is playing.
+   *
+   * A recorded sample rather than something synthesised, because a gong is a
+   * plate with a spectrum nobody would guess at — and because Gilboa picked
+   * this one. Decoded once and reused; the file is 39 KB of mono AAC, stripped
+   * of the video track it arrived in.
+   */
+  private strike(speed: number): void {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.gong) return;
+    const src = ctx.createBufferSource();
+    src.buffer = this.gong;
+    const g = ctx.createGain();
+    // Louder for a harder hit, but never silent: the quietest touch that gets
+    // here already counted as a strike.
+    g.gain.value = 0.35 + Math.min(0.5, speed / 14) * 0.45;
+    src.connect(g).connect(master);
+    src.start();
+    this.voices++;
+    src.onended = () => {
+      this.voices = Math.max(0, this.voices - 1);
+    };
+  }
+
+  /**
+   * Fetch and decode the gong once the context exists.
+   *
+   * Deliberately after the graph is up rather than at page load: with sound off
+   * there is no context, and a page that downloads a sound it will never play
+   * is exactly the kind of cost "off means off" is supposed to rule out.
+   */
+  private loadGong(ctx: AudioContext): void {
+    if (this.gong) return;
+    void fetch(gongUrl)
+      .then((r) => r.arrayBuffer())
+      .then((b) => ctx.decodeAudioData(b))
+      .then((buf) => {
+        this.gong = buf;
+      })
+      .catch(() => {
+        // No gong is a missing sound, not a broken page.
+      });
   }
 
   /**

@@ -112,7 +112,7 @@ const captured = await evaluate(`(async () => {
   const tap = ctx.createScriptProcessor(4096, 1, 1);
   const chunks = [];
   let frames = 0;
-  const wanted = Math.floor(ctx.sampleRate * 11);
+  const wanted = Math.floor(ctx.sampleRate * 14);
   tap.onaudioprocess = (e) => {
     if (frames >= wanted) return;
     chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
@@ -161,6 +161,11 @@ const captured = await evaluate(`(async () => {
       await new Promise((r) => setTimeout(r, stepMs));
     }
   }
+
+  // Clipping a gate, then the thing you hear once per session.
+  audio.noteStrike(7);
+  feed([9000, 9000, 9000, 9000], 14);
+  await new Promise((r) => setTimeout(r, 900));
 
   // And the thing you hear once per session.
   audio.noteCrash(11);

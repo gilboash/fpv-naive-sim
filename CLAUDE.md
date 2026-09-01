@@ -898,6 +898,23 @@ Three things worth keeping:
   clipping. `tools/sound-preview.mjs` taps the mix in a real browser and writes a
   WAV — that is what `FlightAudio.output` is exposed for.
 
+**The gong (2026-09-01):** hitting a gate, a flag pole or a cube plays
+`src/assets/gong.m4a` — Gilboa's file, stripped of the video track it arrived
+in and down to 39 KB of mono AAC — on top of the crash bang rather than instead
+of it. Fetched and decoded only once an AudioContext exists, so a page with
+sound off never downloads it.
+
+`FlightSim.obstacleImpact` is what triggers it: impact speed against scenery
+this step, zero for the ground. The model is the only thing that knows the
+difference between hitting a gate and landing, and the OSD should not have to
+guess.
+
+**The cooldown is the whole feature.** Contact against a post persists for
+1 368 ticks — measured — so without one a single gate strike is 1 368 gongs.
+It is 1.5 s rather than something shorter because the sample rings for 4.7 s and
+two of them half a second apart is mud. There is a check that a single
+collision fires exactly one strike, and another that the ground fires none.
+
 **Checkpoint chimes (2026-09-01):** a gate, a flag and a completed lap each have
 their own blip, queued from the tick by comparing `Race.crossings` /
 `Race.lapsCompleted` — monotonic counters that never reset, so noticing a

@@ -142,6 +142,12 @@ export class FlightSim {
    * disarms, and only reset() clears this.
    */
   crashed = false;
+
+  /**
+   * Impact speed against scenery this step, m/s, or zero. Not a crash: a gate
+   * clipped at walking pace sets this and leaves `crashed` alone.
+   */
+  obstacleImpact = 0;
   /** Speed of the worst impact that caused the crash, m/s. */
   crashSpeed = 0;
   /**
@@ -540,6 +546,12 @@ export class FlightSim {
     this.mBody.x += c.moment.x;
     this.mBody.y += c.moment.y;
     this.mBody.z += c.moment.z;
+
+    // How hard scenery was hit this step, and zero when it was not. Read on the
+    // render path to decide whether to make a noise — a strike that does not
+    // crash still deserves one, and the flight model is the only thing that
+    // knows the difference between hitting a gate and hitting the ground.
+    this.obstacleImpact = c.hitObstacle ? c.impactSpeed : 0;
 
     if (!this.crashed && c.impactSpeed > 0) {
       // Scenery is less forgiving than grass: a post takes a prop off at a
