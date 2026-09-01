@@ -8,6 +8,7 @@
 import type { FlightSim } from './flight/sim.ts';
 import { Race } from './race/race.ts';
 import { raceVibesCourse, type Course } from './race/course.ts';
+import { referenceFor, type ReferenceLap } from './race/reference.ts';
 
 const el = <T extends HTMLElement>(tag: string, cls?: string, text?: string): T => {
   const n = document.createElement(tag) as T;
@@ -69,6 +70,118 @@ export class RacePanel {
 
     this.results = el('div', 'race-results');
     root.appendChild(this.results);
+
+    // Below the results, deliberately: it is context for a time, not a control.
+    this.reference = el('div', 'race-reference');
+    root.appendChild(this.reference);
+    this.renderReference();
+  }
+
+  private reference: HTMLElement;
+
+  /**
+   * The bot reference lap for the loaded course.
+   *
+   * Shown whether or not a race has been run, because its job is to say what
+   * the course is worth before a pilot starts rather than to judge them after.
+   * The video is `preload="none"` — a pilot who never presses play never
+   * fetches it, which is what lets a 170 KB page offer one at all.
+   */
+  private renderReference(): void {
+    const host = this.reference;
+    host.innerHTML = '';
+    if (!this.courseAvailable) return;
+    const ref: ReferenceLap | null = referenceFor(this.race.course.name);
+
+    const head = el('h3', 'race-ref-head', 'Bot reference flight');
+    host.appendChild(head);
+
+    if (!ref) {
+      host.appendChild(
+        el('p', 'hint', 'No reference lap for this map yet — the machine pilot cannot fly it.'),
+      );
+      return;
+    }
+
+    const nums = el('div', 'race-summary');
+    for (const [label, value] of [
+      ['reference lap', fmt(ref.lap)],
+      ['hole shot', fmt(ref.holeShot)],
+      ['top speed', `${(ref.topSpeed * 3.6).toFixed(0)} km/h`],
+    ] as [string, string][]) {
+      const cell = el('div', 'fl-num');
+      cell.appendChild(el('span', 'fl-num-label', label));
+      cell.appendChild(el('span', 'fl-num-val', value));
+      nums.appendChild(cell);
+    }
+    host.appendChild(nums);
+
+    // What it is and is not. A machine time with no provenance invites the
+    // wrong reading — that it is a limit, or that beating it is impossible.
+    host.appendChild(
+      el(
+        'p',
+        'hint',
+        'Flown by the simulator itself: a line optimised offline, then flown through the ' +
+          'same four sticks you get — same rates, same PIDs, same battery. It gets perfect ' +
+          'knowledge of its own state and no reaction time, and it is the best a short search ' +
+          'found rather than a limit. Beating it is meant to be possible.',
+      ),
+    );
+
+    if (ref.video) {
+      const video = el<HTMLVideoElement>('video', 'race-ref-video');
+      video.controls = true;
+      // Nothing is fetched until play. The file is a megabyte or so and most
+      // visitors will never watch it.
+      video.preload = 'none';
+      video.src = `/reference/${ref.video}`;
+      video.playsInline = true;
+      host.appendChild(video);
+    }
+
+    // Where the time actually went, which is the part worth having.
+    const best = this.race
+      .result()
+      .laps.filter((l) => !l.invalid)
+      .reduce((a, b) => (a === null || b.time < a.time ? b : a), null as { time: number; splits: { delta: number }[] } | null);
+    if (best && ref.splits.length === best.splits.length) {
+      const table = el('table', 'race-table');
+      const hdr = el('tr');
+      hdr.appendChild(el('th', undefined, ''));
+      ref.splits.forEach((_, i) => hdr.appendChild(el('th', undefined, String(i + 1))));
+      hdr.appendChild(el('th', undefined, 'lap'));
+      table.appendChild(hdr);
+
+      const refRow = el('tr');
+      refRow.appendChild(el('td', undefined, 'bot'));
+      for (const d of ref.splits) refRow.appendChild(el('td', undefined, d.toFixed(2)));
+      refRow.appendChild(el('td', 'laptime', fmt(ref.lap)));
+      table.appendChild(refRow);
+
+      const deltaRow = el('tr');
+      deltaRow.appendChild(el('td', undefined, 'you'));
+      best.splits.forEach((sp, i) => {
+        const d = sp.delta - ref.splits[i]!;
+        const td = el('td', undefined, `${d >= 0 ? '+' : ''}${d.toFixed(2)}`);
+        // Green where the pilot was quicker through that gate. It happens, and
+        // seeing where is the whole point of showing this per gate.
+        td.className = d < 0 ? 'best' : '';
+        deltaRow.appendChild(td);
+      });
+      const lapDelta = best.time - ref.lap;
+      deltaRow.appendChild(
+        el('td', lapDelta < 0 ? 'best' : 'laptime', `${lapDelta >= 0 ? '+' : ''}${lapDelta.toFixed(2)}`),
+      );
+      table.appendChild(deltaRow);
+
+      const scroll = el('div', 'race-scroll');
+      scroll.appendChild(table);
+      host.appendChild(scroll);
+      host.appendChild(
+        el('p', 'hint', 'Your best valid lap against the reference, gate by gate. Green is where you were quicker.'),
+      );
+    }
   }
 
   /**
@@ -97,6 +210,7 @@ export class RacePanel {
     this.hint.textContent = this.courseAvailable
       ? ''
       : 'No course on this map — pick a race map to race.';
+    this.renderReference();
   }
 
   private hint = el('span', 'dim', '');
@@ -214,6 +328,9 @@ export class RacePanel {
     const scroll = el('div', 'race-scroll');
     scroll.appendChild(table);
     host.appendChild(scroll);
+
+    // Redrawn after a race so the per-gate comparison can appear.
+    this.renderReference();
 
     if (res.laps.some((l) => l.invalid)) {
       host.appendChild(

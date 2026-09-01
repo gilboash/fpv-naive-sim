@@ -26,6 +26,13 @@ const tiltArg = argv.indexOf('--tilt');
 const cameraTilt = tiltArg >= 0 ? Number(argv[tiltArg + 1]) : 25;
 const fovArg = argv.indexOf('--fov');
 const cameraFov = fovArg >= 0 ? Number(argv[fovArg + 1]) : 90;
+// One flying lap rather than the whole recording, and small: these are served
+// on demand to pilots over a home tunnel, so a six megabyte file per course is
+// two orders of magnitude more than the page it sits in. A single lap at 640
+// wide and crf 30 comes to about a megabyte, and nothing is fetched until
+// someone presses play.
+const onePath = argv.includes('--one-lap');
+const smallPath = argv.includes('--small');
 const positional = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--tilt' && argv[i - 1] !== '--fov');
 const [lapFile, outFile = 'lap.mp4', url = 'http://localhost:5180/'] = positional;
 if (!lapFile) {
@@ -170,8 +177,24 @@ console.log(`map "${setup.map}", capturing ${Math.round(setup.clip.width)}x${Mat
 // which is dominated by the screenshot round trip rather than by drawing.
 const stride = 2;
 const fps = lap.hz / stride;
+
+// The flying lap: everything after the hole shot and the first lap, so the
+// video starts at racing speed rather than on the ground. The times are known,
+// so this is arithmetic rather than a search.
+let from = 0;
+let to = frames.length;
+if (onePath && lap.laps.length >= 2) {
+  const startT = lap.holeShot + lap.laps[0];
+  const endT = startT + lap.laps[1];
+  from = frames.findIndex((f) => f.t >= startT - 0.3);
+  to = frames.findIndex((f) => f.t >= endT + 0.3);
+  if (from < 0) from = 0;
+  if (to < 0) to = frames.length;
+  console.log(`one lap: ${((to - from) / lap.hz).toFixed(1)} s of ${(frames.length / lap.hz).toFixed(1)}`);
+}
+
 let n = 0;
-for (let i = 0; i < frames.length; i += stride) {
+for (let i = from; i < to; i += stride) {
   const f = frames[i];
   await evaluate(`(() => {
     const { scene, flight, mapping } = globalThis.__fpvsim;
@@ -197,10 +220,13 @@ process.stdout.write(`\r  ${n} frames captured\n`);
 chrome.kill('SIGKILL');
 rmSync(profile, { recursive: true, force: true });
 
+const encodeArgs = smallPath
+  ? ['-vf', 'scale=640:-2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '30',
+     '-preset', 'slow', '-movflags', '+faststart']
+  : ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20'];
 const ff = spawnSync(
   'ffmpeg',
-  ['-y', '-framerate', String(fps), '-i', join(shots, 'f%05d.png'),
-   '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', outFile],
+  ['-y', '-framerate', String(fps), '-i', join(shots, 'f%05d.png'), ...encodeArgs, outFile],
   { encoding: 'utf8' },
 );
 if (ff.status !== 0) {
@@ -208,4 +234,8 @@ if (ff.status !== 0) {
   process.exit(1);
 }
 rmSync(shots, { recursive: true, force: true });
-console.log(`${outFile}: ${n} frames at ${fps} fps, ${(n / fps).toFixed(1)} s`);
+const { statSync } = await import('node:fs');
+console.log(
+  `${outFile}: ${n} frames at ${fps} fps, ${(n / fps).toFixed(1)} s, ` +
+    `${(statSync(outFile).size / 1024 / 1024).toFixed(2)} MB`,
+);

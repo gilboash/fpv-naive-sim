@@ -31,6 +31,13 @@ cp -R "$HERE/dist" "$STAGE/fpvsim/dist"
 cp "$HERE/tools/serve.py" "$STAGE/fpvsim/serve.py"
 cp "$HERE/tools/admin.py" "$STAGE/fpvsim/admin.py"
 cp "$HERE/tools/win/start-fpvsim.bat" "$STAGE/fpvsim/start-fpvsim.bat"
+# Reference-lap videos, if any have been generated. Served on demand from
+# beside dist rather than bundled into it — a pilot who never presses play
+# never fetches one.
+if [ -d "$HERE/reference" ]; then
+  cp -R "$HERE/reference" "$STAGE/fpvsim/reference"
+  echo "      including $(ls -1 "$HERE/reference" | wc -l | tr -d ' ') reference video(s), $(du -sh "$HERE/reference" | cut -f1)"
+fi
 
 echo "[3/4] syncing to $T"
 # Clear the staging directory first. scp -r of a directory nests it when the

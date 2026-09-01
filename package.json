@@ -11,7 +11,8 @@
     "check:flight": "node --experimental-strip-types tools/flight-check.ts",
     "check:browser": "node tools/browser-check.mjs",
     "replay": "node --experimental-strip-types tools/replay.ts",
-    "identify": "node --experimental-strip-types tools/identify.ts"
+    "identify": "node --experimental-strip-types tools/identify.ts",
+    "reference": "node --experimental-strip-types tools/optimal-lap.ts"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

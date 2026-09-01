@@ -27,9 +27,11 @@ import datetime
 import http.server
 import json
 import os
+import posixpath
 import socketserver
 import sys
 import threading
+import urllib.parse
 
 # Explicit, because Python takes MIME types from the Windows registry and has
 # been known to return text/plain for .js there. A module served as text/plain
@@ -45,10 +47,31 @@ TYPES = {
     ".ico": "image/x-icon",
     ".png": "image/png",
     ".map": "application/json; charset=utf-8",
+    ".mp4": "video/mp4",
 }
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def translate_path(self, path):
+        """Serve /reference/ from outside the build directory.
+
+        The reference laps are videos, and they live beside `dist` rather than
+        inside it for two reasons: `npm run build` empties dist, and they are
+        generated artefacts that have no business in the repository. The page
+        asks for them with preload="none", so a pilot who never presses play
+        never fetches a byte — which is the whole point of not bundling them
+        into an 80 KB page.
+        """
+        clean = urllib.parse.urlparse(path).path
+        if REFERENCE_DIR and clean.startswith("/reference/"):
+            rel = posixpath.normpath(urllib.parse.unquote(clean[len("/reference/"):]))
+            # No traversal out of the directory: this is the one place the
+            # server maps a URL onto a path of its own choosing.
+            if rel.startswith("..") or rel.startswith("/") or os.path.isabs(rel):
+                return ""
+            return os.path.join(REFERENCE_DIR, rel)
+        return super().translate_path(path)
+
     def guess_type(self, path):
         ext = os.path.splitext(path)[1].lower()
         return TYPES.get(ext, super().guess_type(path))
@@ -129,6 +152,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 # Set in main(), before the server starts. None means collection is off.
 DATA_FILE = None
+# Where the reference-lap videos live, or "" for none.
+REFERENCE_DIR = ""
 WRITE_LOCK = threading.Lock()
 MAX_BODY = 64 * 1024
 
@@ -148,6 +173,11 @@ def main() -> int:
         default="data",
         help="directory for sessions.jsonl; empty string turns collection off",
     )
+    ap.add_argument(
+        "--reference",
+        default="reference",
+        help="directory of reference-lap videos served at /reference/",
+    )
     args = ap.parse_args()
 
     root = os.path.abspath(args.root)
@@ -157,7 +187,9 @@ def main() -> int:
         return 2
     # Resolved before the chdir below, or --data would silently mean a
     # directory inside dist and be mirrored away by the next deploy.
-    global DATA_FILE
+    global DATA_FILE, REFERENCE_DIR
+    if args.reference:
+        REFERENCE_DIR = os.path.abspath(args.reference)
     if args.data:
         data_dir = os.path.abspath(args.data)
         os.makedirs(data_dir, exist_ok=True)
@@ -167,8 +199,8 @@ def main() -> int:
 
     with Server((args.host, args.port), Handler) as httpd:
         sys.stderr.write(
-            "fpvsim serving %s on http://%s:%d/ (COOP/COEP on), usage -> %s\n"
-            % (root, args.host, args.port, DATA_FILE or "off")
+            "fpvsim serving %s on http://%s:%d/ (COOP/COEP on), usage -> %s, reference -> %s\n"
+            % (root, args.host, args.port, DATA_FILE or "off", REFERENCE_DIR or "off")
         )
         sys.stderr.flush()
         httpd.serve_forever()

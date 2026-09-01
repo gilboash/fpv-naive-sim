@@ -495,6 +495,8 @@ export interface FrameSample {
 interface LapResult {
   ok: boolean;
   laps: number[];
+  /** Gate-to-gate deltas of the best valid lap, for the reference to publish. */
+  splits: number[];
   holeShot: number;
   total: number;
   crashed: boolean;
@@ -606,9 +608,15 @@ function flyLap(
   // then it is not comparable with a lap time at all — which is how it first
   // came out *slower* than the lap it was supposed to bound.
   const bound = lapBound(course, p);
+  // The best lap's splits, not the first: the reference publishes its best.
+  const bestLap = res.laps.reduce(
+    (a, b) => (a === null || b.time < a.time ? b : a),
+    null as (typeof res.laps)[number] | null,
+  );
   return {
     ok: race.state === 'finished',
     laps: res.laps.map((l) => l.time),
+    splits: bestLap ? bestLap.splits.map((sp) => sp.delta) : [],
     holeShot: res.holeShot,
     total: res.total,
     crashed: sim.crashed,
@@ -760,6 +768,7 @@ function main(): number {
         generated: new Date().toISOString(),
         laps: bestResult.laps,
         holeShot: bestResult.holeShot,
+        splits: bestResult.splits,
         params: best,
         hz: 60,
         samples,
