@@ -1324,6 +1324,23 @@ environment, the scene actually drawing, and no page errors. Cross-origin
 isolation is reported as a warning rather than a failure there, because it is a
 property of the host rather than of the build.
 
+## Licence
+
+MIT — see `LICENSE`. Permissive because the point of this is that other pilots
+can take it, and a hobby trainer is not worth a licence anyone has to think
+about.
+
+Three things in the tree are **not** covered, because they are not this
+project's to license, and each is named in `LICENSE` rather than left for a
+forker to discover:
+
+- `src/assets/breaking-carbon.jpg` — Breaking Carbon's logo, a trademark used
+  with permission for this instance. Remove it before redistributing.
+- `src/assets/gong.m4a` — a sample supplied for the project, provenance not
+  established here. Treat it as third-party.
+- `measurements/` — Blackbox logs and jitter runs from real hardware. Data
+  rather than software, kept so the numbers in this README can be checked.
+
 ## Related work on this machine
 
 - `../genius-invester` — Flask + SQLite portfolio portal and a running

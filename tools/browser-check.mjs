@@ -216,6 +216,8 @@ const main = async () => {
     return {
       logo: !!img && img.naturalWidth > 0,
       href: link?.getAttribute('href') ?? '',
+      source: document.querySelector('.site-source a')?.getAttribute('href') ?? '',
+      saysOpenSource: /open source/i.test(document.querySelector('.site-source')?.textContent ?? ''),
       // \\s, not \s: this string is a template literal on its way to the page,
       // so a single backslash is eaten here and the regex arrives as /s+/ —
       // which quietly replaced every "s" in the footer text with a space.
@@ -260,6 +262,12 @@ const main = async () => {
     brand.logo === true && brand.href === 'https://www.instagram.com/nacofpv',
     `logo decoded, footer reads "${brand.footer}"`,
   );
+  check(
+    'and it says where the source is',
+    brand.source === 'https://github.com/gilboash/fpv-naive-sim' && brand.saysOpenSource === true,
+    `"open source" links to ${brand.source}`,
+  );
+
   check(
     'and the tab icon is a quad rather than a helicopter',
     /svg/.test(brand.icon) && /circle/.test(brand.icon) && !/F0%9F%9A%81/.test(brand.icon),

@@ -35,13 +35,35 @@ body {
   opacity: 0.92;
 }
 
+/* Three columns so the byline stays centred on the page while the source link
+   sits hard right, rather than the two of them sharing a centred line. */
 .site-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  gap: 12px;
   padding: 18px 20px 26px;
   color: var(--dim);
   font-size: 13px;
   text-align: center;
   border-top: 1px solid var(--line);
   margin-top: 26px;
+}
+
+.site-source {
+  justify-self: end;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.site-source a { color: var(--dim); font-weight: 500; }
+.site-source a:hover { color: #ffd24a; }
+
+/* Narrow screens: stack, and keep the byline first. */
+@media (max-width: 560px) {
+  .site-footer { grid-template-columns: 1fr; }
+  .site-footer > span:first-child { display: none; }
+  .site-source { justify-self: center; }
 }
 
 .site-footer a {
