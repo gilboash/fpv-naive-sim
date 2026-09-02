@@ -653,6 +653,12 @@ Renumbering touches three places that reference section numbers: the start-here
 paragraph in index.html, and the uncalibrated-throttle notice in main.ts. Grep
 for `· Channel` before assuming a renumber is complete.
 
+The same trap caught the 2026-09-02 rename: "FPV view" became **Sim** and moved
+tabs, and the start-here paragraph still sent a new pilot to "3 · FPV view",
+which by then was neither numbered 3, called that, nor on that tab. It also
+still pointed at "4" for rates, which had moved to Instruments some time before.
+**Grep for a section's name, not only its number.**
+
 Also removed: a `console.log` that dumped the whole jitter result on every run.
 `__fpvsim` was already compiled out of production by `import.meta.env.DEV`,
 confirmed by grepping the built bundle for it.
