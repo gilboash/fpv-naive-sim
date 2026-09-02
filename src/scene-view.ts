@@ -56,6 +56,19 @@ const el = <T extends HTMLElement>(tag: string, cls?: string, text?: string): T 
 
 export class SceneView {
   readonly canvas: HTMLCanvasElement;
+  /** The row of view settings under the picture: map, FOV, tilt, reset mode. */
+  readonly controls: HTMLElement;
+
+  /**
+   * Put a control in with the view's settings.
+   *
+   * Ahead of the crash flag and the frame-time readout, which are status rather
+   * than settings: appending to the end of the row put the sound button after
+   * "0.07 ms/frame" and wrapped it onto a line of its own.
+   */
+  addControl(node: HTMLElement): void {
+    this.controlSlot.appendChild(node);
+  }
   renderer: Renderer | null = null;
   private failure = '';
   /**
@@ -71,6 +84,7 @@ export class SceneView {
   private sim: FlightSim;
   private statusEl: HTMLElement;
   private crashEl: HTMLElement;
+  private controlSlot: HTMLElement;
   readonly stage: HTMLElement;
   readonly sticks: StickView;
   readonly osd: Osd;
@@ -190,11 +204,20 @@ export class SceneView {
     row.appendChild(restart);
 
     this.crashEl = el('span', 'crash-flag', '');
+    // Anything added by the owner goes here: with the controls, and ahead of
+    // the crash and frame-time readouts, which are status rather than settings
+    // and belong at the end of the row.
+    this.controlSlot = el('span', 'control-slot');
+    row.appendChild(this.controlSlot);
+
     row.appendChild(this.crashEl);
 
     this.statusEl = el('span', 'dim', '');
     row.appendChild(this.statusEl);
     root.appendChild(row);
+    // Exposed so anything else that belongs with the view's settings can join
+    // them rather than starting a second row of controls above the picture.
+    this.controls = row;
 
     try {
       this.renderer = new Renderer(this.canvas);

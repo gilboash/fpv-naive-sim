@@ -1207,6 +1207,26 @@ demanded 25 m/s^2 to fly at 12; and thrust-to-weight was assumed at 3.2 when the
 model has **8.1** (hover 9 428 rpm against 28 046 at full throttle, thrust as
 rpm squared — hover is 11% of maximum).
 
+## The flying tab is the picture and its settings (2026-09-02)
+
+Gilboa: remove the text under "FPV view", move the sound button down with the
+other controls, and call the section **Sim**.
+
+All of it was right. Two long paragraphs explaining the maps sat above the
+video on the tab a pilot opens *to fly*, which is the one place nobody is
+reading — and the sound button had its own row above the picture, which made a
+setting look like part of the flying.
+
+`SceneView.addControl()` is the seam: it puts a control in the settings row
+ahead of the crash flag and the frame-time readout, which are status rather
+than settings. Appending to the end of the row instead put the button after
+"0.07 ms/frame" and wrapped it onto a line of its own.
+
+There is a check that the section is titled Sim, carries no paragraphs, and
+that the sound control is inside the view's own control row and below the
+canvas — because "we removed the text" is the kind of thing that comes back one
+helpful sentence at a time.
+
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:
 

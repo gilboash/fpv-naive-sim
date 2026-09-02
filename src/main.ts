@@ -1005,7 +1005,16 @@ if (import.meta.env.DEV) {
   const box = $<HTMLInputElement>('sound-enabled');
   const vol = $<HTMLInputElement>('sound-volume');
   const state = $('sound-state');
-  const btn = $<HTMLButtonElement>('audio-toggle');
+
+  // Built here and put in with the view's other settings, rather than in a row
+  // of its own above the picture. It is a setting for the thing below it, and
+  // sitting above the video made it look like part of the flying rather than
+  // part of the setup.
+  const btn = document.createElement('button');
+  btn.id = 'audio-toggle';
+  btn.type = 'button';
+  btn.title = 'Sound on or off — M does the same, and works in fullscreen';
+  scene.addControl(btn);
 
   // Two controls, one owner. The panel and the button both read and write the
   // FlightAudio instance and redraw from its onChange, so they cannot disagree

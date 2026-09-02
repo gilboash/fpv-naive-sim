@@ -223,6 +223,38 @@ const main = async () => {
       icon: document.querySelector('link[rel=icon]')?.getAttribute('href') ?? '',
     };
   })()`);
+  // The flying tab is the picture and its settings, and nothing else. Prose
+  // belongs in Settings, where someone is reading rather than flying.
+  const flyTab = await evaluate(`(() => {
+    const { tabs, scene } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const section = document.querySelector('#scene');
+    const btn = document.querySelector('#audio-toggle');
+    return {
+      title: section?.querySelector('h2')?.textContent ?? '',
+      hints: section.querySelectorAll(':scope > p').length,
+      // The sound control sits with the map, FOV and tilt rather than above
+      // the video.
+      soundInControls: !!btn && scene.controls.contains(btn),
+      // Ahead of the status readouts, not trailing after them.
+      soundBeforeStatus: !!btn && !!(btn.compareDocumentPosition(scene.controls.lastElementChild) & Node.DOCUMENT_POSITION_FOLLOWING),
+      soundBelowCanvas: !!btn &&
+        !!(document.querySelector('#scene-view canvas')?.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING),
+    };
+  })()`);
+  check(
+    'the flying tab is the picture and its settings, with no prose',
+    flyTab.title === 'Sim' && flyTab.hints === 0,
+    `titled "${flyTab.title}", ${flyTab.hints} paragraphs above the view`,
+  );
+  check(
+    'and the sound control sits with the other view settings, below the picture',
+    flyTab.soundInControls === true &&
+      flyTab.soundBelowCanvas === true &&
+      flyTab.soundBeforeStatus === true,
+    'in the same row as map, FOV, tilt and reset mode, ahead of the status readouts',
+  );
+
   check(
     'the branding is there and the image actually loaded',
     brand.logo === true && brand.href === 'https://www.instagram.com/nacofpv',
