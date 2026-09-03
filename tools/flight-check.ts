@@ -1595,11 +1595,17 @@ section('Race: the drawn gates are the timed gates');
     raceField.course === raceVibesCourse,
     'so the race can only run on a map whose gates exist',
   );
+  // The rule rather than a count: a map carries a course exactly when it is not
+  // a freestyle map. Counting broke the moment a second freestyle map arrived,
+  // which is the sort of check that fails for being right.
+  const miscarried = TRACKS.filter((t) => t.name.startsWith('Freestyle') === (t.course !== undefined));
   ok(
-    'every race map carries its own course, and freestyle carries none',
-    TRACKS.filter((t) => t.course).length === TRACKS.length - 1 && freestyle.course === undefined,
-    `${TRACKS.filter((t) => t.course).length} of ${TRACKS.length} maps carry a course; ` +
-      `${TRACKS.filter((t) => !t.course).map((t) => t.name).join(', ')} does not`,
+    'a map carries a course exactly when it is not a freestyle map',
+    miscarried.length === 0 && freestyle.course === undefined,
+    miscarried.length === 0
+      ? `${TRACKS.filter((t) => t.course).length} race maps, ` +
+        `${TRACKS.filter((t) => !t.course).map((t) => t.name).join(' and ')} without`
+      : miscarried.map((t) => t.name).join(', '),
   );
   // Named the same, deliberately. Race vibes carried a course called "Six gates
   // and a flag" for a day after the map was renamed, and nothing noticed —
@@ -1681,6 +1687,60 @@ section('Contact: hitting scenery is reported, once per collision');
     'while hitting the ground is not a strike',
     groundTicks === 0,
     'dropped 3 m onto the grass, no scenery impact reported',
+  );
+}
+
+section('Freestyle hard: the round chimney is a shaft, not a floor');
+{
+  // The vertical ring was a new axis on an obstacle that had only ever pointed
+  // along the ground, so the thing worth asserting is that its wall is
+  // vertical: you can fall *through* a chimney and only hit it sideways.
+  const m = new MeshBuilder();
+  const obs: Obstacle[] = [];
+  TRACKS.find((t) => t.name === 'Freestyle hard')!.build(m, obs);
+  const shafts = obs.filter((o) => o.kind === 'ring' && o.axis === 'up');
+  ok(
+    'the map has upright chimneys',
+    shafts.length === 3,
+    `${shafts.length} vertical shafts among ${obs.length} obstacles`,
+  );
+
+  const shaft = shafts[0] as { north: number; east: number; up: number; radius: number; halfLength: number };
+  // Straight down the bore, from above: nothing should be hit.
+  const through = new FlightSim({ airframe: kronos() });
+  through.obstacles = obs;
+  through.pos.x = shaft.north;
+  through.pos.y = shaft.east;
+  through.pos.z = -(shaft.up + shaft.halfLength + 3);
+  let hitsGoingThrough = 0;
+  for (let i = 0; i < 2500; i++) {
+    through.step(sticks({ throttle: 0, roll: 0, pitch: 0, yaw: 0 }));
+    if (through.obstacleImpact > 0) hitsGoingThrough++;
+    if (-through.pos.z < shaft.up - shaft.halfLength - 1) break;
+  }
+  ok(
+    'and dropping down the bore hits nothing',
+    hitsGoingThrough === 0,
+    'fell the length of the shaft without touching it',
+  );
+
+  // Into the wall, sideways.
+  const wall = new FlightSim({ airframe: kronos() });
+  wall.obstacles = obs;
+  wall.pos.x = shaft.north - shaft.radius - 6;
+  wall.pos.y = shaft.east;
+  wall.pos.z = -shaft.up;
+  wall.vel.x = 8;
+  wall.arm({ throttle: 0, roll: 0, pitch: 0, yaw: 0 });
+  let struck = false;
+  for (let i = 0; i < 2000 && !struck; i++) {
+    wall.step(sticks({ throttle: 0.16, roll: 0, pitch: 0, yaw: 0 }));
+    if (wall.obstacleImpact > 0) struck = true;
+  }
+  ok(
+    'while flying into its side does not',
+    struck,
+    'the shaft is a wall from outside and open from above',
   );
 }
 

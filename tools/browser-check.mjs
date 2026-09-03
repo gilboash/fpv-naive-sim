@@ -1492,6 +1492,13 @@ const main = async () => {
   const soundOn = await evaluate(`(async () => {
     const { audio, flight, scene, poller } = globalThis.__fpvsim;
     audio.setEnabled(true);
+    // resume() is asynchronous, and update() is a no-op while the context is
+    // still suspended — so measuring straight away reads the oscillators'
+    // initial 200 Hz and calls it a failure. Wait for the graph to be running
+    // rather than assuming it is.
+    for (let i = 0; i < 60 && audio.state !== 'running'; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
 
     // Spin the motors up properly: an rpm-driven tone is silent on a quad that
     // is not turning, so a check on a disarmed model proves nothing.

@@ -54,7 +54,12 @@ export interface Ring {
   thickness: number;
   /** Half the tube's length along its axis. */
   halfLength: number;
-  axis: 'north' | 'east';
+  /**
+   * Which way the bore points. `'up'` is a vertical shaft — a chimney you drop
+   * down rather than a tube you fly through, and the reason `north` and `east`
+   * were not enough.
+   */
+  axis: 'north' | 'east' | 'up';
 }
 
 export type Obstacle = Cylinder | Box | Ring;
@@ -247,11 +252,15 @@ export function contactPoint(
       out.hitObstacle = true;
     } else if (o.kind === 'ring') {
       const up = -world.z;
-      // Distance along the axis, and the two coordinates across it.
-      const along = o.axis === 'north' ? world.x - o.north : world.y - o.east;
+      // Distance along the axis, and the two coordinates across it. A vertical
+      // shaft measures along height and across the ground, which is the same
+      // arithmetic with the roles swapped.
+      const along =
+        o.axis === 'north' ? world.x - o.north : o.axis === 'east' ? world.y - o.east : up - o.up;
       if (Math.abs(along) > o.halfLength) continue;
-      const aCross = o.axis === 'north' ? world.y - o.east : world.x - o.north;
-      const bCross = up - o.up;
+      const aCross =
+        o.axis === 'north' ? world.y - o.east : o.axis === 'east' ? world.x - o.north : world.x - o.north;
+      const bCross = o.axis === 'up' ? world.y - o.east : up - o.up;
       const r = Math.hypot(aCross, bCross);
       if (r < o.radius || r > o.radius + o.thickness) continue;
       // Inside the wall. Push to whichever face is nearer — out through the
@@ -262,9 +271,11 @@ export function contactPoint(
       const depth = Math.min(inward, outward);
       const ua = r > 1e-6 ? aCross / r : 1;
       const ub = r > 1e-6 ? bCross / r : 0;
-      const nN = o.axis === 'north' ? 0 : sign * ua;
-      const nE = o.axis === 'north' ? sign * ua : 0;
-      const nUp = sign * ub;
+      // The normal lies across the bore, so for a vertical shaft it is purely
+      // horizontal — a wall you hit sideways, never a floor.
+      const nN = o.axis === 'up' ? sign * ua : o.axis === 'north' ? 0 : sign * ua;
+      const nE = o.axis === 'up' ? sign * ub : o.axis === 'north' ? sign * ua : 0;
+      const nUp = o.axis === 'up' ? 0 : sign * ub;
       respond(out, p, depth, nN, nE, -nUp, vel.x, vel.y, vel.z, arm.x, arm.y, arm.z, q);
       out.hitObstacle = true;
     } else {

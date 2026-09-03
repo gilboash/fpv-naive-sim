@@ -783,7 +783,19 @@ where that shows: they are drawn as quads round the arc, because axis-aligned
 boxes would have made a staircase, while contact stays one box per segment —
 which is close enough to a quarter-metre of arc and does not need to be pretty.
 
-Two maps went when these arrived. **Open field** was four pylons and a landing
+**Freestyle hard** is the second map with no course, and it is vertical where
+Freestyle is a loop: towers of cubes three to six storeys, poles from 4 m to
+26 m so that going over one puts you under the next, three **round** chimneys to
+drop, five gates high enough that reaching them is half the trick, and three
+tall ladders. Three bands rather than a circuit, so a pilot picks a direction
+and commits.
+
+The round chimney is why `Ring` grew a third axis. Every tube before it was
+something you fly *through* horizontally; a vertical shaft is something you drop
+down, and its wall is purely horizontal — you can fall the length of the bore
+and only ever hit it sideways. There are checks for exactly that.
+
+Two maps went when the race maps arrived. **Open field** was four pylons and a landing
 pad, which is what an empty scene looks like once there is anywhere better to
 go, and **Gate run** was a staggered line that the thrust line now does properly
 and times.

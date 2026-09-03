@@ -244,6 +244,54 @@ export class MeshBuilder {
   }
 
   /**
+   * Vertical tube: a round shaft, open top and bottom.
+   *
+   * `tube` below points along a ground axis, which is a thing you fly through.
+   * This one you drop down, and it needs its own builder rather than a rotation
+   * because the whole mesh is authored axis-aligned.
+   */
+  shaft(
+    cx: number,
+    cz: number,
+    yBase: number,
+    yTop: number,
+    radius: number,
+    thickness: number,
+    segments: number,
+    r: number,
+    g: number,
+    b: number,
+  ): void {
+    const outer = radius + thickness;
+    for (let i = 0; i < segments; i++) {
+      const a0 = (i / segments) * Math.PI * 2;
+      const a1 = ((i + 1) / segments) * Math.PI * 2;
+      const at = (ang: number, rad: number, y: number): [number, number, number] => [
+        cx + Math.cos(ang) * rad,
+        y,
+        cz + Math.sin(ang) * rad,
+      ];
+      const shade = (f: number): [number, number, number] => [r * f, g * f, b * f];
+      // Outer skin, inner skin, and a rim at each end so the wall has thickness
+      // from every angle rather than vanishing when seen edge-on.
+      this.quadColored(
+        at(a0, outer, yBase), at(a1, outer, yBase), at(a1, outer, yTop), at(a0, outer, yTop),
+        shade(1), shade(1), shade(1), shade(1),
+      );
+      this.quadColored(
+        at(a0, radius, yTop), at(a1, radius, yTop), at(a1, radius, yBase), at(a0, radius, yBase),
+        shade(0.55), shade(0.55), shade(0.55), shade(0.55),
+      );
+      for (const [y, f] of [[yBase, 0.7], [yTop, 0.9]] as [number, number][]) {
+        this.quadColored(
+          at(a0, radius, y), at(a1, radius, y), at(a1, outer, y), at(a0, outer, y),
+          shade(f), shade(f), shade(f), shade(f),
+        );
+      }
+    }
+  }
+
+  /**
    * Horizontal tube, open down the bore. `along` is the render axis it points
    * down. Built as an outer skin, an inner skin with the normals reversed, and
    * a ring at each end, so it reads as a solid wall from any side.

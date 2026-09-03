@@ -1213,6 +1213,31 @@ demanded 25 m/s^2 to fly at 12; and thrust-to-weight was assumed at 3.2 when the
 model has **8.1** (hover 9 428 rpm against 28 046 at full throttle, thrust as
 rpm squared — hover is 11% of maximum).
 
+## Freestyle hard (2026-09-03)
+
+A sixth map, and the second with no course: towers of cubes three to six
+storeys, poles from 4 m to 26 m, three round chimneys, five high gates and
+three tall ladders. Laid out in three bands rather than a circuit — towers
+north, chimneys and poles through the middle, the high stuff south — so a pilot
+picks a direction and commits.
+
+**The round chimney needed a new obstacle axis.** `Ring` had `'north' | 'east'`
+because every tube so far was something you fly *through* horizontally; a
+vertical shaft is something you drop down, and its wall is purely horizontal —
+you can fall the length of the bore and only ever hit it sideways. `'up'` is now
+a third axis, and `MeshBuilder.shaft` draws it (the whole mesh is authored
+axis-aligned, so a rotation was not on offer).
+
+There are checks for exactly that property: three upright shafts on the map,
+dropping down one touches nothing, flying into its side does.
+
+**One check failed for being right.** "Every race map carries a course and
+freestyle carries none" counted maps, so a *second* freestyle map broke it. It
+asserts the rule now — a map carries a course exactly when its name does not
+begin with Freestyle.
+
+Worst map is now Freestyle hard at 9.25 us over 315 obstacles, 0.9% of the tick.
+
 ## The flying tab is the picture and its settings (2026-09-02)
 
 Gilboa: remove the text under "FPV view", move the sound button down with the

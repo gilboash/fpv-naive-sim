@@ -468,6 +468,50 @@ function chimney(
 }
 
 /**
+ * A round chimney: a vertical shaft you drop down and come out of the bottom.
+ *
+ * The square one on the freestyle map is four walls and reads as masonry. This
+ * is a pipe, and it flies differently — there is no corner to catch a prop on,
+ * so the whole aperture is usable and the only question is whether you are
+ * straight when you commit.
+ *
+ * Raised on legs, because a shaft standing on the ground is a hole with no
+ * exit. Collision is a single upright ring, which is what the `'up'` axis on
+ * `Ring` was added for.
+ */
+function roundChimney(
+  m: MeshBuilder,
+  obs: Obstacle[],
+  cx: number,
+  cz: number,
+  radius: number,
+  base: number,
+  height: number,
+  colour: readonly [number, number, number],
+): void {
+  const thickness = 0.16;
+  const top = base + height;
+  m.shaft(cx, cz, base, top, radius, thickness, 22, colour[0]!, colour[1]!, colour[2]!);
+  obs.push({
+    kind: 'ring',
+    north: north(cz),
+    east: east(cx),
+    up: (base + top) / 2,
+    radius,
+    thickness,
+    halfLength: height / 2,
+    axis: 'up',
+  });
+  // Legs at the compass points, outside the bore.
+  for (const a of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
+    const lx = cx + Math.cos(a) * (radius + thickness * 0.5);
+    const lz = cz + Math.sin(a) * (radius + thickness * 0.5);
+    m.cylinder(lx, lz, 0, base, 0.09, 8, 0.45, 0.47, 0.5);
+    obs.push({ kind: 'cylinder', north: north(lz), east: east(lx), radius: 0.15, height: base });
+  }
+}
+
+/**
  * A semicircular arch, built from quads round the arc rather than from
  * axis-aligned boxes.
  *
@@ -720,6 +764,91 @@ function cube(
 }
 
 /**
+ * Freestyle hard: the same idea as Freestyle with the training wheels off.
+ *
+ * Where that map is a loop with things beside it, this one is vertical. Towers
+ * of cubes to thread rather than fly round, poles at heights that make you
+ * choose over or under, round chimneys to drop, and gates and ladders high
+ * enough that reaching them is half the trick. No course and no timer — the
+ * point is a playground, and a clock would turn it into a queue.
+ *
+ * Laid out in three bands rather than a circuit, so a pilot picks a direction
+ * and commits: towers to the north, chimneys and poles through the middle, the
+ * high stuff to the south.
+ */
+export const freestyleHard: Track = {
+  name: 'Freestyle hard',
+  start: { north: -60, east: 0, yawDeg: 0 },
+  build(m, obs) {
+    ground(m);
+    m.groundQuad(-8, 52, 8, 68, 0.02, ...TARMAC);
+
+    const cs = CUBE_HALF;
+    const side = cs * 2;
+
+    // Towers. Height is the difficulty: a four-storey tower is a wall with
+    // holes in it, and the line through one is a commitment made on entry.
+    const towers: [number, number, number][] = [
+      [-26, 26, 4],
+      [-18, 34, 6],
+      [-8, 26, 3],
+      [2, 36, 5],
+      [12, 26, 4],
+      [22, 34, 6],
+      [30, 26, 3],
+    ];
+    for (const [x, z, storeys] of towers) {
+      cube(m, obs, { north: north(z), east: east(x), half: cs, storeys }, storeys % 2 ? GATE_A : GATE_B);
+    }
+    // Two of them joined, so there is one line that runs through both.
+    cube(m, obs, { north: north(34), east: east(-18) - side, half: cs, storeys: 6 }, GATE_B);
+
+    // Poles at every height, close enough together that going over one puts
+    // you under the next. The tallest is deliberately taller than anything
+    // else here — it is the thing you orient by from the far end.
+    const poles: [number, number, number][] = [
+      [-34, 6, 7],
+      [-24, -2, 14],
+      [-14, 8, 4],
+      [-4, -6, 20],
+      [6, 6, 9],
+      [16, -2, 26],
+      [26, 8, 5],
+      [34, -4, 12],
+    ];
+    for (const [x, z, h] of poles) lightPole(m, obs, x, z, h);
+
+    // Round chimneys. Three sizes at three heights: the tight one is a dive
+    // you line up from above, the wide one you can take at speed.
+    roundChimney(m, obs, -20, -18, 1.5, 6, 12, [0.62, 0.36, 0.3]);
+    roundChimney(m, obs, 0, -14, 2.2, 4, 9, [0.55, 0.42, 0.34]);
+    roundChimney(m, obs, 20, -20, 1.2, 10, 14, [0.62, 0.36, 0.3]);
+
+    // High gates: the same aperture as a race gate, up where you have to climb
+    // to it. Alternating headings so a run through them is a corkscrew.
+    const high: [number, number, number, number, number][] = [
+      [-28, -34, 6, 1, 0],
+      [-14, -40, 10, 0, 1],
+      [0, -34, 14, 1, 0],
+      [14, -40, 9, 0, -1],
+      [28, -34, 5, -1, 0],
+    ];
+    high.forEach(([x, z, up, dn, de], i) => {
+      raceGate(m, obs, x, z, up, GATE_HALF_W, GATE_HALF_H, dn, de, i % 2 ? GATE_A : GATE_B, 0);
+    });
+
+    // Ladders, tall. Climbing one is the exercise; the gaps are the windows.
+    ladder(m, obs, -36, -30, 'z', 4.6, 6, 3.4, 3.0);
+    ladder(m, obs, 36, -30, 'z', 4.6, 6, 3.4, 3.0);
+    ladder(m, obs, 8, -52, 'x', 5.2, 5, 3.8, 4.0);
+
+    // One arch over the start, so the first thing a pilot does is go through
+    // something.
+    arch(m, obs, 0, 46, 8, 1.3, 0.5, 'x', [0.8, 0.78, 0.72]);
+  },
+};
+
+/**
  * Draw a course's own checkpoints as scenery.
  *
  * The single source is the checkpoint list the timer reads, so a gate cannot be
@@ -868,4 +997,11 @@ export const oneEightyTrack: Track = {
   },
 };
 
-export const TRACKS: Track[] = [raceField, thrustLine, circleTrack, oneEightyTrack, freestyle];
+export const TRACKS: Track[] = [
+  raceField,
+  thrustLine,
+  circleTrack,
+  oneEightyTrack,
+  freestyle,
+  freestyleHard,
+];
