@@ -1282,6 +1282,88 @@ Three things this cost, all worth keeping:
   pilots.** A rule stricter than the shipped content is a rule pilots learn to
   ignore, and it caught the aperture problem immediately.
 
+## Gates are pieces, and the order is what makes a race (2026-09-04)
+
+A gate existed only as a checkpoint, so a track could not carry a gate it did
+not time, and nothing said that adding a course is what turns a track into a
+race. `gate` and `flag` are pieces now, like a cube or a pole. Give one an `id`
+and name that id in **`order`** and it becomes a checkpoint too; leave it out
+and it is scenery you fly through for its own sake.
+
+`order` names pieces **by id, not by position** — the fourth time that lesson
+has been applied here, and the reason is the same as the other three: inserting
+a piece would otherwise silently reorder someone's course.
+
+`course` is still there for the generators, `gateLine` and `gateRing`, which is
+the only way to say "twenty gates round a circle" in one line. Use one or the
+other; both together is refused.
+
+The UI offers **two examples** now, race and freestyle, because the difference
+between the two kinds of track is one field and the pair says that better than
+any hint text. The freestyle example deliberately *has* gates.
+
+Three defects came out of finishing this, and none of them were visible as a
+failing test — the feature had no tests at all when it was picked back up:
+
+- **A course-based track saved and then would not load.** Normalising wrote an
+  empty `order: []` onto every spec, while the order/course exclusivity rule
+  fired on the field being *present* rather than on it saying anything. Since
+  stored specs are re-validated on the way out of localStorage, this ate a
+  pilot's existing track at load time rather than complaining when it was
+  written — the silent kind. The rule now compares contents, and `order` is
+  only carried when it names something. **A field that exists and says nothing
+  is not a conflict.**
+- **A gate's heading was not validated.** `"heading": "north"` reached
+  `Math.cos` and produced a checkpoint at `dirN` NaN: a gate that can never be
+  crossed, drawn at NaN, and perfectly reasonable-looking in the file. A flag
+  piece's `side` was unchecked the same way, though the *course* form had
+  validated both since the beginning — the new path simply did not inherit it.
+  `passWidth` was going through unclamped.
+- **One mistake produced two messages.** Ids are read off the pieces as
+  written rather than the ones that survived validation, so a gate rejected for
+  a bad heading still owns its id and the order does not also report it
+  missing. An error pointing at the wrong thing is worse than no second error.
+
+Also worth keeping:
+
+- **An ordered gate is drawn once.** The piece loop skips gates and flags named
+  in the order and lets `raceScenery` draw them from the checkpoint, so drawn
+  and timed stay one object — the invariant the whole spec format exists for.
+  There is a check that counts posts at a gate, because two frames in one place
+  read as one and collide as two.
+- **The two examples are shipped content and are checked as such.** Loading one
+  and pressing Save is the first thing a new pilot does, so both are asserted to
+  validate, to pass `checkTrack`, and to be timed and untimed respectively.
+  Same argument as every built-in map passing the check imposed on pilots.
+- **`racePanel.race.course` is stale on a map with no course, on purpose.** A
+  `Race` always holds a course; `courseAvailable` is the guard and the Start
+  button is what it disables. A browser check that asked the panel how many
+  checkpoints the map had got five on a freestyle map and looked like a bug.
+  Ask `scene.track.course` — the map — not the panel.
+- **A backtick in a comment inside a template literal ends the string.** The
+  browser check is built as one, and `courseAvailable` in prose cost a
+  `SyntaxError: missing ) after argument list`. Same family as the `/\s+/` slip
+  already recorded above.
+
+192 flight checks and the full browser check pass.
+
+**And the deployment check itself was broken.** `check:browser <production-url>`
+advertises degrading to a smoke test against a built artefact, and had stopped
+doing it: the handle-requiring blocks (the flying tab, the track editor,
+fullscreen) had been added *above* the `hasHandle` gate, so verifying a
+deployment died on `Cannot destructure property 'tabs' of globalThis.__fpvsim`
+rather than bowing out. Confirmed pre-existing by stashing and re-running the
+committed version against the same URL. The deep region now sits below the
+gate, with a comment saying why it must stay there. **Verifying the deployment
+is the one job that only works against production**, so it is the one path
+nothing else would have caught — every routine run is against `npm run dev`,
+where the handle exists and the gate never fires.
+
+Also seen once and not reproducible: the first run after a server restart read
+`ticker: (none)` and no radio pill, and the next run read `atomics`. The check
+races the page's startup stamping of `documentElement.dataset`, so read a
+failure there twice before believing it.
+
 ## Fullscreen on a phone (2026-09-04)
 
 Gilboa: fullscreen does not work from a mobile browser. It did not, and the

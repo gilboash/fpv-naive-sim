@@ -115,21 +115,44 @@ export function allTracks(): Track[] {
   return [...TRACKS, ...userSpecs().map(trackFromSpec)];
 }
 
-/** A starting point for someone opening the box for the first time. */
-export const EXAMPLE_TRACK = `{
+/**
+ * Two starting points, because there are two kinds of track and the difference
+ * is one attribute.
+ *
+ * A freestyle track is things to fly at. A race track is the same, plus an
+ * `order` naming which gates count and in what sequence — and note that the
+ * freestyle example *has* gates. Not every gate is part of a race; one you fly
+ * through for its own sake is a perfectly good obstacle.
+ */
+export const EXAMPLE_FREESTYLE = `{
   "version": 1,
-  "name": "My first track",
+  "name": "My playground",
+  "start": { "north": -30, "east": 0, "yawDeg": 0 },
+  "pieces": [
+    { "type": "gate", "north": -10, "east": 0, "heading": 0 },
+    { "type": "gate", "north": 8, "east": 10, "heading": 40, "up": 6 },
+    { "type": "cube", "north": 18, "east": -6, "storeys": 3 },
+    { "type": "roundChimney", "north": -4, "east": 20, "radius": 1.6, "base": 5, "height": 11 },
+    { "type": "arch", "north": 26, "east": 6, "radius": 7 },
+    { "type": "ladder", "north": 12, "east": 24, "gaps": 5 },
+    { "type": "pole", "north": 0, "east": -22, "height": 16 }
+  ]
+}`;
+
+export const EXAMPLE_RACE = `{
+  "version": 1,
+  "name": "My first race",
   "start": { "north": -30, "east": 0, "yawDeg": 0 },
   "laps": 3,
   "pieces": [
-    { "type": "cube", "north": 18, "east": 14, "storeys": 2 },
-    { "type": "pole", "north": 6, "east": -16, "height": 12 },
-    { "type": "roundChimney", "north": -8, "east": 18, "radius": 1.6, "base": 5, "height": 11 }
+    { "id": "1", "type": "gate", "north": -12, "east": 0, "heading": 0 },
+    { "id": "2", "type": "gate", "north": 6, "east": 12, "heading": 40 },
+    { "id": "3", "type": "gate", "north": 24, "east": 0, "heading": 140 },
+    { "id": "turn", "type": "flag", "north": 26, "east": -16, "heading": 180, "side": 1 },
+    { "id": "4", "type": "gate", "north": 2, "east": -14, "heading": 200 },
+
+    { "type": "cube", "north": 14, "east": -4, "storeys": 2 },
+    { "type": "pole", "north": -6, "east": 18, "height": 14 }
   ],
-  "course": [
-    { "gate": { "north": -14, "east": 0, "heading": 0 } },
-    { "gate": { "north": 6, "east": 8, "heading": 20 } },
-    { "flag": { "north": 24, "east": -6, "heading": 180, "side": 1 } },
-    { "gate": { "north": 2, "east": -12, "heading": 200 } }
-  ]
+  "order": ["1", "2", "3", "turn", "4"]
 }`;

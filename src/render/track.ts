@@ -1012,6 +1012,10 @@ export const oneEightyTrack: Track = {
  */
 export function trackFromSpec(spec: TrackSpec): Track {
   const course = courseFromSpec(spec);
+  // Which gate and flag pieces the course already covers. Everything else of
+  // that kind is scenery: not every gate on a track is part of the race, and a
+  // gate you fly through for its own sake is a perfectly good obstacle.
+  const inCourse = new Set(spec.order ?? []);
   // The helpers below want a render axis rather than a heading, and every one
   // of them is axis-aligned. A heading nearer north than east spans x.
   const axisFor = (headingDeg = 0): 'x' | 'z' =>
@@ -1028,6 +1032,24 @@ export function trackFromSpec(spec: TrackSpec): Track {
         const cx = p.east;
         const cz = -p.north;
         switch (p.type) {
+          case 'gate': {
+            // Drawn here only when it is not in the order — a checkpoint's frame
+            // comes from raceScenery below, so that the drawn gate and the timed
+            // one are one object rather than two.
+            if (p.id && inCourse.has(p.id)) break;
+            const r = ((p.heading ?? 0) * Math.PI) / 180;
+            raceGate(
+              m, obs, cx, cz, p.up ?? GATE_UP, GATE_HALF_W, GATE_HALF_H,
+              Math.cos(r), Math.sin(r), GATE_A, 0,
+            );
+            break;
+          }
+          case 'flag': {
+            if (p.id && inCourse.has(p.id)) break;
+            const r = ((p.heading ?? 0) * Math.PI) / 180;
+            flagPylon(m, obs, cx, cz, p.height ?? 7, Math.cos(r), Math.sin(r), p.side, p.passWidth ?? 6);
+            break;
+          }
           case 'cube':
             cube(m, obs, { north: p.north, east: p.east, half: CUBE_HALF, storeys: p.storeys ?? 1 }, GATE_B);
             break;

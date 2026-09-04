@@ -123,20 +123,31 @@
             <code>window</code>.
           </p>
           <p class="hint">
-            <strong>course</strong> — the order to fly, if you want a timed one:
-            <code>gate</code>, <code>flag</code> (needs <code>side</code>, 1 or -1),
-            <code>gateLine</code> (a run of them: <code>count</code> and <code>spacing</code>) and
-            <code>gateRing</code> (<code>count</code> and <code>radius</code>). Leave the course out
-            and you get a freestyle map with no timer.
+            <strong>gates and flags</strong> are pieces too — <code>gate</code> needs a
+            <code>heading</code>, <code>flag</code> also needs <code>side</code> (1 or -1). On their
+            own they are just things to fly through.
+          </p>
+          <p class="hint">
+            <strong>order</strong> is what makes it a race: give the gates you want timed an
+            <code>id</code>, then list those ids in the order to fly them. Anything without an
+            <code>id</code>, or left out of the order, is still there to fly — it just is not part
+            of the race. No <code>order</code> at all means a freestyle map with no timer.
+          </p>
+          <p class="hint">
+            For long runs there is <strong>course</strong> instead, which takes
+            <code>gateLine</code> (<code>count</code> and <code>spacing</code>) and
+            <code>gateRing</code> (<code>count</code> and <code>radius</code>) — a twenty-gate
+            circle in one line. Use <code>order</code> or <code>course</code>, not both.
           </p>
         </details>
         <div class="row">
-          <button id="track-example" type="button">Load an example</button>
+          <button id="track-example-race" type="button">Example: race</button>
+          <button id="track-example-free" type="button">Example: freestyle</button>
           <button id="track-save" type="button">Save track</button>
           <span id="track-status" class="dim"></span>
         </div>
         <textarea id="track-json" spellcheck="false" rows="12"
-          placeholder="Paste a track here, or press Load an example."></textarea>
+          placeholder="Paste a track here, or load one of the examples."></textarea>
         <div id="track-list" class="track-list"></div>
       </section>
 

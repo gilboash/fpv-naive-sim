@@ -45,6 +45,17 @@ export interface Placement {
 }
 
 export type PieceSpec =
+  /**
+   * A gate, as a thing that stands there. Give it an `id` and name that id in
+   * `order` to make it a checkpoint too.
+   *
+   * Gates were only ever checkpoints before, which meant a track could not have
+   * a gate it did not time, and nothing said that adding a course is what turns
+   * a track into a race. Placing the gate and deciding the order are two
+   * separate thoughts, and they read better as two.
+   */
+  | (Placement & { type: 'gate'; heading: number; up?: number; id?: string })
+  | (Placement & { type: 'flag'; heading: number; side: 1 | -1; height?: number; passWidth?: number; id?: string })
   | (Placement & { type: 'cube'; storeys?: number })
   | (Placement & { type: 'pole'; height: number })
   | (Placement & { type: 'pylon'; height: number })
@@ -69,6 +80,19 @@ export interface TrackSpec {
   start: { north: number; east: number; yawDeg: number };
   laps?: number;
   pieces?: PieceSpec[];
+  /**
+   * The gates and flags to fly, by their `id`, in order. Naming this is what
+   * turns a track into a race; leaving it out gives a freestyle map.
+   *
+   * By id rather than by position in the list, because this project has been
+   * bitten three times by identity through position — inserting a piece would
+   * otherwise silently reorder the course.
+   */
+  order?: string[];
+  /**
+   * The long way, and the only way to a generated shape: checkpoints written
+   * out, including `gateRing` and `gateLine`. Use one or the other, not both.
+   */
   course?: CheckpointSpec[];
 }
 
@@ -83,6 +107,8 @@ export interface ValidationResult {
 }
 
 const PIECE_TYPES = new Set([
+  'gate',
+  'flag',
   'cube',
   'pole',
   'pylon',
@@ -156,7 +182,8 @@ export function validateTrackSpec(input: unknown, builtInNames: string[] = []): 
   if (rawPieces.length > SPEC_LIMITS.pieces) {
     fail(`${rawPieces.length} pieces — the limit is ${SPEC_LIMITS.pieces}`);
   }
-  rawPieces.slice(0, SPEC_LIMITS.pieces).forEach((p, i) => {
+  const keptPieces = rawPieces.slice(0, SPEC_LIMITS.pieces);
+  keptPieces.forEach((p, i) => {
     const o = p as Record<string, unknown>;
     if (typeof o?.type !== 'string' || !PIECE_TYPES.has(o.type)) {
       fail(`piece ${i + 1}: unknown type ${JSON.stringify(o?.type)}`);
@@ -169,7 +196,7 @@ export function validateTrackSpec(input: unknown, builtInNames: string[] = []): 
     const out: Record<string, unknown> = { ...o };
     out.north = clamp(o.north, -SPEC_LIMITS.extent, SPEC_LIMITS.extent);
     out.east = clamp(o.east, -SPEC_LIMITS.extent, SPEC_LIMITS.extent);
-    for (const k of ['up', 'height', 'base', 'radius', 'bore', 'half', 'width', 'gap', 'halfLength']) {
+    for (const k of ['up', 'height', 'base', 'radius', 'bore', 'half', 'width', 'gap', 'halfLength', 'passWidth']) {
       if (o[k] !== undefined) {
         if (!finite(o[k])) {
           fail(`piece ${i + 1} (${o.type}): ${k} is not a number`);
@@ -177,6 +204,23 @@ export function validateTrackSpec(input: unknown, builtInNames: string[] = []): 
         }
         out[k] = clamp(o[k] as number, 0, SPEC_LIMITS.height);
       }
+    }
+    if (o.heading !== undefined && !finite(o.heading)) {
+      fail(`piece ${i + 1} (${o.type}): heading is not a number`);
+      return;
+    }
+    // A gate or a flag is a plane to fly through, so which way it faces is not
+    // optional the way a ladder's is: without a heading the timer gets a
+    // checkpoint pointing nowhere. Unvalidated, a heading of "north" reached
+    // Math.cos and made a gate at dirN NaN, which can never be crossed and
+    // cannot be seen to be wrong by looking at it.
+    if ((o.type === 'gate' || o.type === 'flag') && !finite(o.heading)) {
+      fail(`piece ${i + 1} (${o.type}): needs a heading in degrees`);
+      return;
+    }
+    if (o.type === 'flag' && o.side !== 1 && o.side !== -1) {
+      fail(`piece ${i + 1} (flag): side must be 1 or -1`);
+      return;
     }
     if (o.storeys !== undefined) out.storeys = clamp(Math.round(Number(o.storeys) || 1), 1, 8);
     if (o.gaps !== undefined) out.gaps = clamp(Math.round(Number(o.gaps) || 1), 1, 12);
@@ -214,7 +258,56 @@ export function validateTrackSpec(input: unknown, builtInNames: string[] = []): 
     course.push(o as CheckpointSpec);
   });
 
-  const total = countCheckpoints(course);
+  // Order references pieces by id, so the ids have to exist and be unique.
+  //
+  // Read off the pieces as *written* rather than the ones that survived
+  // validation: a gate rejected for a bad heading still owns its id, so the
+  // order does not go on to report it missing as well. One mistake should
+  // produce one message, and a second error pointing somewhere else is worse
+  // than no second error. The index is the pilot's own numbering for the same
+  // reason — they are counting entries in their file, not survivors.
+  const ids = new Map<string, number>();
+  keptPieces.forEach((p, i) => {
+    const id = (p as { id?: string }).id;
+    if (id === undefined) return;
+    if (typeof id !== 'string' || id.length === 0) {
+      fail(`piece ${i + 1}: id must be a non-empty string`);
+      return;
+    }
+    if (ids.has(id)) fail(`two pieces share the id ${JSON.stringify(id)}`);
+    ids.set(id, i);
+  });
+
+  const order: string[] = [];
+  if (raw.order !== undefined && !Array.isArray(raw.order)) {
+    fail('order must be a list of piece ids');
+  } else {
+    const rawOrder = (Array.isArray(raw.order) ? raw.order : []) as unknown[];
+    // Both *populated*, rather than both present. Normalising used to write an
+    // empty `order: []` onto every spec, and a rule that read presence then
+    // refused the track on the way back out of storage — so a course-based
+    // track saved and then would not reload. A field that exists and says
+    // nothing is not a conflict.
+    if (rawOrder.length > 0 && course.length > 0) {
+      fail('use order or course, not both — order names pieces, course writes checkpoints out');
+    } else {
+      for (const id of rawOrder) {
+        if (typeof id !== 'string' || !ids.has(id)) {
+          fail(`order names ${JSON.stringify(id)}, which is not the id of any piece`);
+          continue;
+        }
+        const piece = keptPieces[ids.get(id)!] as { type: string };
+        if (piece.type !== 'gate' && piece.type !== 'flag') {
+          fail(`order names ${JSON.stringify(id)}, which is a ${piece.type} — only gates and flags can be flown in order`);
+          continue;
+        }
+        order.push(id);
+      }
+      if (order.length === 1) fail('an order of one checkpoint is not a lap — add another');
+    }
+  }
+
+  const total = countCheckpoints(course) + order.length;
   if (total > SPEC_LIMITS.checkpoints) {
     fail(`${total} checkpoints — the limit is ${SPEC_LIMITS.checkpoints}`);
   }
@@ -225,7 +318,7 @@ export function validateTrackSpec(input: unknown, builtInNames: string[] = []): 
   return {
     ok: true,
     errors: [],
-    spec: { version: TRACK_SPEC_VERSION, name, start, laps, pieces, course },
+    spec: { version: TRACK_SPEC_VERSION, name, start, laps, pieces, ...(order.length > 0 ? { order } : {}), course },
   };
 }
 
@@ -324,13 +417,53 @@ export function expandCourse(spec: CheckpointSpec[]): Checkpoint[] {
   return out;
 }
 
-/** The course a spec describes, or null when it has none. */
+/**
+ * The checkpoint a gate or flag piece becomes when it is named in the order.
+ *
+ * Only when it is named. A gate that is not in the order is scenery — something
+ * to fly through for its own sake — which is the whole reason gates became
+ * pieces rather than existing only as checkpoints.
+ */
+export function checkpointFromPiece(p: PieceSpec): Checkpoint | null {
+  if (p.type === 'gate') return gateAt(p.north, p.east, p.up ?? GATE_UP, p.heading);
+  if (p.type === 'flag') {
+    const r = p.heading * DEG;
+    return {
+      kind: 'flag',
+      north: p.north,
+      east: p.east,
+      height: p.height ?? 7,
+      dirN: Math.cos(r),
+      dirE: Math.sin(r),
+      side: p.side,
+      passWidth: p.passWidth ?? 6,
+    };
+  }
+  return null;
+}
+
+/** Which pieces the order names, in the order it names them. */
+export function orderedPieces(spec: TrackSpec): PieceSpec[] {
+  const byId = new Map<string, PieceSpec>();
+  for (const p of spec.pieces ?? []) {
+    const id = (p as { id?: string }).id;
+    if (id) byId.set(id, p);
+  }
+  return (spec.order ?? []).map((id) => byId.get(id)).filter((p): p is PieceSpec => p !== undefined);
+}
+
+/** The course a spec describes, or null when it is a freestyle track. */
 export function courseFromSpec(spec: TrackSpec): Course | null {
-  if (!spec.course || spec.course.length === 0) return null;
+  const fromOrder = orderedPieces(spec)
+    .map(checkpointFromPiece)
+    .filter((c): c is Checkpoint => c !== null);
+  const fromCourse = spec.course && spec.course.length > 0 ? expandCourse(spec.course) : [];
+  const checkpoints = fromOrder.length > 0 ? fromOrder : fromCourse;
+  if (checkpoints.length === 0) return null;
   return {
     name: spec.name,
     start: spec.start,
-    checkpoints: expandCourse(spec.course),
+    checkpoints,
     defaultLaps: spec.laps ?? 3,
   };
 }

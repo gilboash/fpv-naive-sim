@@ -34,7 +34,15 @@ import { clearStored, describeStored } from './reset-all.ts';
 import { RacePanel } from './race-panel.ts';
 import { applyRates, AXIS_ROLL, AXIS_PITCH, AXIS_YAW } from './flight/rates.ts';
 import { SceneView } from './scene-view.ts';
-import { allTracks, deleteUserTrack, exportUserTrack, saveUserTrack, userSpecs, EXAMPLE_TRACK } from './user-tracks.ts';
+import {
+  allTracks,
+  deleteUserTrack,
+  exportUserTrack,
+  saveUserTrack,
+  userSpecs,
+  EXAMPLE_FREESTYLE,
+  EXAMPLE_RACE,
+} from './user-tracks.ts';
 import { TunePanel } from './tune-panel.ts';
 import { Telemetry } from './telemetry.ts';
 import { FlightAudio } from './audio.ts';
@@ -1087,9 +1095,13 @@ if (import.meta.env.DEV) {
     }
   };
 
-  $('track-example').onclick = () => {
-    area.value = EXAMPLE_TRACK;
-    say('an example to edit — change the name before saving');
+  $('track-example-race').onclick = () => {
+    area.value = EXAMPLE_RACE;
+    say('a race: the gates with an id are listed in "order", the rest are scenery');
+  };
+  $('track-example-free').onclick = () => {
+    area.value = EXAMPLE_FREESTYLE;
+    say('a freestyle track: gates and obstacles, no order, so no timer');
   };
 
   $('track-save').onclick = () => {

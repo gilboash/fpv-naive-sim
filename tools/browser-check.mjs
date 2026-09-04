@@ -225,188 +225,6 @@ const main = async () => {
       icon: document.querySelector('link[rel=icon]')?.getAttribute('href') ?? '',
     };
   })()`);
-  // The flying tab is the picture and its settings, and nothing else. Prose
-  // belongs in Settings, where someone is reading rather than flying.
-  const flyTab = await evaluate(`(() => {
-    const { tabs, scene } = globalThis.__fpvsim;
-    tabs.show('fly');
-    const section = document.querySelector('#scene');
-    const btn = document.querySelector('#audio-toggle');
-    return {
-      title: section?.querySelector('h2')?.textContent ?? '',
-      hints: section.querySelectorAll(':scope > p').length,
-      // The sound control sits with the map, FOV and tilt rather than above
-      // the video.
-      soundInControls: !!btn && scene.controls.contains(btn),
-      // Ahead of the status readouts, not trailing after them.
-      soundBeforeStatus: !!btn && !!(btn.compareDocumentPosition(scene.controls.lastElementChild) & Node.DOCUMENT_POSITION_FOLLOWING),
-      soundBelowCanvas: !!btn &&
-        !!(document.querySelector('#scene-view canvas')?.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING),
-    };
-  })()`);
-  // A pilot's own track, end to end through the real page: paste, save, and it
-  // is a map you can pick and fly.
-  const custom = await evaluate(`(async () => {
-    const { scene, tabs, racePanel } = globalThis.__fpvsim;
-    tabs.show('settings');
-    const area = document.querySelector('#track-json');
-    const status = document.querySelector('#track-status');
-
-    // Something wrong first: the errors are the feature, not the save.
-    area.value = JSON.stringify({ version: 1, name: 'Bad', start: { north: 0, east: 0 }, pieces: [{ type: 'nuke', north: 0, east: 0 }] });
-    document.querySelector('#track-save').click();
-    const rejected = { text: status.textContent, cls: status.className };
-
-    // Well-formed and unflyable: a pole standing in the gate. This is the check
-    // that cannot be done on the JSON alone — it needs the built scene.
-    area.value = JSON.stringify({
-      version: 1,
-      name: 'Unflyable',
-      start: { north: -20, east: 0, yawDeg: 0 },
-      pieces: [{ type: 'pole', north: 0, east: 0, height: 10 }],
-      course: [
-        { gate: { north: 0, east: 0, heading: 0 } },
-        { gate: { north: 20, east: 0, heading: 0 } },
-      ],
-    });
-    document.querySelector('#track-save').click();
-    const unflyable = {
-      text: status.textContent,
-      saved: JSON.parse(localStorage.getItem('fpvsim.tracks.v1') || 'null')?.tracks?.length ?? 0,
-    };
-
-    area.value = JSON.stringify({
-      version: 1,
-      name: 'Check track',
-      start: { north: -20, east: 0, yawDeg: 0 },
-      laps: 2,
-      pieces: [{ type: 'cube', north: 10, east: 8, storeys: 2 }],
-      course: [
-        { gate: { north: 0, east: 0, heading: 0 } },
-        { gateRing: { north: 0, east: 0, radius: 25, count: 4 } },
-      ],
-    });
-    document.querySelector('#track-save').click();
-    await new Promise((r) => setTimeout(r, 300));
-
-    const sel = document.querySelectorAll('#scene-view select')[0];
-    const names = [...sel.options].map((o) => o.textContent);
-    const listed = document.querySelectorAll('#track-list .row').length;
-    const stored = JSON.parse(localStorage.getItem('fpvsim.tracks.v1') || 'null');
-
-    // And it is really flyable: the map is loaded and its course is the one the
-    // timer will run.
-    const loaded = scene.track.name;
-    const checkpoints = racePanel.race.course.checkpoints.length;
-    const canRace = !racePanel.startBtnDisabled;
-
-    // Clean up, so the destructive reset check later still sees what it expects.
-    document.querySelector('#track-list .danger').click();
-    await new Promise((r) => setTimeout(r, 200));
-    const afterDelete = [...sel.options].map((o) => o.textContent);
-    return {
-      rejected,
-      unflyable,
-      names,
-      listed,
-      storedCount: stored?.tracks?.length ?? 0,
-      loaded,
-      checkpoints,
-      canRace,
-      afterDelete,
-    };
-  })()`);
-  check(
-    'a bad track is refused with the reasons, not swallowed',
-    /unknown type/.test(custom.rejected.text ?? '') && custom.rejected.cls === 'bad',
-    `"${custom.rejected.text}"`,
-  );
-  check(
-    'a valid but unflyable track is refused, and not saved',
-    /standing in the gate/.test(custom.unflyable.text ?? '') && custom.unflyable.saved === 0,
-    `"${custom.unflyable.text}" — and nothing was written to storage`,
-  );
-  check(
-    "a pilot's own track becomes a map they can pick",
-    custom.names.includes('Check track') && custom.listed === 1 && custom.storedCount === 1,
-    `in the map list, listed once, and stored in this browser only`,
-  );
-  check(
-    'and it is a real course the timer will run',
-    custom.loaded === 'Check track' && custom.checkpoints === 5 && custom.canRace === true,
-    `${custom.checkpoints} checkpoints from 2 entries — the ring is four — and Start race is live`,
-  );
-  check(
-    'and deleting it takes it out of the map list',
-    !custom.afterDelete.includes('Check track'),
-    'gone from the selector as well as from storage',
-  );
-
-  // Fullscreen, on a browser that does not have it. Safari on iPhone offers
-  // element fullscreen to <video> and nothing else, so the unprefixed call
-  // threw and the button did nothing — which is exactly what Gilboa saw.
-  const fs = await evaluate(`(async () => {
-    const { scene, tabs } = globalThis.__fpvsim;
-    tabs.show('fly');
-    const stage = document.querySelector('.fpv-stage');
-    const proto = Object.getPrototypeOf(stage);
-    const real = proto.requestFullscreen;
-    const realWebkit = proto.webkitRequestFullscreen;
-    // Pretend to be a phone: no element fullscreen of any kind. Both have to
-    // go — Chrome keeps the webkit alias, so removing only the standard method
-    // tests the prefixed path rather than the absent one.
-    delete Element.prototype.requestFullscreen;
-    delete Element.prototype.webkitRequestFullscreen;
-    stage.requestFullscreen = undefined;
-    const kind = scene.fullscreenKind;
-    await scene.toggleFullscreen();
-    const on = {
-      pseudo: stage.classList.contains('pseudo-fullscreen'),
-      locked: document.body.classList.contains('fullscreen-locked'),
-      exit: !!stage.querySelector('.fpv-exit'),
-      isFullscreen: scene.isFullscreen,
-    };
-    // And back out again, the way a pilot would: the button on the picture.
-    stage.querySelector('.fpv-exit').click();
-    const off = {
-      pseudo: stage.classList.contains('pseudo-fullscreen'),
-      locked: document.body.classList.contains('fullscreen-locked'),
-      isFullscreen: scene.isFullscreen,
-    };
-    Element.prototype.requestFullscreen = real;
-    if (realWebkit) Element.prototype.webkitRequestFullscreen = realWebkit;
-    delete stage.requestFullscreen;
-    return { kind, on, off, backToNative: scene.fullscreenKind };
-  })()`);
-  check(
-    'a browser without element fullscreen still fills the screen',
-    fs.kind === 'css' && fs.on.pseudo && fs.on.locked && fs.on.isFullscreen,
-    'the stage is pinned to the viewport and the page behind it cannot scroll',
-  );
-  check(
-    'and it has its own way out, since a phone has no Escape key',
-    fs.on.exit === true && fs.off.pseudo === false && fs.off.locked === false && fs.off.isFullscreen === false,
-    'a close button on the picture, and everything is put back',
-  );
-  check(
-    'while a browser that has it uses the real thing',
-    fs.backToNative === 'native',
-    'the fallback is a fallback, not the default',
-  );
-
-  check(
-    'the flying tab is the picture and its settings, with no prose',
-    flyTab.title === 'Sim' && flyTab.hints === 0,
-    `titled "${flyTab.title}", ${flyTab.hints} paragraphs above the view`,
-  );
-  check(
-    'and the sound control sits with the other view settings, below the picture',
-    flyTab.soundInControls === true &&
-      flyTab.soundBelowCanvas === true &&
-      flyTab.soundBeforeStatus === true,
-    'in the same row as map, FOV, tilt and reset mode, ahead of the status readouts',
-  );
-
   check(
     'the branding is there and the image actually loaded',
     brand.logo === true && brand.href === 'https://www.instagram.com/nacofpv',
@@ -534,6 +352,264 @@ const main = async () => {
     cleanup(failed === 0 ? 0 : 1);
     return;
   }
+
+  // Everything past this point reaches into the page through the debug
+  // handle, so it has to sit below the gate above. It did not: the track
+  // editor checks were added here and ran before the production check had
+  // a chance to bow out, so verifying a deployment died on "Cannot
+  // destructure property 'tabs' of globalThis.__fpvsim" instead of
+  // degrading to the smoke test this file advertises. Verifying the
+  // deployment is the one job that only works against production.
+  // The flying tab is the picture and its settings, and nothing else. Prose
+  // belongs in Settings, where someone is reading rather than flying.
+  const flyTab = await evaluate(`(() => {
+    const { tabs, scene } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const section = document.querySelector('#scene');
+    const btn = document.querySelector('#audio-toggle');
+    return {
+      title: section?.querySelector('h2')?.textContent ?? '',
+      hints: section.querySelectorAll(':scope > p').length,
+      // The sound control sits with the map, FOV and tilt rather than above
+      // the video.
+      soundInControls: !!btn && scene.controls.contains(btn),
+      // Ahead of the status readouts, not trailing after them.
+      soundBeforeStatus: !!btn && !!(btn.compareDocumentPosition(scene.controls.lastElementChild) & Node.DOCUMENT_POSITION_FOLLOWING),
+      soundBelowCanvas: !!btn &&
+        !!(document.querySelector('#scene-view canvas')?.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING),
+    };
+  })()`);
+  // A pilot's own track, end to end through the real page: paste, save, and it
+  // is a map you can pick and fly.
+  const custom = await evaluate(`(async () => {
+    const { scene, tabs, racePanel } = globalThis.__fpvsim;
+    tabs.show('settings');
+    const area = document.querySelector('#track-json');
+    const status = document.querySelector('#track-status');
+
+    // Something wrong first: the errors are the feature, not the save.
+    area.value = JSON.stringify({ version: 1, name: 'Bad', start: { north: 0, east: 0 }, pieces: [{ type: 'nuke', north: 0, east: 0 }] });
+    document.querySelector('#track-save').click();
+    const rejected = { text: status.textContent, cls: status.className };
+
+    // Well-formed and unflyable: a pole standing in the gate. This is the check
+    // that cannot be done on the JSON alone — it needs the built scene.
+    area.value = JSON.stringify({
+      version: 1,
+      name: 'Unflyable',
+      start: { north: -20, east: 0, yawDeg: 0 },
+      pieces: [{ type: 'pole', north: 0, east: 0, height: 10 }],
+      course: [
+        { gate: { north: 0, east: 0, heading: 0 } },
+        { gate: { north: 20, east: 0, heading: 0 } },
+      ],
+    });
+    document.querySelector('#track-save').click();
+    const unflyable = {
+      text: status.textContent,
+      saved: JSON.parse(localStorage.getItem('fpvsim.tracks.v1') || 'null')?.tracks?.length ?? 0,
+    };
+
+    area.value = JSON.stringify({
+      version: 1,
+      name: 'Check track',
+      start: { north: -20, east: 0, yawDeg: 0 },
+      laps: 2,
+      pieces: [{ type: 'cube', north: 10, east: 8, storeys: 2 }],
+      course: [
+        { gate: { north: 0, east: 0, heading: 0 } },
+        { gateRing: { north: 0, east: 0, radius: 25, count: 4 } },
+      ],
+    });
+    document.querySelector('#track-save').click();
+    await new Promise((r) => setTimeout(r, 300));
+
+    const sel = document.querySelectorAll('#scene-view select')[0];
+    const names = [...sel.options].map((o) => o.textContent);
+    const listed = document.querySelectorAll('#track-list .row').length;
+    const stored = JSON.parse(localStorage.getItem('fpvsim.tracks.v1') || 'null');
+
+    // And it is really flyable: the map is loaded and its course is the one the
+    // timer will run.
+    const loaded = scene.track.name;
+    const checkpoints = racePanel.race.course.checkpoints.length;
+    const canRace = !racePanel.startBtnDisabled;
+
+    // Clean up, so the destructive reset check later still sees what it expects.
+    document.querySelector('#track-list .danger').click();
+    await new Promise((r) => setTimeout(r, 200));
+    const afterDelete = [...sel.options].map((o) => o.textContent);
+    return {
+      rejected,
+      unflyable,
+      names,
+      listed,
+      storedCount: stored?.tracks?.length ?? 0,
+      loaded,
+      checkpoints,
+      canRace,
+      afterDelete,
+    };
+  })()`);
+  check(
+    'a bad track is refused with the reasons, not swallowed',
+    /unknown type/.test(custom.rejected.text ?? '') && custom.rejected.cls === 'bad',
+    `"${custom.rejected.text}"`,
+  );
+  check(
+    'a valid but unflyable track is refused, and not saved',
+    /standing in the gate/.test(custom.unflyable.text ?? '') && custom.unflyable.saved === 0,
+    `"${custom.unflyable.text}" — and nothing was written to storage`,
+  );
+  check(
+    "a pilot's own track becomes a map they can pick",
+    custom.names.includes('Check track') && custom.listed === 1 && custom.storedCount === 1,
+    `in the map list, listed once, and stored in this browser only`,
+  );
+  check(
+    'and it is a real course the timer will run',
+    custom.loaded === 'Check track' && custom.checkpoints === 5 && custom.canRace === true,
+    `${custom.checkpoints} checkpoints from 2 entries — the ring is four — and Start race is live`,
+  );
+  check(
+    'and deleting it takes it out of the map list',
+    !custom.afterDelete.includes('Check track'),
+    'gone from the selector as well as from storage',
+  );
+
+  // The two examples, through the buttons a new pilot actually presses. Loading
+  // one and saving it is the way in to the whole feature, so an example that
+  // does not save is a dead end at the front door — and there are two of them
+  // now because a race and a freestyle track differ by one field.
+  const examples = await evaluate(`(async () => {
+    const { scene, racePanel, tabs } = globalThis.__fpvsim;
+    tabs.show('settings');
+    const area = document.querySelector('#track-json');
+    const status = document.querySelector('#track-status');
+    const sel = document.querySelectorAll('#scene-view select')[0];
+
+    const load = async (id) => {
+      document.querySelector(id).click();
+      const text = area.value;
+      document.querySelector('#track-save').click();
+      await new Promise((r) => setTimeout(r, 300));
+      return {
+        pasted: text.length > 0,
+        parses: (() => { try { return !!JSON.parse(text); } catch { return false; } })(),
+        status: status.textContent,
+        cls: status.className,
+        loaded: scene.track.name,
+        // A race has a course the timer will run; a freestyle map has none, and
+        // Start race must be off rather than running a course from another map.
+        //
+        // Read off the *track*, not off racePanel.race.course: the panel keeps
+        // the last course it was given when a map has none, deliberately — a
+        // Race always holds one, and courseAvailable is what guards it. So
+        // the panel still reports five checkpoints on a freestyle map, and the
+        // thing that matters is that Start race is off.
+        checkpoints: scene.track.course?.checkpoints.length ?? 0,
+        canRace: !racePanel.startBtnDisabled,
+        inSelector: [...sel.options].some((o) => o.textContent === scene.track.name),
+      };
+    };
+
+    const race = await load('#track-example-race');
+    const free = await load('#track-example-free');
+
+    // Clean up both, so the destructive reset check later still sees what it
+    // expects — this suite shares one page.
+    for (const b of [...document.querySelectorAll('#track-list .danger')]) {
+      b.click();
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    const left = document.querySelectorAll('#track-list .row').length;
+    return { race, free, left };
+  })()`);
+  check(
+    'the race example loads, saves and is a map with a live timer',
+    examples.race.pasted && examples.race.parses && examples.race.cls !== 'bad' &&
+      examples.race.loaded === 'My first race' && examples.race.inSelector &&
+      examples.race.checkpoints === 5 && examples.race.canRace === true,
+    `"${examples.race.status}" — ${examples.race.checkpoints} checkpoints, Start race ${examples.race.canRace ? 'live' : 'off'}`,
+  );
+  check(
+    'the freestyle example loads, saves, and has gates but no timer',
+    examples.free.pasted && examples.free.parses && examples.free.cls !== 'bad' &&
+      examples.free.loaded === 'My playground' && examples.free.inSelector &&
+      examples.free.checkpoints === 0 && examples.free.canRace === false,
+    `"${examples.free.status}" — the map carries no course, so Start race is correctly off`,
+  );
+  check(
+    'and both clean up after themselves',
+    examples.left === 0,
+    'the track list is empty again',
+  );
+
+  // Fullscreen, on a browser that does not have it. Safari on iPhone offers
+  // element fullscreen to <video> and nothing else, so the unprefixed call
+  // threw and the button did nothing — which is exactly what Gilboa saw.
+  const fs = await evaluate(`(async () => {
+    const { scene, tabs } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const stage = document.querySelector('.fpv-stage');
+    const proto = Object.getPrototypeOf(stage);
+    const real = proto.requestFullscreen;
+    const realWebkit = proto.webkitRequestFullscreen;
+    // Pretend to be a phone: no element fullscreen of any kind. Both have to
+    // go — Chrome keeps the webkit alias, so removing only the standard method
+    // tests the prefixed path rather than the absent one.
+    delete Element.prototype.requestFullscreen;
+    delete Element.prototype.webkitRequestFullscreen;
+    stage.requestFullscreen = undefined;
+    const kind = scene.fullscreenKind;
+    await scene.toggleFullscreen();
+    const on = {
+      pseudo: stage.classList.contains('pseudo-fullscreen'),
+      locked: document.body.classList.contains('fullscreen-locked'),
+      exit: !!stage.querySelector('.fpv-exit'),
+      isFullscreen: scene.isFullscreen,
+    };
+    // And back out again, the way a pilot would: the button on the picture.
+    stage.querySelector('.fpv-exit').click();
+    const off = {
+      pseudo: stage.classList.contains('pseudo-fullscreen'),
+      locked: document.body.classList.contains('fullscreen-locked'),
+      isFullscreen: scene.isFullscreen,
+    };
+    Element.prototype.requestFullscreen = real;
+    if (realWebkit) Element.prototype.webkitRequestFullscreen = realWebkit;
+    delete stage.requestFullscreen;
+    return { kind, on, off, backToNative: scene.fullscreenKind };
+  })()`);
+  check(
+    'a browser without element fullscreen still fills the screen',
+    fs.kind === 'css' && fs.on.pseudo && fs.on.locked && fs.on.isFullscreen,
+    'the stage is pinned to the viewport and the page behind it cannot scroll',
+  );
+  check(
+    'and it has its own way out, since a phone has no Escape key',
+    fs.on.exit === true && fs.off.pseudo === false && fs.off.locked === false && fs.off.isFullscreen === false,
+    'a close button on the picture, and everything is put back',
+  );
+  check(
+    'while a browser that has it uses the real thing',
+    fs.backToNative === 'native',
+    'the fallback is a fallback, not the default',
+  );
+
+  check(
+    'the flying tab is the picture and its settings, with no prose',
+    flyTab.title === 'Sim' && flyTab.hints === 0,
+    `titled "${flyTab.title}", ${flyTab.hints} paragraphs above the view`,
+  );
+  check(
+    'and the sound control sits with the other view settings, below the picture',
+    flyTab.soundInControls === true &&
+      flyTab.soundBelowCanvas === true &&
+      flyTab.soundBeforeStatus === true,
+    'in the same row as map, FOV, tilt and reset mode, ahead of the status readouts',
+  );
+
 
   // The model must actually be stepping, which means the tick is reaching it.
   const t1 = await evaluate('globalThis.__fpvsim.flight.sim.time');

@@ -28,6 +28,8 @@ import {
 import { freestyle, raceField, TRACKS, trackFromSpec } from '../src/render/track.ts';
 import { validateTrackSpec } from '../src/render/track-spec.ts';
 import { checkTrack } from '../src/render/track-check.ts';
+// Only the example strings; localStorage is touched inside functions, not here.
+import { EXAMPLE_FREESTYLE, EXAMPLE_RACE } from '../src/user-tracks.ts';
 import { buildGateMarker } from '../src/render/renderer.ts';
 import { MeshBuilder } from '../src/render/mesh.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
@@ -1995,6 +1997,307 @@ section('Track checks: a track has to be flyable before it can be saved');
     'a very long hop warns without blocking the save',
     far.ok && far.warnings.some((w) => w.includes('check the coordinates')),
     far.warnings.join('; '),
+  );
+}
+
+section('Track specs: gates are pieces, and the order is what makes a race');
+{
+  const names = TRACKS.map((t) => t.name);
+  const valid = (spec: object) => validateTrackSpec(spec, names);
+  const build = (spec: object) => {
+    const v = valid(spec);
+    if (!v.ok || !v.spec) throw new Error(`spec invalid: ${v.errors.join('; ')}`);
+    const track = trackFromSpec(v.spec);
+    const m = new MeshBuilder();
+    const obs: Obstacle[] = [];
+    track.build(m, obs);
+    return { track, obs, mesh: m.build() };
+  };
+
+  // Three gates and a flag standing on the field; the order names three of
+  // them. The fourth gate is the point of the whole change: a track can now
+  // carry a gate it does not time.
+  const race = {
+    version: 1,
+    name: 'Ordered race',
+    start: { north: -40, east: 0, yawDeg: 0 },
+    laps: 2,
+    pieces: [
+      { id: 'a', type: 'gate', north: 0, east: 0, heading: 0 },
+      { id: 'b', type: 'gate', north: 30, east: 14, heading: 45 },
+      { id: 'turn', type: 'flag', north: 40, east: -20, heading: 180, side: 1 },
+      { type: 'gate', north: -18, east: 26, heading: 90 },
+      { type: 'pole', north: 12, east: -24, height: 12 },
+    ],
+    order: ['a', 'b', 'turn'],
+  };
+  const built = build(race);
+  const cps = built.track.course?.checkpoints ?? [];
+  ok(
+    'an order turns the named pieces into a course, in the order given',
+    cps.length === 3 &&
+      cps[0].kind === 'gate' && cps[0].north === 0 &&
+      cps[1].kind === 'gate' && cps[1].north === 30 &&
+      cps[2].kind === 'flag' && cps[2].north === 40,
+    cps.map((c) => `${c.kind}@${c.north}`).join(' -> ') || 'no course',
+  );
+  ok(
+    'and it carries the laps the spec asked for',
+    built.track.course?.defaultLaps === 2,
+    `${built.track.course?.defaultLaps} laps`,
+  );
+
+  // The unordered gate is scenery. It has to be *there* — drawn and solid —
+  // and it must not be timed. Both halves, because dropping it entirely would
+  // pass a test that only asked about the course.
+  const timedNear = cps.some((c) => Math.hypot(c.north + 18, c.east - 26) < 1);
+  let nearestPost = Infinity;
+  for (const o of built.obs) {
+    if (o.kind !== 'cylinder') continue;
+    nearestPost = Math.min(nearestPost, Math.hypot(o.north + 18, o.east - 26));
+  }
+  ok(
+    'a gate left out of the order is still built, and is not a checkpoint',
+    !timedNear && nearestPost < 3,
+    `nearest post ${nearestPost.toFixed(2)} m, timed: ${timedNear}`,
+  );
+
+  // The invariant the format exists for, now over the order path: every gate
+  // the timer knows about has posts standing where it is. Drawn and timed
+  // cannot diverge because they come from one entry.
+  let worst = 0;
+  for (const cp of cps) {
+    if (cp.kind !== 'gate') continue;
+    let nearest = Infinity;
+    for (const o of built.obs) {
+      if (o.kind !== 'cylinder') continue;
+      nearest = Math.min(nearest, Math.hypot(o.north - cp.north, o.east - cp.east));
+    }
+    worst = Math.max(worst, Math.abs(nearest - cp.halfWidth));
+  }
+  ok(
+    'a gate in the order is drawn exactly where it is timed',
+    worst < 1e-6,
+    `worst post offset ${worst.toExponential(2)} m`,
+  );
+
+  // A gate is not drawn twice: once as a piece and again by the race scenery
+  // would leave two frames in one place, which reads as one and collides as two.
+  const single = build({
+    version: 1,
+    name: 'One gate',
+    start: { north: -30, east: 0, yawDeg: 0 },
+    pieces: [
+      { id: 'g', type: 'gate', north: 0, east: 0, heading: 0 },
+      { id: 'h', type: 'gate', north: 30, east: 0, heading: 0 },
+    ],
+    order: ['g', 'h'],
+  });
+  const posts = single.obs.filter(
+    (o) => o.kind === 'cylinder' && Math.hypot(o.north, o.east) < 3,
+  ).length;
+  ok(
+    'an ordered gate is built once, not once as a piece and again as a checkpoint',
+    posts === 2,
+    `${posts} posts at the first gate — two is one gate`,
+  );
+
+  // Gates with no order at all: a freestyle map that happens to have gates on
+  // it. This is the case that did not exist before, and the one the freestyle
+  // example in the UI relies on.
+  const free = build({
+    version: 1,
+    name: 'Gates, no timer',
+    start: { north: -20, east: 0, yawDeg: 0 },
+    pieces: [
+      { type: 'gate', north: 0, east: 0, heading: 0 },
+      { type: 'gate', north: 20, east: 0, heading: 30 },
+    ],
+  });
+  ok(
+    'gates with no order give a freestyle map — built, but no course',
+    free.track.course === undefined && free.obs.length > 0,
+    `${free.obs.length} obstacles, course: ${free.track.course === undefined ? 'none' : 'present'}`,
+  );
+
+  // A course-based track saved, stored and read back. Normalising used to write
+  // an empty `order: []` onto every spec while the exclusivity rule read
+  // presence rather than content, so a track saved cleanly and then would not
+  // load — and specs are re-validated on the way *out* of storage, so this ate
+  // the track rather than reporting anything at the time it was written.
+  const courseSpec = {
+    version: 1,
+    name: 'Round trip',
+    start: { north: -20, east: 0, yawDeg: 0 },
+    course: [
+      { gate: { north: 0, east: 0, heading: 0 } },
+      { gate: { north: 20, east: 0, heading: 180 } },
+    ],
+  };
+  const saved = valid(courseSpec);
+  const reloaded = valid(JSON.parse(JSON.stringify(saved.spec)));
+  ok(
+    'a course-based track survives a save and a reload',
+    saved.ok && reloaded.ok && (reloaded.spec?.course?.length ?? 0) === 2,
+    reloaded.errors.join('; ') || `${reloaded.spec?.course?.length} checkpoints back`,
+  );
+  const savedOrder = build(race);
+  const orderReloaded = valid(JSON.parse(JSON.stringify(valid(race).spec)));
+  ok(
+    'and so does an ordered one, with its order intact',
+    orderReloaded.ok && (orderReloaded.spec?.order ?? []).join(',') === 'a,b,turn',
+    orderReloaded.errors.join('; ') || (orderReloaded.spec?.order ?? []).join(','),
+  );
+  ok(
+    'the reloaded order still builds the same course',
+    (savedOrder.track.course?.checkpoints.length ?? 0) === 3,
+    `${savedOrder.track.course?.checkpoints.length} checkpoints`,
+  );
+
+  // Everything that should be refused. A gate's facing is not optional the way
+  // a ladder's is: unvalidated, a heading of "north" reached Math.cos and made
+  // a checkpoint at dirN NaN — a gate that can never be crossed and that looks
+  // perfectly reasonable in the file.
+  const refusals: [string, object, string][] = [
+    [
+      'a gate with a heading that is not a number is refused',
+      { version: 1, name: 'q', start: { north: 0, east: 0 }, pieces: [{ type: 'gate', north: 0, east: 0, heading: 'north' }] },
+      'heading is not a number',
+    ],
+    [
+      'a gate with no heading at all is refused',
+      { version: 1, name: 'q', start: { north: 0, east: 0 }, pieces: [{ type: 'gate', north: 0, east: 0 }] },
+      'needs a heading',
+    ],
+    [
+      'a flag with no side is refused',
+      { version: 1, name: 'q', start: { north: 0, east: 0 }, pieces: [{ type: 'flag', north: 0, east: 0, heading: 0 }] },
+      'side must be 1 or -1',
+    ],
+    [
+      'two pieces sharing an id are refused',
+      {
+        version: 1, name: 'q', start: { north: 0, east: 0 },
+        pieces: [
+          { id: 'g', type: 'gate', north: 0, east: 0, heading: 0 },
+          { id: 'g', type: 'gate', north: 10, east: 0, heading: 0 },
+        ],
+        order: ['g', 'g'],
+      },
+      'share the id',
+    ],
+    [
+      'an order naming an id that is not there is refused',
+      {
+        version: 1, name: 'q', start: { north: 0, east: 0 },
+        pieces: [{ id: 'g', type: 'gate', north: 0, east: 0, heading: 0 }],
+        order: ['g', 'nope'],
+      },
+      'not the id of any piece',
+    ],
+    [
+      'an order naming something that is not a gate or a flag is refused',
+      {
+        version: 1, name: 'q', start: { north: 0, east: 0 },
+        pieces: [
+          { id: 'g', type: 'gate', north: 0, east: 0, heading: 0 },
+          { id: 'p', type: 'pole', north: 10, east: 0, height: 8 },
+        ],
+        order: ['g', 'p'],
+      },
+      'only gates and flags',
+    ],
+    [
+      'an order of one checkpoint is refused — it is not a lap',
+      {
+        version: 1, name: 'q', start: { north: 0, east: 0 },
+        pieces: [{ id: 'g', type: 'gate', north: 0, east: 0, heading: 0 }],
+        order: ['g'],
+      },
+      'not a lap',
+    ],
+    [
+      'an order and a course together are refused',
+      {
+        version: 1, name: 'q', start: { north: 0, east: 0 },
+        pieces: [
+          { id: 'g', type: 'gate', north: 0, east: 0, heading: 0 },
+          { id: 'h', type: 'gate', north: 20, east: 0, heading: 0 },
+        ],
+        order: ['g', 'h'],
+        course: [{ gate: { north: 40, east: 0, heading: 0 } }],
+      },
+      'not both',
+    ],
+  ];
+  for (const [label, input, needle] of refusals) {
+    const r = valid(input);
+    ok(label, !r.ok && r.errors.some((e) => e.includes(needle)), r.errors.join('; ') || 'accepted');
+  }
+
+  // One mistake, one message. A piece rejected for a bad heading still owns its
+  // id, so the order must not go on to report it missing as well — an error
+  // pointing at the wrong thing is worse than no second error.
+  const oneFault = valid({
+    version: 1,
+    name: 'q',
+    start: { north: 0, east: 0 },
+    pieces: [
+      { id: 'g', type: 'gate', north: 0, east: 0, heading: 'north' },
+      { id: 'h', type: 'gate', north: 20, east: 0, heading: 0 },
+    ],
+    order: ['g', 'h'],
+  });
+  ok(
+    'a bad piece does not also report its id as missing from the order',
+    !oneFault.ok && oneFault.errors.length === 1 && oneFault.errors[0].includes('heading'),
+    oneFault.errors.join('; '),
+  );
+
+  // The two examples the UI offers are shipped content, and loading one then
+  // pressing Save is the first thing a pilot does. If an example stopped
+  // validating — or validated but could not be flown — the way in would be a
+  // dead end. Same argument as the built-in maps passing their own check.
+  for (const [label, text, timed] of [
+    ['race', EXAMPLE_RACE, true],
+    ['freestyle', EXAMPLE_FREESTYLE, false],
+  ] as const) {
+    const v = valid(JSON.parse(text));
+    const track = v.ok && v.spec ? trackFromSpec(v.spec) : null;
+    const flight = track ? checkTrack(track) : null;
+    ok(
+      `the ${label} example validates, is flyable, and is ${timed ? 'timed' : 'untimed'}`,
+      v.ok && flight !== null && flight.ok && (track!.course !== undefined) === timed,
+      v.errors.concat(flight?.errors ?? []).join('; ') ||
+        `${track?.course?.checkpoints.length ?? 0} checkpoints`,
+    );
+  }
+
+  // And the flyability check runs over an ordered track the same as any other,
+  // since it works on the built scene and does not know how the track was
+  // written.
+  const flyable = checkTrack(built.track);
+  ok(
+    'an ordered track goes through the same flyability check',
+    flyable.ok,
+    flyable.errors.join('; ') || `${flyable.obstacles} obstacles`,
+  );
+  const blocked = valid({
+    version: 1,
+    name: 'Blocked order',
+    start: { north: -30, east: 0, yawDeg: 0 },
+    pieces: [
+      { id: 'g', type: 'gate', north: 0, east: 0, heading: 0 },
+      { id: 'h', type: 'gate', north: 30, east: 0, heading: 0 },
+      { type: 'pole', north: 0, east: 0, height: 10 },
+    ],
+    order: ['g', 'h'],
+  });
+  const blockedCheck = checkTrack(trackFromSpec(blocked.spec!));
+  ok(
+    'and an ordered gate with a pole standing in it is still refused',
+    !blockedCheck.ok && blockedCheck.errors.some((e) => e.includes('standing in the gate')),
+    blockedCheck.errors.join('; '),
   );
 }
 
