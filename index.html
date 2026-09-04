@@ -96,6 +96,50 @@
       </section>
 
 
+      <section id="tracks">
+        <h2>Your own tracks</h2>
+        <p class="hint">
+          A track is a JSON description — where the gates go, what else is standing there, and the
+          order to take them in. Paste one below and it joins the map list on <em>Go fly</em>.
+          <strong>It stays in this browser.</strong> Nothing is uploaded, so a track you are still
+          working on is nobody else's problem; when one is good enough to keep, send the JSON to
+          <a href="https://www.instagram.com/nacofpv" target="_blank" rel="noopener noreferrer">@nacofpv</a>
+          or open a pull request on
+          <a href="https://github.com/gilboash/fpv-naive-sim" target="_blank" rel="noopener noreferrer">GitHub</a>
+          and it can become a built-in map.
+        </p>
+        <details class="track-help">
+          <summary>What can go in one</summary>
+          <p class="hint">
+            Positions are <strong>north</strong>, <strong>east</strong> and <strong>up</strong> in
+            metres from the middle of the field, and <strong>heading</strong> is a compass bearing
+            in degrees — 0 north, 90 east. Keep everything inside about 200 m.
+          </p>
+          <p class="hint">
+            <strong>pieces</strong> — things to fly around:
+            <code>cube</code> (add <code>storeys</code> to stack it),
+            <code>pole</code>, <code>pylon</code>, <code>ladder</code>, <code>arch</code>,
+            <code>chimney</code>, <code>roundChimney</code>, <code>tube</code>,
+            <code>window</code>.
+          </p>
+          <p class="hint">
+            <strong>course</strong> — the order to fly, if you want a timed one:
+            <code>gate</code>, <code>flag</code> (needs <code>side</code>, 1 or -1),
+            <code>gateLine</code> (a run of them: <code>count</code> and <code>spacing</code>) and
+            <code>gateRing</code> (<code>count</code> and <code>radius</code>). Leave the course out
+            and you get a freestyle map with no timer.
+          </p>
+        </details>
+        <div class="row">
+          <button id="track-example" type="button">Load an example</button>
+          <button id="track-save" type="button">Save track</button>
+          <span id="track-status" class="dim"></span>
+        </div>
+        <textarea id="track-json" spellcheck="false" rows="12"
+          placeholder="Paste a track here, or press Load an example."></textarea>
+        <div id="track-list" class="track-list"></div>
+      </section>
+
       <section id="sound">
         <h2>Sound</h2>
         <p class="hint">

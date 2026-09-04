@@ -11,6 +11,7 @@
 
 import { MeshBuilder } from './mesh.ts';
 import type { Obstacle } from '../flight/collision.ts';
+import { courseFromSpec, type TrackSpec } from './track-spec.ts';
 import {
   circleCourse,
   CUBE_HALF,
@@ -996,6 +997,70 @@ export const oneEightyTrack: Track = {
     }
   },
 };
+
+/**
+ * Build a `Track` from a spec.
+ *
+ * The point of the whole exercise is here: one entry in the spec produces the
+ * mesh, the collision volume and — for a checkpoint — the timed plane, from a
+ * single call. A track written by someone else cannot have a gate that is drawn
+ * but not solid, or a marker over ground with no gate on it, because there is
+ * nowhere for the two to disagree.
+ *
+ * Headings arrive as compass degrees and the helpers underneath take render
+ * axes, so the conversion happens once, here.
+ */
+export function trackFromSpec(spec: TrackSpec): Track {
+  const course = courseFromSpec(spec);
+  // The helpers below want a render axis rather than a heading, and every one
+  // of them is axis-aligned. A heading nearer north than east spans x.
+  const axisFor = (headingDeg = 0): 'x' | 'z' =>
+    Math.abs(Math.cos((headingDeg * Math.PI) / 180)) > 0.5 ? 'x' : 'z';
+
+  return {
+    name: spec.name,
+    ...(course ? { course } : {}),
+    start: spec.start,
+    build(m, obs) {
+      ground(m);
+      for (const p of spec.pieces ?? []) {
+        // Spec is NED; the scene is x = east, z = -north.
+        const cx = p.east;
+        const cz = -p.north;
+        switch (p.type) {
+          case 'cube':
+            cube(m, obs, { north: p.north, east: p.east, half: CUBE_HALF, storeys: p.storeys ?? 1 }, GATE_B);
+            break;
+          case 'pole':
+            lightPole(m, obs, cx, cz, p.height);
+            break;
+          case 'pylon':
+            pylon(m, obs, cx, cz, p.height);
+            break;
+          case 'ladder':
+            ladder(m, obs, cx, cz, axisFor(p.heading), p.width ?? 4.6, p.gaps ?? 4, p.gap ?? 3.2, p.base ?? 2.4);
+            break;
+          case 'arch':
+            arch(m, obs, cx, cz, p.radius, 1.2, 0.5, axisFor(p.heading), [0.8, 0.78, 0.72]);
+            break;
+          case 'chimney':
+            chimney(m, obs, cx, cz, p.bore ?? 3, p.base ?? 4, p.height ?? 12);
+            break;
+          case 'roundChimney':
+            roundChimney(m, obs, cx, cz, p.radius ?? 1.6, p.base ?? 5, p.height ?? 12, [0.62, 0.36, 0.3]);
+            break;
+          case 'tube':
+            flyTube(m, obs, cx, p.up, cz, p.radius ?? 1.6, p.halfLength ?? 2.2, axisFor(p.heading));
+            break;
+          case 'window':
+            squareFrame(m, obs, cx, p.up, cz, p.half ?? 2, axisFor(p.heading), GATE_A);
+            break;
+        }
+      }
+      if (course) raceScenery(m, obs, course);
+    },
+  };
+}
 
 export const TRACKS: Track[] = [
   raceField,

@@ -1213,6 +1213,50 @@ demanded 25 m/s^2 to fly at 12; and thrust-to-weight was assumed at 3.2 when the
 model has **8.1** (hover 9 428 rpm against 28 046 at full throttle, thrust as
 rpm squared — hover is 11% of maximum).
 
+## Tracks as data (2026-09-04)
+
+A track was a TypeScript `build()` function, so a new one was a pull request.
+`src/render/track-spec.ts` is the same thing as JSON — a list of pieces and an
+optional ordered course — and `trackFromSpec()` in track.ts turns one into a
+`Track`. Gilboa's framing: keep it on the pilot's side, and when they are
+confident, send it in or open a PR for a formal build.
+
+**The format is not only convenience, it removes a bug class.** The invariant
+this project keeps relearning is that drawn, solid and timed must come from one
+source — markers over ground with no gates on it, and collision drifting from
+the mesh, both came from two descriptions of one thing. In a spec there is one
+entry per object and the loader emits all three, so a stranger's track *cannot*
+get that wrong. There is a check that asserts exactly that on a generated track.
+
+Decisions worth keeping:
+
+- **NED with up positive, and compass headings.** The spec matches the physics
+  and the course rather than the renderer, and the loader converts once. A pilot
+  writing coordinates should not have to know that render z is minus north.
+- **Generators, not flattening.** `gateLine` and `gateRing` keep a twenty-gate
+  circle one line, and a generated ring is exactly round where a hand-typed one
+  never is.
+- **Validation reports everything, and clamps rather than trusts.** Editing JSON
+  against one error at a time is whack-a-mole. Absurd coordinates are clamped
+  (a mistake fixed quietly); five thousand pieces is refused (an attack
+  stopped); an unknown version is refused rather than guessed at, because a
+  format that reinterprets old data is how a track quietly becomes a different
+  track.
+- **A name collision with a built-in is refused.** Maps are stored and selected
+  by name, so a duplicate would silently repoint someone at a different track —
+  the same identity mistake as an index, wearing a different hat.
+- **Stored specs are re-validated on the way *out*.** They were written by an
+  older build with different limits, and localStorage is editable by anyone with
+  a console open.
+- **`SceneView` no longer owns the list.** It takes `tracks: () => Track[]` from
+  the owner, and the selector's option values are names rather than indices —
+  the third place that lesson has now been applied.
+
+Client-side on purpose: there is no upload endpoint to secure, a work in
+progress cannot break someone else's flying, and the review step is a message or
+a PR rather than a bottleneck, because the track already works before it is
+sent.
+
 ## Fullscreen on a phone (2026-09-04)
 
 Gilboa: fullscreen does not work from a mobile browser. It did not, and the

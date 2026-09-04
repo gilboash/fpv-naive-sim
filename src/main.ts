@@ -34,6 +34,7 @@ import { clearStored, describeStored } from './reset-all.ts';
 import { RacePanel } from './race-panel.ts';
 import { applyRates, AXIS_ROLL, AXIS_PITCH, AXIS_YAW } from './flight/rates.ts';
 import { SceneView } from './scene-view.ts';
+import { allTracks, deleteUserTrack, exportUserTrack, saveUserTrack, userSpecs, EXAMPLE_TRACK } from './user-tracks.ts';
 import { TunePanel } from './tune-panel.ts';
 import { Telemetry } from './telemetry.ts';
 import { FlightAudio } from './audio.ts';
@@ -118,6 +119,10 @@ const flight = new FlightPanel(
 const auxControl = new AuxControl();
 const switchDetector = new SwitchDetector(poller);
 const scene = new SceneView($('scene-view'), flight.sim);
+// The pilot's own tracks join the built-in ones. SceneView draws a track and
+// has no opinion about where the list came from.
+scene.tracks = allTracks;
+scene.fillTracks();
 const tune = new TunePanel($('tune-panel'), flight.sim, $('pid-panel'));
 const racePanel = new RacePanel($('race-panel'), flight.sim);
 racePanel.onArmAtStart = () => {
@@ -997,6 +1002,112 @@ $('jitter-start').onclick = startRun;
 // import.meta.env.DEV guard, so it cannot become a load-bearing API.
 if (import.meta.env.DEV) {
   (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl, racePanel, telemetry, audio };
+}
+
+// -------------------------------------------------------------- your tracks
+
+{
+  // A local element helper: main.ts's `$` finds by id, and this section builds
+  // rows rather than looking them up.
+  const el = <T extends HTMLElement>(tag: string, cls?: string, text?: string): T => {
+    const n = document.createElement(tag) as T;
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+
+  const area = $<HTMLTextAreaElement>('track-json');
+  const status = $('track-status');
+  const list = $('track-list');
+
+  const say = (text: string, bad = false): void => {
+    status.textContent = text;
+    status.className = bad ? 'bad' : 'dim';
+  };
+
+  const renderList = (): void => {
+    const specs = userSpecs();
+    list.innerHTML = '';
+    if (specs.length === 0) {
+      list.appendChild(el('p', 'hint', 'No tracks of your own yet.'));
+      return;
+    }
+    for (const spec of specs) {
+      const row = el('div', 'row');
+      // textContent, never innerHTML: the name came from a file that may have
+      // come from someone else, and this is where it is displayed.
+      row.appendChild(el('strong', undefined, spec.name));
+      row.appendChild(
+        el(
+          'span',
+          'dim',
+          `${spec.pieces?.length ?? 0} pieces · ${spec.course?.length ? 'timed' : 'freestyle'}`,
+        ),
+      );
+
+      const edit = el<HTMLButtonElement>('button');
+      edit.type = 'button';
+      edit.textContent = 'Edit';
+      edit.onclick = () => {
+        area.value = exportUserTrack(spec.name) ?? '';
+        say(`loaded "${spec.name}" — save to replace it`);
+      };
+      row.appendChild(edit);
+
+      const copy = el<HTMLButtonElement>('button');
+      copy.type = 'button';
+      copy.textContent = 'Copy JSON';
+      copy.onclick = () => {
+        const json = exportUserTrack(spec.name) ?? '';
+        void navigator.clipboard?.writeText(json).then(
+          () => say('copied — send it on, or open a pull request'),
+          // Clipboard access is refused on an insecure origin, which is exactly
+          // where some pilots are. Fall back to putting it where they can
+          // select it by hand rather than failing silently.
+          () => {
+            area.value = json;
+            say('clipboard refused by the browser — copy it from the box');
+          },
+        );
+      };
+      row.appendChild(copy);
+
+      const del = el<HTMLButtonElement>('button', 'danger');
+      del.type = 'button';
+      del.textContent = 'Delete';
+      del.onclick = () => {
+        deleteUserTrack(spec.name);
+        scene.fillTracks();
+        racePanel.setCourse(scene.track.course ?? null);
+        renderList();
+        say(`deleted "${spec.name}"`);
+      };
+      row.appendChild(del);
+      list.appendChild(row);
+    }
+  };
+
+  $('track-example').onclick = () => {
+    area.value = EXAMPLE_TRACK;
+    say('an example to edit — change the name before saving');
+  };
+
+  $('track-save').onclick = () => {
+    const result = saveUserTrack(area.value);
+    if (!result.ok || !result.spec) {
+      // Every fault at once. Editing JSON by hand against one error at a time
+      // is a game of whack-a-mole.
+      say(result.errors.join(' · '), true);
+      return;
+    }
+    scene.fillTracks();
+    scene.loadTrack(allTracks().find((t) => t.name === result.spec!.name) ?? scene.track);
+    racePanel.setCourse(scene.track.course ?? null);
+    renderList();
+    say(`saved "${result.spec.name}" — it is in the map list on Go fly`);
+  };
+
+  renderList();
 }
 
 // --------------------------------------------------------------------- sound

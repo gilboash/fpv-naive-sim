@@ -25,7 +25,8 @@ import {
   raceVibesCourse,
   type Course,
 } from '../src/race/course.ts';
-import { freestyle, raceField, TRACKS } from '../src/render/track.ts';
+import { freestyle, raceField, TRACKS, trackFromSpec } from '../src/render/track.ts';
+import { validateTrackSpec } from '../src/render/track-spec.ts';
 import { buildGateMarker } from '../src/render/renderer.ts';
 import { MeshBuilder } from '../src/render/mesh.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
@@ -1741,6 +1742,140 @@ section('Freestyle hard: the round chimney is a shaft, not a floor');
     'while flying into its side does not',
     struck,
     'the shaft is a wall from outside and open from above',
+  );
+}
+
+section('Track specs: a track written as data behaves like one written as code');
+{
+  const names = TRACKS.map((t) => t.name);
+
+  const good = {
+    version: 1,
+    name: 'A pilot track',
+    start: { north: -20, east: 0, yawDeg: 0 },
+    laps: 2,
+    pieces: [
+      { type: 'cube', north: 10, east: 8, storeys: 3 },
+      { type: 'pole', north: 4, east: -10, height: 12 },
+      { type: 'roundChimney', north: -6, east: 14, radius: 1.5, base: 5, height: 10 },
+    ],
+    course: [
+      { gate: { north: 0, east: 0, heading: 0 } },
+      { gateRing: { north: 0, east: 0, radius: 30, count: 6 } },
+      { flag: { north: 20, east: -12, heading: -90, side: -1 } },
+    ],
+  };
+  const v = validateTrackSpec(good, names);
+  ok('a well-formed spec validates', v.ok, v.errors.join('; ') || 'no errors');
+
+  const built = trackFromSpec(v.spec!);
+  const m = new MeshBuilder();
+  const obs: Obstacle[] = [];
+  built.build(m, obs);
+  ok(
+    'and builds a scene with collision volumes',
+    m.build().indices.length > 0 && obs.length > 10,
+    `${obs.length} obstacles`,
+  );
+  ok(
+    'its course expands the generators',
+    built.course!.checkpoints.length === 8,
+    `${built.course!.checkpoints.length} checkpoints from 3 entries — the ring is six of them`,
+  );
+
+  // The invariant the format exists to make unbreakable: every gate the timer
+  // knows about has posts standing where it is.
+  let worst = 0;
+  for (const cp of built.course!.checkpoints) {
+    if (cp.kind !== 'gate') continue;
+    let nearest = Infinity;
+    for (const o of obs) {
+      if (o.kind !== 'cylinder') continue;
+      nearest = Math.min(nearest, Math.hypot(o.north - cp.north, o.east - cp.east));
+    }
+    worst = Math.max(worst, Math.abs(nearest - cp.halfWidth));
+  }
+  ok(
+    'and a spec cannot draw a gate somewhere the timer will not accept',
+    worst < 0.05,
+    `worst post ${worst.toFixed(3)} m from its aperture edge`,
+  );
+
+  // A ring written as data should be as round as the built-in circle.
+  const ring = built.course!.checkpoints.slice(1, 7);
+  let radiusErr = 0;
+  let tangentErr = 0;
+  for (const cp of ring) {
+    const r = Math.hypot(cp.north, cp.east);
+    radiusErr = Math.max(radiusErr, Math.abs(r - 30));
+    tangentErr = Math.max(tangentErr, Math.abs((cp.north / r) * cp.dirN + (cp.east / r) * cp.dirE));
+  }
+  ok(
+    'a generated ring is round, and its gates face along the tangent',
+    radiusErr < 1e-9 && tangentErr < 1e-9,
+    `radius error ${radiusErr.toExponential(1)}, worst radial component ${tangentErr.toExponential(1)}`,
+  );
+
+  // Everything a stranger's file might do.
+  const rejects: [string, unknown, string][] = [
+    ['an unknown version is refused rather than guessed at', { version: 99, name: 'x' }, 'version'],
+    ['a name that collides with a built-in is refused', { version: 1, name: names[0], start: { north: 0, east: 0 } }, 'built-in'],
+    ['an unknown piece type is refused', { version: 1, name: 'q', start: { north: 0, east: 0 }, pieces: [{ type: 'nuke', north: 0, east: 0 }] }, 'unknown type'],
+    ['a nameless track is refused', { version: 1, start: { north: 0, east: 0 } }, 'name'],
+    ['and so is something that is not an object', [1, 2, 3], 'object'],
+  ];
+  for (const [label, input, needle] of rejects) {
+    const r = validateTrackSpec(input, names);
+    ok(label, !r.ok && r.errors.some((e) => e.includes(needle)), r.errors.join('; ') || 'accepted!');
+  }
+
+  // Clamped rather than rejected: a mistake is fixed quietly, an attack is not.
+  const wild = validateTrackSpec(
+    {
+      version: 1,
+      name: 'wild',
+      start: { north: 0, east: 0, yawDeg: 0 },
+      pieces: [{ type: 'pole', north: 1e9, east: -1e9, height: 1e6 }],
+    },
+    names,
+  );
+  const pole = wild.spec?.pieces?.[0] as { north: number; east: number; height: number } | undefined;
+  ok(
+    'absurd coordinates are clamped, not trusted',
+    wild.ok && pole !== undefined && Math.abs(pole.north) <= 300 && pole.height <= 150,
+    `north ${pole?.north}, height ${pole?.height}`,
+  );
+
+  const many = validateTrackSpec(
+    {
+      version: 1,
+      name: 'many',
+      start: { north: 0, east: 0, yawDeg: 0 },
+      pieces: Array.from({ length: 5000 }, () => ({ type: 'pole', north: 0, east: 0, height: 5 })),
+    },
+    names,
+  );
+  ok(
+    'and a track cannot ask for five thousand pieces',
+    !many.ok && many.errors.some((e) => e.includes('limit')),
+    many.errors.join('; '),
+  );
+
+  // Every problem at once, so editing by hand is not whack-a-mole.
+  const messy = validateTrackSpec(
+    {
+      version: 1,
+      name: 'messy',
+      start: { north: 0, east: 0, yawDeg: 0 },
+      pieces: [{ type: 'nope', north: 0, east: 0 }, { type: 'pole', east: 0, height: 3 }],
+      course: [{ gate: { north: 0, heading: 0 } }],
+    },
+    names,
+  );
+  ok(
+    'and every fault is reported, not just the first',
+    !messy.ok && messy.errors.length === 3,
+    `${messy.errors.length} errors: ${messy.errors.join(' | ')}`,
   );
 }
 

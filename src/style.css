@@ -575,6 +575,43 @@ body.fullscreen-locked {
   margin: 10px 0;
 }
 
+/* Your own tracks: a JSON box and a list of what is saved. */
+#track-json {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #dbe3ee;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.track-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.track-list .row {
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.track-help summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+.track-help code {
+  color: #9fd0ff;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.bad { color: #ff8a8a; }
+
 /* Long courses have many columns; the table scrolls, the page does not. */
 .race-scroll {
   overflow-x: auto;

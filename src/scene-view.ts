@@ -8,7 +8,7 @@
 
 import type { FlightSim } from './flight/sim.ts';
 import { Renderer } from './render/renderer.ts';
-import { raceField, TRACKS, type Track } from './render/track.ts';
+import { raceField, type Track } from './render/track.ts';
 import { clearance } from './flight/collision.ts';
 import { StickView } from './stick-view.ts';
 import type { Checkpoint } from './race/course.ts';
@@ -84,6 +84,33 @@ export class SceneView {
   private sim: FlightSim;
   private statusEl: HTMLElement;
   private crashEl: HTMLElement;
+  private trackSel: HTMLSelectElement;
+
+  /**
+   * Where the list of maps comes from. Set by the owner so that the pilot's own
+   * tracks join the built-in ones — SceneView draws a track, and has no opinion
+   * about where the list came from.
+   */
+  tracks: () => Track[] = () => [raceField];
+
+  /**
+   * Rebuild the selector. Called when a pilot saves or deletes a track of their
+   * own, since the list is theirs and changes while the page is open.
+   */
+  fillTracks(): void {
+    const sel = this.trackSel;
+    sel.innerHTML = '';
+    for (const t of this.tracks()) {
+      const o = el<HTMLOptionElement>('option');
+      o.value = t.name;
+      o.textContent = t.name;
+      sel.appendChild(o);
+    }
+    // A track can be deleted while it is loaded; fall back rather than leave
+    // the selector showing a map that is no longer there.
+    if (!this.tracks().some((t) => t.name === this.track.name)) this.loadTrack(this.tracks()[0] ?? raceField);
+    sel.value = this.track.name;
+  }
   private controlSlot: HTMLElement;
   readonly stage: HTMLElement;
   readonly sticks: StickView;
@@ -119,15 +146,14 @@ export class SceneView {
     const row = el('div', 'row');
 
     const trackSel = el<HTMLSelectElement>('select');
-    TRACKS.forEach((t, i) => {
-      const o = el<HTMLOptionElement>('option');
-      o.value = String(i);
-      o.textContent = t.name;
-      trackSel.appendChild(o);
-    });
-    trackSel.value = String(Math.max(0, TRACKS.indexOf(this.track)));
+    this.trackSel = trackSel;
+    this.fillTracks();
+    // Selected by *name*. The option values are names too, for the same reason
+    // the stored setting is: inserting a map at the front once silently
+    // repointed everyone's saved choice at a different track.
     trackSel.onchange = () => {
-      this.loadTrack(TRACKS[Number(trackSel.value)] ?? TRACKS[0]!);
+      const chosen = this.tracks().find((t) => t.name === trackSel.value);
+      if (chosen) this.loadTrack(chosen);
       this.saveSettings();
     };
     const trackLabel = el('label', undefined, 'Map ');
@@ -248,13 +274,13 @@ export class SceneView {
       if (Number.isFinite(st.tiltDeg)) this.tiltDeg = Math.max(0, Math.min(60, st.tiltDeg));
       if (st.resetMode === 'start' || st.resetMode === 'inPlace') this.resetMode = st.resetMode;
       const wanted = st.trackName ? RENAMED[st.trackName] ?? st.trackName : undefined;
-      const byName = wanted ? TRACKS.find((t) => t.name === wanted) : undefined;
+      const byName = wanted ? this.tracks().find((t) => t.name === wanted) : undefined;
       if (byName) this.track = byName;
       else if (typeof st.track === 'number') {
         // One-time migration from the index era. The order at the time was
         // [openField, gateRun, circuit]; the race map went in front of it.
         const legacy = ['Open field', 'Gate run', 'Circuit'][st.track];
-        const t = legacy ? TRACKS.find((x) => x.name === (RENAMED[legacy] ?? legacy)) : undefined;
+        const t = legacy ? this.tracks().find((x) => x.name === (RENAMED[legacy] ?? legacy)) : undefined;
         if (t) this.track = t;
       }
       // A name that is neither current nor renamed is a map that no longer

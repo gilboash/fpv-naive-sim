@@ -244,6 +244,80 @@ const main = async () => {
         !!(document.querySelector('#scene-view canvas')?.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING),
     };
   })()`);
+  // A pilot's own track, end to end through the real page: paste, save, and it
+  // is a map you can pick and fly.
+  const custom = await evaluate(`(async () => {
+    const { scene, tabs, racePanel } = globalThis.__fpvsim;
+    tabs.show('settings');
+    const area = document.querySelector('#track-json');
+    const status = document.querySelector('#track-status');
+
+    // Something wrong first: the errors are the feature, not the save.
+    area.value = JSON.stringify({ version: 1, name: 'Bad', start: { north: 0, east: 0 }, pieces: [{ type: 'nuke', north: 0, east: 0 }] });
+    document.querySelector('#track-save').click();
+    const rejected = { text: status.textContent, cls: status.className };
+
+    area.value = JSON.stringify({
+      version: 1,
+      name: 'Check track',
+      start: { north: -20, east: 0, yawDeg: 0 },
+      laps: 2,
+      pieces: [{ type: 'cube', north: 10, east: 8, storeys: 2 }],
+      course: [
+        { gate: { north: 0, east: 0, heading: 0 } },
+        { gateRing: { north: 0, east: 0, radius: 25, count: 4 } },
+      ],
+    });
+    document.querySelector('#track-save').click();
+    await new Promise((r) => setTimeout(r, 300));
+
+    const sel = document.querySelectorAll('#scene-view select')[0];
+    const names = [...sel.options].map((o) => o.textContent);
+    const listed = document.querySelectorAll('#track-list .row').length;
+    const stored = JSON.parse(localStorage.getItem('fpvsim.tracks.v1') || 'null');
+
+    // And it is really flyable: the map is loaded and its course is the one the
+    // timer will run.
+    const loaded = scene.track.name;
+    const checkpoints = racePanel.race.course.checkpoints.length;
+    const canRace = !racePanel.startBtnDisabled;
+
+    // Clean up, so the destructive reset check later still sees what it expects.
+    document.querySelector('#track-list .danger').click();
+    await new Promise((r) => setTimeout(r, 200));
+    const afterDelete = [...sel.options].map((o) => o.textContent);
+    return {
+      rejected,
+      names,
+      listed,
+      storedCount: stored?.tracks?.length ?? 0,
+      loaded,
+      checkpoints,
+      canRace,
+      afterDelete,
+    };
+  })()`);
+  check(
+    'a bad track is refused with the reasons, not swallowed',
+    /unknown type/.test(custom.rejected.text ?? '') && custom.rejected.cls === 'bad',
+    `"${custom.rejected.text}"`,
+  );
+  check(
+    "a pilot's own track becomes a map they can pick",
+    custom.names.includes('Check track') && custom.listed === 1 && custom.storedCount === 1,
+    `in the map list, listed once, and stored in this browser only`,
+  );
+  check(
+    'and it is a real course the timer will run',
+    custom.loaded === 'Check track' && custom.checkpoints === 5 && custom.canRace === true,
+    `${custom.checkpoints} checkpoints from 2 entries — the ring is four — and Start race is live`,
+  );
+  check(
+    'and deleting it takes it out of the map list',
+    !custom.afterDelete.includes('Check track'),
+    'gone from the selector as well as from storage',
+  );
+
   // Fullscreen, on a browser that does not have it. Safari on iPhone offers
   // element fullscreen to <video> and nothing else, so the unprefixed call
   // threw and the button did nothing — which is exactly what Gilboa saw.
