@@ -244,6 +244,58 @@ const main = async () => {
         !!(document.querySelector('#scene-view canvas')?.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING),
     };
   })()`);
+  // Fullscreen, on a browser that does not have it. Safari on iPhone offers
+  // element fullscreen to <video> and nothing else, so the unprefixed call
+  // threw and the button did nothing — which is exactly what Gilboa saw.
+  const fs = await evaluate(`(async () => {
+    const { scene, tabs } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const stage = document.querySelector('.fpv-stage');
+    const proto = Object.getPrototypeOf(stage);
+    const real = proto.requestFullscreen;
+    const realWebkit = proto.webkitRequestFullscreen;
+    // Pretend to be a phone: no element fullscreen of any kind. Both have to
+    // go — Chrome keeps the webkit alias, so removing only the standard method
+    // tests the prefixed path rather than the absent one.
+    delete Element.prototype.requestFullscreen;
+    delete Element.prototype.webkitRequestFullscreen;
+    stage.requestFullscreen = undefined;
+    const kind = scene.fullscreenKind;
+    await scene.toggleFullscreen();
+    const on = {
+      pseudo: stage.classList.contains('pseudo-fullscreen'),
+      locked: document.body.classList.contains('fullscreen-locked'),
+      exit: !!stage.querySelector('.fpv-exit'),
+      isFullscreen: scene.isFullscreen,
+    };
+    // And back out again, the way a pilot would: the button on the picture.
+    stage.querySelector('.fpv-exit').click();
+    const off = {
+      pseudo: stage.classList.contains('pseudo-fullscreen'),
+      locked: document.body.classList.contains('fullscreen-locked'),
+      isFullscreen: scene.isFullscreen,
+    };
+    Element.prototype.requestFullscreen = real;
+    if (realWebkit) Element.prototype.webkitRequestFullscreen = realWebkit;
+    delete stage.requestFullscreen;
+    return { kind, on, off, backToNative: scene.fullscreenKind };
+  })()`);
+  check(
+    'a browser without element fullscreen still fills the screen',
+    fs.kind === 'css' && fs.on.pseudo && fs.on.locked && fs.on.isFullscreen,
+    'the stage is pinned to the viewport and the page behind it cannot scroll',
+  );
+  check(
+    'and it has its own way out, since a phone has no Escape key',
+    fs.on.exit === true && fs.off.pseudo === false && fs.off.locked === false && fs.off.isFullscreen === false,
+    'a close button on the picture, and everything is put back',
+  );
+  check(
+    'while a browser that has it uses the real thing',
+    fs.backToNative === 'native',
+    'the fallback is a fallback, not the default',
+  );
+
   check(
     'the flying tab is the picture and its settings, with no prose',
     flyTab.title === 'Sim' && flyTab.hints === 0,
@@ -1512,11 +1564,28 @@ const main = async () => {
     // tick keeps stepping underneath, so anything measured across a wait is a
     // race — this asks only whether what is being heard matches what is being
     // flown right now.
-    audio.update(flight.sim);
-    await new Promise((r) => setTimeout(r, 200));
-    audio.update(flight.sim);
-    const live = audio.debug();
-    const rpm = flight.sim.telemetry.motorRpm.slice();
+    //
+    // And sample repeatedly rather than once: every parameter is a smoothed
+    // target by design, so a single reading taken while the ramp is still
+    // climbing is a measurement of the ramp, not of the mapping. One reading
+    // came back at 381 Hz on its way to 1 145.
+    let live = audio.debug();
+    let rpm = flight.sim.telemetry.motorRpm.slice();
+    let bestErr = Infinity;
+    for (let i = 0; i < 40; i++) {
+      audio.update(flight.sim);
+      await new Promise((r) => setTimeout(r, 25));
+      const d = audio.debug();
+      const r0 = flight.sim.telemetry.motorRpm.slice();
+      const want = ((r0[0] ?? 0) / 60) * flight.sim.airframe.prop.blades;
+      const err = Math.abs((d.freqs[0] ?? 0) - want);
+      if (err < bestErr) {
+        bestErr = err;
+        live = d;
+        rpm = r0;
+      }
+      if (err < Math.max(25, want * 0.05)) break;
+    }
 
     flight.sim.armed = false;
     poller.poll = realPoll;

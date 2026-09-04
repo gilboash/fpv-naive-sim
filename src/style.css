@@ -460,6 +460,50 @@ tbody tr:hover { background: var(--panel-2); }
 .stick-dot { fill: #f4b400; stroke: rgba(13, 17, 23, 0.8); stroke-width: 1; }
 
 /* Fullscreen: the stage fills the screen and the canvas fills the stage. */
+/* The CSS fallback, for browsers with no element fullscreen — Safari on
+   iPhone, which offers it to <video> and nothing else. dvh rather than vh:
+   on a phone vh includes the space the address bar occupies, so a 100vh stage
+   is taller than the screen and the bottom of the picture is unreachable. */
+.fpv-stage.pseudo-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  border-radius: 0;
+  background: #000;
+}
+
+.fpv-stage.pseudo-fullscreen .fpv-canvas {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-height: none;
+  aspect-ratio: auto;
+}
+
+/* Nothing behind it should scroll while it is up. */
+body.fullscreen-locked {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Its own way out: there is no Escape key on a phone, and the button that
+   opened it is now underneath the picture. */
+.fpv-exit {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 20px;
+  background: rgba(10, 13, 17, 0.65);
+  color: #e6edf5;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
 .fpv-stage:fullscreen { border-radius: 0; }
 .fpv-stage:fullscreen .fpv-canvas {
   width: 100vw;

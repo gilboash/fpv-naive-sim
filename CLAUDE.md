@@ -1213,6 +1213,43 @@ demanded 25 m/s^2 to fly at 12; and thrust-to-weight was assumed at 3.2 when the
 model has **8.1** (hover 9 428 rpm against 28 046 at full throttle, thrust as
 rpm squared — hover is 11% of maximum).
 
+## Fullscreen on a phone (2026-09-04)
+
+Gilboa: fullscreen does not work from a mobile browser. It did not, and the
+reason is that `Element.requestFullscreen` was called unprefixed and unguarded.
+
+**Safari on iPhone has no element fullscreen at all** — it offers it to `<video>`
+and to nothing else — so the call threw and the button looked dead. Older WebKit
+wants the `webkit` prefix. Three paths now: the standard method, the prefixed
+one, and where neither exists a **CSS fallback** that pins the stage to the
+viewport. The browser chrome stays, which cannot be helped, but the picture
+fills the screen, which is the part that matters.
+
+Details that are not obvious and are load-bearing:
+
+- **`100dvh`, not `100vh`.** On a phone `vh` includes the space the address bar
+  occupies, so a `100vh` stage is taller than the screen and the bottom of the
+  picture cannot be reached.
+- **The fallback needs its own way out.** There is no Escape key on a phone and
+  the button that opened it is now underneath the picture, so it draws a close
+  button on the stage.
+- **The body must stop scrolling** underneath it, or a drag on the "fullscreen"
+  view scrolls the page behind it.
+- Orientation is asked to lock to landscape where the browser allows it, which
+  is Android. A phone held in portrait is nearly useless for this and asking is
+  free.
+
+**Emulating the phone in the check needed both methods removed.** Chrome keeps
+`webkitRequestFullscreen` as an alias, so deleting only the standard one tests
+the *prefixed* path rather than the absent one — the check passed while
+exercising the wrong branch until that was fixed.
+
+Also: the sound check now samples until the parameter ramp settles instead of
+reading once. Every audio parameter is a smoothed target by design, so a single
+reading taken mid-ramp measures the ramp — one came back at 381 Hz on its way
+to 1 145. Waiting for the context to be `running`, which was the previous fix,
+was necessary and not sufficient.
+
 ## Freestyle hard (2026-09-03)
 
 A sixth map, and the second with no course: towers of cubes three to six

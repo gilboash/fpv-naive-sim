@@ -370,10 +370,94 @@ export class SceneView {
   }
 
   /** Go fullscreen on the view itself, sticks included. */
-  async toggleFullscreen(): Promise<void> {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else await this.stage.requestFullscreen();
+  /**
+   * Fullscreen, three ways, because the phone a pilot is holding decides which
+   * of them exists.
+   *
+   * Safari on iPhone has **no element fullscreen at all** — only `<video>` can
+   * go fullscreen there — so the unprefixed call threw and the button looked
+   * dead. Older WebKit wants the `webkit` prefix. Where neither is on offer the
+   * stage is pinned to the viewport with CSS instead: the browser chrome stays,
+   * which is the part that cannot be helped, but the picture fills the screen,
+   * which is the part that matters.
+   */
+  get isFullscreen(): boolean {
+    const d = document as Document & { webkitFullscreenElement?: Element };
+    return (
+      d.fullscreenElement === this.stage ||
+      d.webkitFullscreenElement === this.stage ||
+      this.stage.classList.contains('pseudo-fullscreen')
+    );
   }
+
+  /** Which mechanism this browser will actually use. Read by the checks. */
+  get fullscreenKind(): 'native' | 'webkit' | 'css' {
+    const e = this.stage as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+    if (typeof e.requestFullscreen === 'function') return 'native';
+    if (typeof e.webkitRequestFullscreen === 'function') return 'webkit';
+    return 'css';
+  }
+
+  async toggleFullscreen(): Promise<void> {
+    const d = document as Document & {
+      webkitFullscreenElement?: Element;
+      webkitExitFullscreen?: () => Promise<void>;
+    };
+    const e = this.stage as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+
+    if (this.isFullscreen) {
+      if (this.stage.classList.contains('pseudo-fullscreen')) this.setPseudoFullscreen(false);
+      else if (d.fullscreenElement) await d.exitFullscreen();
+      else if (d.webkitFullscreenElement) await d.webkitExitFullscreen?.();
+      return;
+    }
+
+    try {
+      if (this.fullscreenKind === 'native') await this.stage.requestFullscreen();
+      else if (this.fullscreenKind === 'webkit') await e.webkitRequestFullscreen?.();
+      else this.setPseudoFullscreen(true);
+    } catch {
+      // A refusal is as good as an absence — some browsers have the method and
+      // decline to use it. Either way the pilot asked for a bigger picture.
+      this.setPseudoFullscreen(true);
+    }
+
+    // Landscape, where the browser allows it. A phone held in portrait is
+    // nearly useless for this, and asking is free. iOS does not offer it.
+    const orientation = screen.orientation as ScreenOrientation & {
+      lock?: (o: string) => Promise<void>;
+    };
+    try {
+      await orientation.lock?.('landscape');
+    } catch {
+      /* not supported, or the user has rotation locked. Not worth a word. */
+    }
+  }
+
+  /**
+   * The CSS fallback: pin the stage over the page.
+   *
+   * It needs its own way out, because there is no Escape key on a phone and the
+   * button that got you here is now underneath the picture.
+   */
+  private setPseudoFullscreen(on: boolean): void {
+    this.stage.classList.toggle('pseudo-fullscreen', on);
+    document.body.classList.toggle('fullscreen-locked', on);
+    if (on && !this.exitBtn) {
+      const btn = el<HTMLButtonElement>('button', 'fpv-exit');
+      btn.type = 'button';
+      btn.textContent = '✕';
+      btn.title = 'Leave fullscreen';
+      btn.onclick = () => this.setPseudoFullscreen(false);
+      this.stage.appendChild(btn);
+      this.exitBtn = btn;
+    }
+    if (this.exitBtn) this.exitBtn.style.display = on ? '' : 'none';
+    // The canvas is sized from its box, so it has to be told the box changed.
+    this.renderer?.render(this.sim);
+  }
+
+  private exitBtn: HTMLButtonElement | null = null;
 
   /** Outline the next checkpoint, or clear it with null. */
   setNextCheckpoint(cp: Checkpoint | null): void {
