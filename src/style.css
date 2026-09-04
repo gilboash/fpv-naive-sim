@@ -575,6 +575,18 @@ body.fullscreen-locked {
   margin: 10px 0;
 }
 
+/* Links inside body copy. Default browser blue on a dark panel reads as an
+   unstyled page rather than a deliberate one. */
+.hint a,
+.startup a {
+  color: #ffd24a;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 210, 74, 0.35);
+}
+
+.hint a:hover,
+.startup a:hover { border-bottom-color: #ffd24a; }
+
 /* Your own tracks: a JSON box and a list of what is saved. */
 #track-json {
   width: 100%;
