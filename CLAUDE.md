@@ -1257,6 +1257,31 @@ progress cannot break someone else's flying, and the review step is a message or
 a PR rather than a bottleneck, because the track already works before it is
 sent.
 
+**Saving is gated on `checkTrack()`** (`src/render/track-check.ts`), which
+builds the scene and asks whether it can be flown: start line clear, each gate's
+centre clear, checkpoints far enough apart to be told apart, no opening in the
+ground. Well-formed JSON is not the same as a flyable track, and the difference
+can only be seen in the built scene — a piece and a checkpoint can each be
+reasonable alone and end up inside one another.
+
+**Not the machine pilot.** The obvious gate is "can the autopilot complete it",
+and it is wrong: that pilot cannot fly Race vibes, so it would reject good
+tracks and teach pilots to distrust the check. A narrower check that is right
+always beats a broader one that is wrong sometimes.
+
+Three things this cost, all worth keeping:
+
+- **The rule is that the gate's *centre* is clear, not the whole aperture.**
+  Sampling the edges failed Race vibes on its own cube openings, because a cube
+  face is framed by the cube — the rails are at the edge by construction. A gate
+  you can only take through the middle is tight, not broken; that is a warning.
+- **A cube and a chimney are hollow**, so neither blocks a gate through its
+  middle. Two of the first tests used them to "block" a gate and passed for the
+  wrong reason. Use a pole.
+- **There is a check that every built-in map passes the check imposed on
+  pilots.** A rule stricter than the shipped content is a rule pilots learn to
+  ignore, and it caught the aperture problem immediately.
+
 ## Fullscreen on a phone (2026-09-04)
 
 Gilboa: fullscreen does not work from a mobile browser. It did not, and the

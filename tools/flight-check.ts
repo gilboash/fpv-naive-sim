@@ -27,6 +27,7 @@ import {
 } from '../src/race/course.ts';
 import { freestyle, raceField, TRACKS, trackFromSpec } from '../src/render/track.ts';
 import { validateTrackSpec } from '../src/render/track-spec.ts';
+import { checkTrack } from '../src/render/track-check.ts';
 import { buildGateMarker } from '../src/render/renderer.ts';
 import { MeshBuilder } from '../src/render/mesh.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
@@ -1876,6 +1877,124 @@ section('Track specs: a track written as data behaves like one written as code')
     'and every fault is reported, not just the first',
     !messy.ok && messy.errors.length === 3,
     `${messy.errors.length} errors: ${messy.errors.join(' | ')}`,
+  );
+}
+
+section('Track checks: a track has to be flyable before it can be saved');
+{
+  const names = TRACKS.map((t) => t.name);
+  const build = (spec: object): ReturnType<typeof checkTrack> => {
+    const v = validateTrackSpec(spec, names);
+    if (!v.ok || !v.spec) throw new Error(`spec invalid: ${v.errors.join('; ')}`);
+    return checkTrack(trackFromSpec(v.spec));
+  };
+
+  // Every built-in map passes its own check. If they did not, the check would
+  // be wrong rather than the maps — and a check stricter than the shipped
+  // content is a check pilots learn to ignore.
+  const failing = TRACKS.filter((t) => !checkTrack(t).ok);
+  ok(
+    'every built-in map passes the check it imposes on pilots',
+    failing.length === 0,
+    failing.length === 0
+      ? `all ${TRACKS.length}`
+      : failing.map((t) => `${t.name}: ${checkTrack(t).errors.join(', ')}`).join(' | '),
+  );
+
+  const clean = build({
+    version: 1,
+    name: 'Clean',
+    start: { north: -20, east: 0, yawDeg: 0 },
+    course: [
+      { gate: { north: 0, east: 0, heading: 0 } },
+      { gate: { north: 20, east: 6, heading: 20 } },
+    ],
+  });
+  ok('a sound track passes', clean.ok, clean.errors.join('; ') || `${clean.obstacles} obstacles`);
+
+  // A gate with a tower standing in it. The pieces and the checkpoint are each
+  // reasonable on their own, which is exactly why this needs the built scene.
+  const blockedGate = build({
+    version: 1,
+    name: 'Blocked',
+    start: { north: -20, east: 0, yawDeg: 0 },
+    // A pole, not a cube: a cube is hollow and a gate through the middle of one
+    // is a legitimate thing to fly. The first version of this test used one and
+    // passed for the wrong reason.
+    pieces: [{ type: 'pole', north: 0, east: 0, height: 10 }],
+    course: [
+      { gate: { north: 0, east: 0, heading: 0 } },
+      { gate: { north: 20, east: 0, heading: 0 } },
+    ],
+  });
+  ok(
+    'a gate with something standing in it is refused',
+    !blockedGate.ok && blockedGate.errors.some((e) => e.includes('standing in the gate')),
+    blockedGate.errors.join('; '),
+  );
+
+  const buriedStart = build({
+    version: 1,
+    name: 'Buried',
+    start: { north: 0, east: 0, yawDeg: 0 },
+    // Likewise: a chimney is a shaft, and its bore is exactly where a quad can
+    // be. A pole is solid.
+    pieces: [{ type: 'pole', north: 0, east: 0, height: 8 }],
+    course: [
+      { gate: { north: 20, east: 0, heading: 0 } },
+      { gate: { north: 40, east: 0, heading: 0 } },
+    ],
+  });
+  ok(
+    'a start line inside something is refused',
+    !buriedStart.ok && buriedStart.errors.some((e) => e.includes('start line')),
+    buriedStart.errors.join('; '),
+  );
+
+  const stacked = build({
+    version: 1,
+    name: 'Stacked',
+    start: { north: -20, east: 0, yawDeg: 0 },
+    course: [
+      { gate: { north: 0, east: 0, heading: 0 } },
+      { gate: { north: 0.5, east: 0, heading: 0 } },
+    ],
+  });
+  ok(
+    'two checkpoints in the same place are refused',
+    !stacked.ok && stacked.errors.some((e) => e.includes('cannot tell them apart')),
+    stacked.errors.join('; '),
+  );
+
+  const sunk = build({
+    version: 1,
+    name: 'Sunk',
+    start: { north: -20, east: 0, yawDeg: 0 },
+    course: [
+      { gate: { north: 0, east: 0, heading: 0, up: 0.5 } },
+      { gate: { north: 20, east: 0, heading: 0 } },
+    ],
+  });
+  ok(
+    'a gate whose opening is in the ground is refused',
+    !sunk.ok && sunk.errors.some((e) => e.includes('in the ground')),
+    sunk.errors.join('; '),
+  );
+
+  // Warnings are said, not enforced: the pilot is the one flying it.
+  const far = build({
+    version: 1,
+    name: 'Far',
+    start: { north: -20, east: 0, yawDeg: 0 },
+    course: [
+      { gate: { north: 0, east: 0, heading: 0 } },
+      { gate: { north: 280, east: 0, heading: 0 } },
+    ],
+  });
+  ok(
+    'a very long hop warns without blocking the save',
+    far.ok && far.warnings.some((w) => w.includes('check the coordinates')),
+    far.warnings.join('; '),
   );
 }
 

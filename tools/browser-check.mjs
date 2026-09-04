@@ -257,6 +257,24 @@ const main = async () => {
     document.querySelector('#track-save').click();
     const rejected = { text: status.textContent, cls: status.className };
 
+    // Well-formed and unflyable: a pole standing in the gate. This is the check
+    // that cannot be done on the JSON alone — it needs the built scene.
+    area.value = JSON.stringify({
+      version: 1,
+      name: 'Unflyable',
+      start: { north: -20, east: 0, yawDeg: 0 },
+      pieces: [{ type: 'pole', north: 0, east: 0, height: 10 }],
+      course: [
+        { gate: { north: 0, east: 0, heading: 0 } },
+        { gate: { north: 20, east: 0, heading: 0 } },
+      ],
+    });
+    document.querySelector('#track-save').click();
+    const unflyable = {
+      text: status.textContent,
+      saved: JSON.parse(localStorage.getItem('fpvsim.tracks.v1') || 'null')?.tracks?.length ?? 0,
+    };
+
     area.value = JSON.stringify({
       version: 1,
       name: 'Check track',
@@ -288,6 +306,7 @@ const main = async () => {
     const afterDelete = [...sel.options].map((o) => o.textContent);
     return {
       rejected,
+      unflyable,
       names,
       listed,
       storedCount: stored?.tracks?.length ?? 0,
@@ -301,6 +320,11 @@ const main = async () => {
     'a bad track is refused with the reasons, not swallowed',
     /unknown type/.test(custom.rejected.text ?? '') && custom.rejected.cls === 'bad',
     `"${custom.rejected.text}"`,
+  );
+  check(
+    'a valid but unflyable track is refused, and not saved',
+    /standing in the gate/.test(custom.unflyable.text ?? '') && custom.unflyable.saved === 0,
+    `"${custom.unflyable.text}" — and nothing was written to storage`,
   );
   check(
     "a pilot's own track becomes a map they can pick",

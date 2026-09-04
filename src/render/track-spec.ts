@@ -76,6 +76,8 @@ export interface ValidationResult {
   ok: boolean;
   /** Everything wrong with it, not just the first thing. */
   errors: string[];
+  /** Things worth saying that do not stop a save. */
+  warnings?: string[];
   /** The spec, with defaults filled in and numbers clamped. */
   spec: TrackSpec | null;
 }

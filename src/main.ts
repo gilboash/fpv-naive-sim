@@ -1104,7 +1104,14 @@ if (import.meta.env.DEV) {
     scene.loadTrack(allTracks().find((t) => t.name === result.spec!.name) ?? scene.track);
     racePanel.setCourse(scene.track.course ?? null);
     renderList();
-    say(`saved "${result.spec.name}" — it is in the map list on Go fly`);
+    // Warnings are said on a save that worked, because they are the pilot's
+    // call. Refusing on them would turn the check into something to work
+    // around rather than something to read.
+    const notes = result.warnings ?? [];
+    say(
+      `saved "${result.spec.name}" — it is in the map list on Go fly` +
+        (notes.length ? ` · worth a look: ${notes.join(' · ')}` : ''),
+    );
   };
 
   renderList();

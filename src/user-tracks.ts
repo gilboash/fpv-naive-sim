@@ -14,6 +14,7 @@
 
 import { TRACKS, trackFromSpec, type Track } from './render/track.ts';
 import { validateTrackSpec, type TrackSpec, type ValidationResult } from './render/track-spec.ts';
+import { checkTrack } from './render/track-check.ts';
 
 const STORAGE_KEY = 'fpvsim.tracks.v1';
 
@@ -78,10 +79,18 @@ export function saveUserTrack(json: string): ValidationResult {
   const result = validateTrackSpec(parsed, builtInNames());
   if (!result.ok || !result.spec) return result;
   const spec = result.spec;
+
+  // Well-formed is not the same as flyable. A spec can be perfectly valid JSON
+  // and still put a gate inside a tower or the start line in a wall, and the
+  // pilot finds out by flying into it. Building it and looking is cheap.
+  const check = checkTrack(trackFromSpec(spec));
+  if (!check.ok) return { ok: false, errors: check.errors, spec: null, warnings: check.warnings };
   const next = userSpecs().filter((t) => t.name !== spec.name);
   next.push(spec);
   persist(next);
-  return result;
+  // Warnings travel with a *successful* save: they are the pilot's call, and
+  // refusing on them would make the check something to work around.
+  return { ...result, warnings: check.warnings };
 }
 
 export function deleteUserTrack(name: string): void {
