@@ -31,6 +31,11 @@ cp -R "$HERE/dist" "$STAGE/fpvsim/dist"
 cp "$HERE/tools/serve.py" "$STAGE/fpvsim/serve.py"
 cp "$HERE/tools/admin.py" "$STAGE/fpvsim/admin.py"
 cp "$HERE/tools/win/start-fpvsim.bat" "$STAGE/fpvsim/start-fpvsim.bat"
+# The container. start-fpvsim.bat stays beside it as the way back to bare
+# processes if Docker is ever the problem rather than the fix.
+cp "$HERE/Dockerfile" "$STAGE/fpvsim/Dockerfile"
+cp "$HERE/.dockerignore" "$STAGE/fpvsim/.dockerignore"
+cp "$HERE/tools/win/docker-fpvsim.bat" "$STAGE/fpvsim/docker-fpvsim.bat"
 # Reference-lap videos, if any have been generated. Served on demand from
 # beside dist rather than bundled into it — a pilot who never presses play
 # never fetches one.
@@ -58,21 +63,20 @@ $SSH "${OPTS[@]}" "$T" "robocopy $WIN_STAGE_BS $WIN_DEST_BS /MIR /NFL /NDL /NJH 
 $SSH "${OPTS[@]}" "$T" "rmdir /s /q C:\\Users\\gilbo\\_staging_fpvsim" >/dev/null 2>&1 || true
 rm -rf "$STAGE"
 
-echo "[4/4] restarting the servers"
-# Started in the background and cut loose, because this call does not return.
-# The bat detaches its servers with Start-Process and they keep the SSH channel
-# open behind them, so sshd never closes the session — the deploy hangs having
-# already succeeded. Redirecting the remote output does not help; it was tried.
+echo "[4/4] rebuilding and restarting the containers"
+# This call returns, and that is the difference. The old bat detached its
+# servers with Start-Process and they held the SSH channel open behind them, so
+# the deploy hung *having already succeeded* — it had to be backgrounded and
+# killed after eight seconds. `docker run -d` detaches at the daemon, so the
+# session closes on its own and the exit code is worth reading.
 #
-# Closing the client end is safe precisely because Start-Process detaches: the
-# servers outlive the session, which is the whole reason the bat uses it instead
-# of `start /b`. And the verification below is a fresh connection, so what is
-# reported is the state of the box rather than the exit code of this call.
-$SSH "${OPTS[@]}" -n "$T" "$WIN_DEST_BS\\start-fpvsim.bat" >/dev/null 2>&1 &
-starter=$!
-sleep 8
-kill "$starter" 2>/dev/null || true
-wait "$starter" 2>/dev/null || true
+# Safe over SSH only because the base image is already on the box: a build that
+# pulled from a registry would need Docker Desktop's credential helper, which
+# needs an interactive logon session and does not have one here.
+if ! $SSH "${OPTS[@]}" "$T" "$WIN_DEST_BS\\docker-fpvsim.bat" 2>&1 | tr -d '\r'; then
+  echo "      container start failed — the collection in data\\ is untouched, it is a mount"
+  exit 1
+fi
 echo "      verifying"
 $SSH "${OPTS[@]}" "$T" "curl.exe -s -m 5 -o NUL -w \"      HTTP %{http_code}, %{size_download} bytes\n\" http://127.0.0.1:5180/" 2>&1 | tr -d '\r'
 # The admin view answers only on localhost, which is why it needs checking from

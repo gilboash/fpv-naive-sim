@@ -1,0 +1,19 @@
+# The build context on the box is the deployed directory, which holds the
+# collection and the server logs beside the files being built. data/ in
+# particular must never reach the daemon: it is a mount, and a copy of it inside
+# a layer would be a second, stale, invisible copy of the only state this app
+# has.
+data/
+reference/
+*.log
+*.out
+
+# Never part of a deploy, but this file is also read when building from the
+# repository on the Mac, where all of these exist.
+node_modules/
+.git/
+src/
+tools/
+measurements/
+screenlog.0
+dist/.vite/

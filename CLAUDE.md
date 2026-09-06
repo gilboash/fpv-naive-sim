@@ -584,7 +584,7 @@ inside the frame, immediately before drawing. And the failsafe check raced the
 one-second device rescan, since headless here can see a real radio; it now
 deselects repeatedly until the disconnected state is actually observed.
 
-**Agreed 2026-09-01: Docker with auto-restart, once the dev work settles.**
+**Agreed 2026-09-01, done 2026-09-06 — see Containers on the box below.**
 The box's servers are bare background processes, so a reboot takes the sim and
 the collection down silently — worse than it used to be, because a dead page is
 obvious and a stopped collection is not. Gilboa's call: this over backing up
@@ -805,8 +805,9 @@ starts over.
 all tasks, 2.6 MB heap. The server does nothing per visitor beyond handing over
 80 KB once.
 
-**Known limitation:** it is a bare background process, so it does not survive a
-reboot. A Scheduled Task or the Docker path would fix that when it matters.
+~~**Known limitation:** it is a bare background process, so it does not survive a
+reboot.~~ It did not, on 2026-09-06. Containerised the same day — see
+**Containers on the box** below.
 
 ## Usage collection (2026-08-31)
 
@@ -1445,6 +1446,75 @@ There is a check that the section is titled Sim, carries no paragraphs, and
 that the sound control is inside the view's own control row and below the
 canvas — because "we removed the text" is the kind of thing that comes back one
 helpful sentence at a time.
+
+## Containers on the box (2026-09-06)
+
+The desktop rebooted and the sim did not come back, which is exactly what the
+"known limitation" above said would happen. Two containers now, from one image,
+`--restart unless-stopped`, matching the three services already on that machine.
+`Dockerfile`, `.dockerignore` and `tools/win/docker-fpvsim.bat`;
+`deploy-windows.sh` builds and restarts them instead of starting processes.
+
+All three of the things that section said a container must get right were kept,
+and each is asserted rather than assumed because each fails quietly:
+
+- **`data/` is a mount, not a layer.** `.dockerignore` keeps it out of the build
+  context too, so a rebuild cannot bake a stale copy of the collection beside
+  the live one. Verified by deploying twice and finding the file still there and
+  still growing (234 lines on 2026-09-04, 248 now).
+- **COOP/COEP survive.** `serve.py` sends them itself rather than relying on
+  anything in front of it. Verified on the response headers through the
+  container, and by the browser check reporting cross-origin isolated with the
+  atomics ticker against the live box.
+- **5181 is published deliberately, not accidentally.** Gilboa's call was to
+  keep it on the LAN as it has been since 2026-08-31. It is one named variable
+  (`ADMIN_BIND`) with the trade-off written beside it.
+
+**The access control moved and the old comment now lies.** `admin.py` documents
+its bind address as the access control; inside a container it always binds
+0.0.0.0 and the host's `-p` decides who can reach it. Both files say so now.
+The admin container also mounts `data` **read-only** — the page only ever reads,
+so making that structural means a bug in the reader cannot corrupt the
+collection. Verified from inside both containers: one can write, the other
+cannot.
+
+**alpine, not python:3.12-slim, and not for size.** Docker Desktop's credential
+helper needs an interactive logon session, so any build that pulls a base image
+dies over SSH with "A specified logon session does not exist" — which is why
+genius-invester builds through Task Scheduler (`docker_build.ps1` says so).
+`alpine:3.20` was already on the box, `apk` needs no credential helper, so this
+builds over a plain SSH connection. **If that base is ever pruned, the first
+build after it has to be run from the desktop.**
+
+Containers also killed the deploy hang: `docker run -d` detaches at the daemon,
+so the restart step returns and its exit code means something. The
+background-and-kill-after-8s hack is gone.
+
+Four things I got wrong, all worth keeping:
+
+- **`docker kill` does not test a restart policy — it defeats one.** Docker
+  ignores restart policies for a manual stop or kill, by design, so the
+  container stayed down and *would also have stayed down across a reboot* until
+  `docker start` cleared that state. I took the sim down for about two minutes
+  proving nothing. The boot path is evidenced instead by the three sibling
+  containers coming back on their own after the 14:38 reboot with the same
+  policy.
+- **`kill 1` inside the container does nothing.** The kernel drops
+  default-action signals for PID 1, so there is no easy way to fake a crash from
+  the inside either.
+- **I assumed that meant `docker stop` would hang for its ten-second grace
+  period and reached for `--init`. Measured it: 1.8 s.** No fix was needed and
+  none was made. Measure before adding machinery.
+- **`timeout /t` needs a console.** Over SSH it prints "Input redirection is not
+  supported" and returns immediately, so the wait before the health checks did
+  not happen — the checks were racing the containers they were meant to be
+  waiting for, and passed only because containers start fast. `Start-Sleep`.
+
+**The healthcheck has to be overridden for the admin container.** The image's
+own probes 5180, which is right for the page and wrong for a container listening
+on 5181 — it failed three times and settled on "unhealthy" while the page was
+answering perfectly well. Caught by watching the failing streak climb rather
+than by trusting the first green `docker ps`.
 
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:

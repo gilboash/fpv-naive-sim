@@ -1297,8 +1297,11 @@ whole protection, because the page itself has no password.
 It runs on **`0.0.0.0:5181`** as deployed, so it is readable from the house
 network at `http://192.168.7.54:5181/` — and by anything else on that network,
 guest wifi included. That is a deliberate choice for a home LAN, not a general
-recommendation. `admin.py --host 127.0.0.1` (or passing `127.0.0.1` to
-`start-fpvsim.bat`) puts it back to the box alone, reached with a forward:
+recommendation. Since the move to containers the bind address inside the container is always
+`0.0.0.0` and **the access control has moved to the port publishing** — a
+container's own interfaces are private to it, so what decides who can reach the
+usage view is now the `ADMIN_BIND` line in `docker-fpvsim.bat`. Setting it to
+`127.0.0.1` puts it back to the box alone, reached with a forward:
 
 ```
 ssh -L 5181:127.0.0.1:5181 gilboash@hotmail.com@192.168.7.54
@@ -1314,17 +1317,41 @@ rendered back. A name of `<script>alert(1)</script>` is stored exactly as typed 
 sanitising on the way in would have hidden the fact that the reader has to escape
 on the way out — and the browser check asserts both halves of that.
 
-One deploy trap came with the second server: the restart step stopped
-returning. The bat detaches its servers with `Start-Process`, and with two of
-them the SSH channel stays open behind them, so the deploy hangs *after having
-already succeeded*. Redirecting the remote output does not help. The script
-backgrounds that call and cuts it loose, then verifies over a fresh connection —
-which is the honest thing to report anyway.
-
 The deploy script excludes `data` from the `robocopy /MIR`. That line is
 load-bearing: the box now holds state for this application where it previously
 held none, and a mirror deletes whatever is not in the source, so without the
 exclusion every deploy would silently erase the collection.
+
+### It comes back by itself
+
+The desktop rebooted on 2026-09-06 and the sim did not come back, because both
+servers were bare background processes. They are two containers now
+(`docker-fpvsim.bat`), built from one image and started with
+`--restart unless-stopped`, which is the same pattern the other services on that
+machine already use.
+
+**The base image is `alpine`, and that is not about size.** Docker Desktop's
+credential helper needs an interactive logon session, so a build that pulls from
+a registry fails over SSH with *"A specified logon session does not exist"* —
+which is why the sibling service on that box has to build through Task
+Scheduler. `alpine:3.20` was already cached there and `apk` needs no credential
+helper, so this image builds over a plain SSH connection and the deploy stayed
+one command. If that base is ever pruned, the first build after it has to be run
+from the desktop.
+
+Containers also removed the hang that the second server introduced: the old bat
+detached its servers with `Start-Process` and they held the SSH channel open
+behind them, so the deploy hung *after having already succeeded* and had to be
+backgrounded and killed after eight seconds. `docker run -d` detaches at the
+daemon, so the call returns and its exit code is worth reading.
+
+Three properties are asserted rather than assumed, because each fails silently:
+`data/` is a bind mount and never a layer (`.dockerignore` keeps it out of the
+build context, so a rebuild cannot carry a stale copy); the page container can
+write it and **the admin container mounts it read-only**, so the reader cannot
+corrupt the collection; and COOP/COEP still arrive on the response, since losing
+them drops the 1 kHz ticker to a timer quietly enough that nobody would report
+it.
 
 ### Checking a deployment
 
