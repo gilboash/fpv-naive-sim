@@ -39,10 +39,12 @@ import {
   deleteUserTrack,
   exportUserTrack,
   saveUserTrack,
+  setLocalTracks,
   userSpecs,
   EXAMPLE_FREESTYLE,
   EXAMPLE_RACE,
 } from './user-tracks.ts';
+import localVd from 'virtual:local-tracks';
 import { TunePanel } from './tune-panel.ts';
 import { Telemetry } from './telemetry.ts';
 import { FlightAudio } from './audio.ts';
@@ -55,6 +57,9 @@ import {
   type TickMsg,
   type TickerBackend,
 } from './ticker-protocol.ts';
+
+// Velocidrone imports on this machine: under `npm run dev` only, empty in a build.
+setLocalTracks(localVd);
 
 // ---------------------------------------------------------------- state
 

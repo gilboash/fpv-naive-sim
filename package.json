@@ -12,7 +12,11 @@
     "check:browser": "node tools/browser-check.mjs",
     "replay": "node --experimental-strip-types tools/replay.ts",
     "identify": "node --experimental-strip-types tools/identify.ts",
-    "reference": "node --experimental-strip-types tools/optimal-lap.ts"
+    "reference": "node --experimental-strip-types tools/optimal-lap.ts",
+    "learn": "node --experimental-strip-types tools/learn-lap.ts",
+    "check:pilot": "node --experimental-strip-types tools/pilot-check.ts",
+    "vd:import": "node --experimental-strip-types --no-warnings tools/velocidrone-import.ts",
+    "stick": "node --experimental-strip-types --no-warnings tools/stick.ts"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Course map</title>
+    <style>
+      :root { --bg: #f4f4f1; --ink: #1d1d1b; --muted: #6b6b66; --panel: #fff; --line: #d8d8d2; --accent: #0a6cff; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #161615; --ink: #ecece8; --muted: #9a9a94; --panel: #222220; --line: #3a3a37; --accent: #5aa0ff; }
+      }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+      main { display: grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 16px; min-height: 100vh; box-sizing: border-box; }
+      @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+      #map { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; width: 100%; height: calc(100vh - 32px); min-height: 480px; touch-action: none; }
+      aside { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; overflow: auto; max-height: calc(100vh - 32px); box-sizing: border-box; }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      h2 { font-size: 13px; margin: 16px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+      p { margin: 6px 0; color: var(--muted); }
+      button, select { font: inherit; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button:disabled { opacity: .45; cursor: default; }
+      .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+      #sel { border-top: 1px solid var(--line); padding-top: 8px; }
+      #status { min-height: 1.4em; }
+      table { border-collapse: collapse; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+      td { padding: 2px 4px; border-bottom: 1px solid var(--line); }
+      tr.ov td:first-child { color: var(--accent); font-weight: 600; }
+      tr { cursor: pointer; }
+      svg text { font-family: system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg id="map"></svg>
+      <aside>
+        <h1 id="title">Course map</h1>
+        <p>How the line goes through each gate and past each pole. Click a checkpoint to correct it; blue numbers are hand-set. Scroll to zoom, drag to pan.</p>
+        <div class="row"><select id="track"></select></div>
+        <div id="sel"><p>Nothing selected.</p></div>
+        <div class="row">
+          <button id="save" class="primary" disabled>Save to track.json</button>
+          <button id="revert" disabled>Discard changes</button>
+        </div>
+        <p id="status"></p>
+        <h2>Legend</h2>
+        <p>▶ through a gate: the arrow is the direction flown. Dashed: upper gate of a stack. ⊙↓ a dive through a horizontal opening. ● pole, with the arrow on the side the quad passes. Grey: solid scenery.</p>
+        <h2>Checkpoints</h2>
+        <table id="list"></table>
+      </aside>
+    </main>
+    <script type="module" src="/src/vd-map.ts"></script>
+  </body>
+</html>

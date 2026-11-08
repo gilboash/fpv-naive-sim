@@ -69,6 +69,12 @@ export interface Flag {
   side: 1 | -1;
   /** How far past the pole still counts, measured across the direction. */
   passWidth: number;
+  /**
+   * Timed but not there: nothing drawn, nothing to hit. Velocidrone tracks use
+   * invisible flag poles to force a line round a point, and drawing one here
+   * would put a solid pole where the real track has air.
+   */
+  invisible?: true;
 }
 
 export type Checkpoint = Gate | Flag;

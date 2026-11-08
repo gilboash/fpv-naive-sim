@@ -1214,6 +1214,111 @@ demanded 25 m/s^2 to fly at 12; and thrust-to-weight was assumed at 3.2 when the
 model has **8.1** (hover 9 428 rpm against 28 046 at full throttle, thrust as
 rpm squared — hover is 11% of maximum).
 
+## The learning pilot (2026-11-07)
+
+Gilboa's goal: an autopilot that, given a known track and a few practice laps,
+flies a near-optimal lap and outputs **RC stick movements** — developed here,
+then pointed at **Velocidrone**. His plan: the algorithm is developed on this
+sim; he then supplies Velocidrone track examples and the autopilot is built
+for those. The Velocidrone state source (telemetry vs video) is still unknown,
+so the pilot only ever sees state through `PilotEnv` (`src/pilot/env.ts`);
+a Velocidrone env replaces that one file. `check:pilot` asserts nothing else
+in `src/pilot/` reaches into the flight model.
+
+`src/pilot/`: `poly.ts` (periodic min-snap, velocity *direction* pinned per
+gate, speed solved for; bordered block-tridiagonal solve), `flatness.ts`
+(thrust/attitude/body rates from derivatives, with learned drag),
+`envelope.ts` (TWR, throttle curve and inflow loss measured by punching out,
+drag fitted from practice), `planner.ts` (timing then geometry, penalty
+search against thrust-at-inflow, rate curve, ground, collision volumes),
+`tracker.ts` (feedforward + cascade feedback at 200 Hz, time warp),
+`ilc.ts` (feedback-error learning by phase), `practice.ts` (session).
+`npm run learn -- <map>`, `npm run check:pilot` (38 checks).
+
+Results, 2 laps, default rates: Circle 8.7-8.9 s (parked bot 11.29), Thrust
+line 17.92 (22.07), 180s 27.55 (71.52), Race vibes 32.42 (never completed).
+Flown lap matches planned lap to ~0.02 s once drag is learned.
+
+Things that mattered, in order of how much:
+- **Drag.** The flat model knew thrust and gravity; at 35 m/s drag is ~1 g
+  and the feedback carried 10 m/s^2 forward everywhere. Learned from the first
+  practice run, peak error went 1.75 m -> 0.08 m on the circle.
+- **Pin the direction, not the speed.** Speed as a search variable fought the
+  segment durations and the line surged 10-17 m/s between every gate.
+- **The launch must punch.** Zero initial acceleration made the reference rise
+  as t^4, the feedback cut throttle off the grass, and learning taught itself
+  the ground transient. Nothing is learned below 0.3 m now.
+- **Thrust falls 2%/m/s of inflow** in this model, so the envelope is not the
+  static TWR at speed.
+
+Open: crash rate above ~70% aggression on the busy maps (Race vibes stops at
+checkpoint 12 repeatedly); the planner needs ~200 iterations on 41 gates
+(finite-difference gradient, minutes not seconds); yaw follows velocity, so a
+50 deg camera is needed for the video to show anything but grass.
+
+## Velocidrone import (2026-11-07)
+
+**Where Velocidrone keeps tracks on a Mac:** not as files. SQLite,
+`~/Library/Application Support/com.velocidrone.velocidrone/user11.db`, table
+`tracks` (`name` URL-encoded with `+`, `value` = the track as JSON). Prefab
+numbers are named in `settings.db`, table `trackprefabs`. A `...velocidronebeta`
+folder holds the beta's copy. Opened read-only; the game's files are never
+written. Some newer tracks store `value` encoded rather than as JSON — the
+importer refuses those for now.
+
+`npm run vd:import -- <name>` writes `measurements/velocidrone/<slug>/track.json`;
+`src/render/velocidrone.ts` converts; `npm run learn -- --vd <track.json>`
+practises it; under `npm run dev` it appears as a map named `VD: ...` via the
+`virtual:local-tracks` module, which a production build resolves to `[]` so a
+deploy cannot carry it. **All of `measurements/velocidrone/` and
+`measurements/learned/` is git-ignored on Gilboa's call** — other people's
+tracks and stick traces.
+
+Format, as established on Macabim 2027 FRIL Race 2 (not from documentation):
+- positions in **centimetres**, Unity x / y-up / z; rotations quaternion
+  **(w, x, y, z) x1000**; scale x100. Mapped north = z, east = x, up = y
+  (determinant -1, which is what converts LH to RH without mirroring).
+  **Units verified**: lap through the gates 301 m, top pilots' mean speed x
+  lap time 294-296 m.
+- `gate` is the race number, **and can repeat**: Macabim has two gate 1s, one
+  of them the X-blocked lower half of a stack. The importer keeps the one
+  nearest the previous checkpoint.
+- WDC/canvas gates are flown along local z. `DefaultSquare` (invisible) is a
+  trigger plane facing local x, spanning scale.y x scale.z metres — this put a
+  3.1 x 2 m window exactly over the MGP hurdle and a horizontal opening exactly
+  over the dive gate, which is the evidence for the convention.
+  `DefaultInvisibleFlagPole` is a vertical post (its mesh axis is local z).
+- **A gate's direction is in the file, per prefab** (`FORWARD` in
+  velocidrone.ts): canvas gates fly along local +z, WDC gates along **-z**,
+  trigger squares along -x. Read from Macabim's flow: with WDC -z, 16 runs
+  straight into 17, 18 into 19, 25 into the start gate, and every
+  side-by-side pair (4/6, 15/16, 24/25) is a U-turn. The first import used a
+  shortest-lap search for gates too and Gilboa found the map "only partially
+  correct".
+- **How a flag is passed is not in the file.** MGP flags point with the flow
+  at 20-23 and against it at 12, so their orientation is not a direction. The
+  search picks heading (16 options) and side for the shortest lap with the
+  gates fixed, and is **forbidden to pass a flag through a gate opening**:
+  most poles here stand on a gate post, and "past the pole, through the gate
+  it stands on" was the shortest answer every time.
+- **`/vd-map.html` under `npm run dev`** draws the course as imported
+  (arrows through gates, pole and the side passed, the assumed line) and
+  edits `overrides` in track.json: absolute (`reverse`, `travel` degrees,
+  `side` left/right, `skip`), so they survive a change in the search. Saved
+  through a dev-only middleware in vite.config.ts; re-import keeps them.
+  Not in the build (checked: `vite build` output has no trace of it).
+- `user-tracks.ts` must not import `virtual:local-tracks` itself: the headless
+  checks load it under plain Node, and that broke `check:flight` until main.ts
+  took over (`setLocalTracks`).
+- Aperture sizes and all obstacle sizes are **estimates**.
+
+The pilot recordings (`~/Downloads/friday_maccabim_track.mov`, leaderboard
+replays) gave stick traces for Talper RC (#1, 41.611), ZonePenn (#2, 41.877)
+and Abdullah1 (#7, 60.624): dots read per frame from the two HUD boxes at
+x 1260/1486, y 1420, 133 px, Mode 2; race clock by OCR. Top two hold full
+throttle 66% of the race; #7 holds it 10%. Lap period from autocorrelation
+12.73 s (Talper), 13.47 (ZonePenn): hole shot + 3 laps.
+
 ## Tracks as data (2026-09-04)
 
 A track was a TypeScript `build()` function, so a new one was a pull request.
@@ -1528,3 +1633,85 @@ Worth keeping, because they were learned the expensive way there:
 - **Anchored ignore patterns.** An unanchored `data/` in `.gitignore` matched
   every directory of that name at any depth and silently dropped two different
   datasets, weeks apart.
+
+## Driving Velocidrone (2026-11-08)
+
+Gilboa's call: stop tuning against fpvsim's physics and fly the real target.
+Velocidrone runs on this Mac; sticks go in through an **ESP32-S3 as a USB
+joystick**, state comes back from **screen capture** of the game.
+
+- `firmware/stick-esp32s3/` (PlatformIO, Arduino core 3.3.12): native USB in
+  TinyUSB mode, a four-axis **16-bit** joystick (the stock gamepad is 8-bit, a
+  0.8% step) plus a CDC serial port on the same cable. AETR order. 12-byte
+  frames, XOR-checked; **250 ms without a frame drops the throttle and
+  centres the rest**. `"?\n"` answers `fpvsim-stick 1 frames=… bad=…`.
+  macOS names it by the board ("Espressif ESP32-S3-DevKitC-1-N8"), not the
+  product string. Verified end to end: Chrome's Gamepad API reads the axes the
+  host commands (and lists the pad only after it has moved).
+- Build with `~/.platformio/penv/bin/pio` (6.2.0). **Not** the `pio` on PATH
+  (6.1.19, Python framework install): it judged the installed espressif32
+  55.3.312 platform incompatible and *deleted* it. Restored from PlatformIO's
+  download cache (`pio pkg install -g --platform file://…zip`). Remove the old
+  core when convenient.
+- The core's USB library includes FS.h without declaring it; the FS include
+  path is in `build_flags`.
+- `tools/stick-port.ts` (host, no serial library: stty raw + fs) and
+  `npm run stick -- ping|calibrate|identify|center|hold`.
+- Velocidrone quad settings, from Gilboa: `measurements/velocidrone/quad-settings.json`
+  (Betaflight rates 1.05/0.90/0.90, super 0.59/0.59/0.58, expo 0.01/0.01/0.10
+  = 512/439/428 deg/s; camera 50 deg).
+- Screen capture: Velocidrone runs full-screen in its own Space (window
+  1440x900 at 2x). `screencapture -l<id>` cannot grab it from another Space,
+  and the first ffmpeg avfoundation grab hung — a Screen Recording permission
+  prompt for the terminal, most likely. Needs granting, and the game needs to
+  be the visible Space while the bot flies.
+
+**Getting Velocidrone to take the joystick (2026-11-08)** — an afternoon, so
+the order of operations is worth having:
+
+1. *Advanced Quad Setup -> Assign Controller*, move a stick.
+2. *Assign Sticks* is two phases. Phase 1 animates poses on the TBS Mambo
+   picture ("Follow Sticks"): down-and-in, centre, yaw right, pitch up, roll
+   right, throttle up. Phase 2 asks in words ("Move Roll Stick Right", Pitch
+   Up, Yaw Right, Throttle Up), then "Reverse Any Controls?" -> No. **It binds
+   whatever axis moves**, so nothing else may move during a step: separate
+   scripts let the firmware failsafe drop the throttle between steps, and the
+   jump back to centre got the throttle axis bound as roll — twice. One
+   process (`tools/vd-setup.ts`) holds the stick for the whole session.
+3. *Legacy Controller Menu -> Calibrate*, each of AXIS 0-3 -> **DEFAULT**.
+   The wizard left every axis's processed value capped at centre in the
+   positive direction (raw marker reached +1, the white "used" marker stopped
+   at 0), so full throttle was 50%. DEFAULT fixed it; CALIBRATE did not.
+4. Check on the live TBS Mambo picture, one stick at a time, holding each for
+   ~2 s (captures taken sooner show the previous step).
+
+The legacy menu's binding table (Throttle = AXIS 0 = X) is **not** what the
+game flies on; swapping our axes to match it swapped throttle and roll on the
+live picture. Axis order stays AETR (`STICK_ORDER`, default `RPTY`).
+
+**The board as a mouse did not work.** The prebuilt TinyUSB has one HID
+interface (`CFG_TUD_HID` = 1) with one primary usage: mouse first and Unity
+lost the joystick, joystick first and macOS ignored the pointer, and a
+mode-switching firmware (M0/M1, RTC-stored) re-enumerated the board often
+enough that Velocidrone had to be restarted. Also: with CDC on boot the core
+starts USB **before** `setup()`, so HID devices must be registered during
+static initialisation (`Registrar`) — registered in `setup()` the descriptor
+is empty and the game says "Controller not found". Gilboa clicks menus; the
+bot needs only the joystick and its buttons.
+
+**First gate flown by eye (2026-11-08).** `tools/vd-fly.ts`: screen capture
+at 30 fps (`vd-frames.ts`, ffmpeg avfoundation, device *by name* — the index
+moves when an iPhone camera comes and goes; `fps=` filter or it emits ~500
+duplicate frames a second), `vd-vision.ts` (horizon = far edge of the sunlit
+grass, Theil-Sen line; next gate = Velocidrone's **orange** marker, which is
+red from the wrong side and becomes an orange **arrow at the screen edge**
+when the gate is out of view). Camera tilt 15 deg, f ~265 px at 480x270.
+Flight 5 went through gate 1 at ~6 m/s. What it took, in order:
+- hover is ~22% throttle (25% sat on the pad *from the ground*, 40% climbed
+  hard); anything higher overshoots and the gate drops out of the picture;
+- the edge arrow is a direction, not a position — read as a gate at the
+  bottom of the picture it cut the throttle and spun the quad;
+- reject flat orange blobs (the gazebo roof edge);
+- marker lost low means "descend", not "through" — only a *big* marker
+  vanishing is a pass;
+- bank towards the marker, not just yaw: yaw-only clipped the arch's leg.

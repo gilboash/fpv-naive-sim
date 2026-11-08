@@ -60,7 +60,7 @@ const GATE_A: [number, number, number] = [0.85, 0.25, 0.15];
 const GATE_B: [number, number, number] = [0.95, 0.75, 0.15];
 
 /** Chequered ground, which is what makes speed and height legible. */
-function ground(m: MeshBuilder, half = 220, tile = 8): void {
+export function ground(m: MeshBuilder, half = 220, tile = 8): void {
   for (let x = -half; x < half; x += tile) {
     for (let z = -half; z < half; z += tile) {
       const alt = ((x / tile + z / tile) & 1) === 0;
@@ -71,7 +71,7 @@ function ground(m: MeshBuilder, half = 220, tile = 8): void {
 }
 
 /** A render-space box, emitted as both geometry and a collision volume. */
-function solid(
+export function solid(
   m: MeshBuilder,
   obs: Obstacle[],
   x0: number,
@@ -95,7 +95,7 @@ function solid(
 }
 
 /** Floodlight mast. Tall, thin, and unforgiving — the thing you clip on a dive. */
-function lightPole(m: MeshBuilder, obs: Obstacle[], cx: number, cz: number, height: number): void {
+export function lightPole(m: MeshBuilder, obs: Obstacle[], cx: number, cz: number, height: number): void {
   m.cylinder(cx, cz, 0, height, 0.1, 10, 0.62, 0.64, 0.68);
   obs.push({ kind: 'cylinder', north: north(cz), east: east(cx), radius: 0.17, height });
   // Head, canted so it reads as a lamp rather than a lump.
@@ -263,7 +263,7 @@ function bandedPost(
  *    there was one race map; wrong on every gate of the three added after it.
  *    The direction is a parameter now, which is what it always should have been.
  */
-function raceGate(
+export function raceGate(
   m: MeshBuilder,
   obs: Obstacle[],
   cx: number,
@@ -857,7 +857,7 @@ export const freestyleHard: Track = {
  * makes a race feel broken. Every race map goes through here, which is also why
  * a new course is a list of coordinates rather than a new pile of geometry.
  */
-function raceScenery(m: MeshBuilder, obs: Obstacle[], course: Course): void {
+export function raceScenery(m: MeshBuilder, obs: Obstacle[], course: Course): void {
   const cps = course.checkpoints;
   let drawn = 0;
   cps.forEach((cp) => {
@@ -881,6 +881,7 @@ function raceScenery(m: MeshBuilder, obs: Obstacle[], course: Course): void {
       const attached = cps.find(
         (o) =>
           o.kind === 'flag' &&
+          !o.invisible &&
           Math.hypot(o.north - cp.north, o.east - cp.east) < cp.halfWidth + 0.2,
       );
       const skipSide = attached
@@ -894,7 +895,7 @@ function raceScenery(m: MeshBuilder, obs: Obstacle[], course: Course): void {
         m, obs, cx, cz, cp.up, cp.halfWidth, cp.halfHeight,
         cp.dirN, cp.dirE, colour, drawn, skipSide,
       );
-    } else {
+    } else if (!cp.invisible) {
       flagPylon(m, obs, cp.east, -cp.north, cp.height, cp.dirN, cp.dirE, cp.side, cp.passWidth);
     }
   });

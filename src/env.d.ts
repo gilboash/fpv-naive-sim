@@ -14,3 +14,13 @@ declare module '*.m4a' {
   const src: string;
   export default src;
 }
+
+/**
+ * Velocidrone tracks imported on this machine — under `npm run dev` only; a
+ * production build resolves this to an empty list (see vite.config.ts).
+ */
+declare module 'virtual:local-tracks' {
+  import type { SavedVdTrack } from './render/velocidrone.ts';
+  const tracks: SavedVdTrack[];
+  export default tracks;
+}

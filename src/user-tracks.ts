@@ -15,6 +15,7 @@
 import { TRACKS, trackFromSpec, type Track } from './render/track.ts';
 import { validateTrackSpec, type TrackSpec, type ValidationResult } from './render/track-spec.ts';
 import { checkTrack } from './render/track-check.ts';
+import { type SavedVdTrack, trackFromSaved } from './render/velocidrone.ts';
 
 const STORAGE_KEY = 'fpvsim.tracks.v1';
 
@@ -112,7 +113,38 @@ export function exportUserTrack(name: string): string | null {
  * repointed everyone's stored setting.
  */
 export function allTracks(): Track[] {
-  return [...TRACKS, ...userSpecs().map(trackFromSpec)];
+  return [...TRACKS, ...userSpecs().map(trackFromSpec), ...localTracks()];
+}
+
+let localSaved: readonly SavedVdTrack[] = [];
+let localCache: Track[] | null = null;
+
+/**
+ * Hand over the Velocidrone imports on this machine. main.ts does it from
+ * `virtual:local-tracks`; this module cannot import that itself, because the
+ * headless checks load it under plain Node, where only Vite can resolve it.
+ */
+export function setLocalTracks(saved: readonly SavedVdTrack[]): void {
+  localSaved = saved;
+  localCache = null;
+}
+
+/**
+ * Velocidrone imports, dev server only. Built once: a Track's build() is what
+ * the scene calls, and the import itself is not free.
+ */
+function localTracks(): Track[] {
+  if (!localCache) {
+    localCache = [];
+    for (const saved of localSaved) {
+      try {
+        localCache.push(trackFromSaved(saved).track);
+      } catch (e) {
+        console.warn(`could not import ${saved.name}:`, e);
+      }
+    }
+  }
+  return localCache;
 }
 
 /**
