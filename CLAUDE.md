@@ -1715,3 +1715,90 @@ Flight 5 went through gate 1 at ~6 m/s. What it took, in order:
 - marker lost low means "descend", not "through" — only a *big* marker
   vanishing is a pass;
 - bank towards the marker, not just yaw: yaw-only clipped the arch's leg.
+
+**Human laps as stick programs (2026-11-08, evening).** Goal unchanged: the
+bot flies Velocidrone through the ESP32 alone; a human lap is a *reference*
+and a seed, not the product.
+
+- **Pass-through recording does not work** (`vd-record --through`): with the
+  TX16S plugged in as a joystick Velocidrone flies the radio, whichever
+  controller is selected, and re-plugging the radio makes it the active one.
+  `sent.csv` was therefore not what the game received. Also fixed: the
+  recorder could pick the ESP32 itself as "the radio" and forward the board
+  to itself (a third of human3's rows).
+- **After the board (re)connects, the game reads an axis only once it
+  changes**: throttle held at 0 from connection showed mid-stick until the
+  first move. vd-play nudges the throttle first; anything else driving the
+  board from a cold start must too.
+- **Sticks are frozen until the game releases the quad, ~1.5 s after the GO
+  tone.** Inputs before that are dropped; a program that started early was
+  picked up mid-manoeuvre and flipped. The human's first stick motion came
+  1.51 s after GO, i.e. at release.
+- **Overlay maps, px at 960x600** (the green dots; `scratchpad dots.py`):
+  board roll 109.2+17.2s, pitch 33.3-17.6s, yaw 34.0+18.0s, thr 51.0-35.2t;
+  radio (human5, r>0.97) roll 109.13+16.94a, pitch 33.30-16.99a, thr
+  31.54-18.88a, yaw 34.08+17.19a. In vd-play's `toEsp`. The first constants
+  under-steered by ~25%.
+- **Result:** human5 converted and replayed with `--thr-trim -0.01` passes
+  gates 1 and 2 with the human's spacing (0.88 s), repeatably; it misses gate
+  3. Untrimmed it goes over the arch. 1% throttle is the margin at gate 1.
+
+**Open-loop replay of a human lap is a dead end past gate 2 (2026-11-08).**
+Searched 26 settings (throttle trim, roll/pitch/yaw bias, start shift) on
+human5 replayed through the board, scoring by gate beeps: the replay either
+passes checkpoints 1-2 (gate, then the pole at the first corner) or nothing;
+neighbouring settings (-0.0075, -0.0088, -0.0112, -0.0125 throttle trim)
+flipped between "both" and "none", and none ever reached checkpoint 3 (the
+gate 1.7 m beyond the pole, facing back the other way). The game is repeatable
+enough for a *prefix* that was found closed-loop, not for a program copied
+from a different device. So: the bot must find its own program with
+feedback, a gate at a time, then replay that.
+
+Also built: `tools/vd-audio.ts` (live GO tone and gate beeps; counting beeps
+is the pass detector), `tools/vd-radio.ts` (radio -> board sticks),
+`vd-fly --human <dir> --go s --until s` (human opening, then the vision
+pilot, with the turn direction after each checkpoint taken from the map via
+`turnFromMap`). The handover failed for a mundane reason: the human opening
+leaves the quad at ~29 mph and the vision pilot only knows how to brake and
+yaw on the spot, so it overflew everything. A handover needs a corner
+manoeuvre (bank + pitch), not a hover turn.
+
+**Slow vision run to checkpoint 1, with beep counting (2026-11-08):**
+`vd-fly --audio` (GO and gate beeps heard live; `--prefix f --prefix-until s`
+replays a found prefix from GO). First clean run: reaches the arch and flies
+under it low and left of the marker, no beep, edge arrow behind it afterwards,
+so the game did not count it. The marker track of the human's pass
+(`scratchpad/mtrack.ts` runs `look()` over a recording): size 19-21 px with
+the marker at y 94-153 and *rising* as it closes — the human comes in below
+the gate centre and climbs into it — against the pilot holding y 165-176 at
+size 17-19 for the whole approach. Next step: servo to the human's y(size)
+curve instead of a fixed `--aim-y`.
+
+**Route first, sticks second (2026-11-08, late) — the plan the user wants, and
+where it stands.** Pipeline, all runnable: `tools/vd-punch.ts` (+ `vd-speed.py`,
+`vd-start.ts`) measures the quad from the HUD speed; `tools/vd-feedforward.ts
+<track.json> <dir>` plans the route through the gates in order with
+`src/pilot/` using the *measured* Velocidrone envelope and rates, inverts it
+to feedforward sticks (no feedback, no sim) and writes `plan.csv` (board
+units, t after GO) plus the plan's predicted checkpoint times and attitude;
+`vd-play.ts <dir> --sent --go 0` flies it through the board.
+
+- **Measured quad** (punch-outs, 2026-11-08): specific thrust ~ (8.3 u +
+  0.8)^2 m/s^2 up to ~85 (TWR ~8), hover at stick ~0.28-0.30, response
+  immediate from ~1.6 s after GO. Noisy (HUD speed is whole mph, OCR drops
+  digits); drag and inflow loss are still the sim's priors.
+- **Feedback-embedded sticks are not feedforward.** `learn-lap`'s sticks.csv
+  was flown in the sim with the tracker's feedback; its small roll/yaw cancel
+  the *sim's* disturbances and roll the real quad over. Use `vd-feedforward`.
+- **A rate-mode quad starts level on the pad**; the reference leans 9-17°
+  from the first instant. The catch-up is computed on a model attitude
+  (integrated commanded rates), and it must wait until the quad is airborne
+  (`--launch`, 0.3 s): on the pad the ground eats a pitch-over.
+- **Status:** the open-loop program still leaves the plan within ~2 s of
+  release (no beep, climbs/yaws away, crashes by ~7 s). Not yet separated:
+  thrust curve vs ground handling vs rate response. Horizon-based attitude
+  (`look()`) is NOT usable to tell: the grass edge drops in the picture as the
+  quad climbs, and it is lost once the camera sees sky. What is observable
+  from the game: gate beeps (pass/fail), HUD speed (whole mph), the stick
+  overlay, and gate-marker size/position in the video (a pose relative to the
+  next gate).

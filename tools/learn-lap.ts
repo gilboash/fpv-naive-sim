@@ -59,6 +59,14 @@ function main(): number {
   const laps = Number(arg('laps') ?? (vdFile ? course.defaultLaps : 2));
 
   let rates: RateProfile = defaultRates();
+  // --vd-rates: the rates in measurements/velocidrone/quad-settings.json (the
+  // Velocidrone quad's, as shown on its settings screen), Betaflight curve.
+  if (process.argv.includes('--vd-rates')) {
+    const q = JSON.parse(readFileSync('measurements/velocidrone/quad-settings.json', 'utf8')).rates as Record<'roll' | 'pitch' | 'yaw', { rcRate: number; rate: number; rcExpo: number }>;
+    const ax = [q.roll, q.pitch, q.yaw] as const;
+    rates = { type: 'betaflight', rcRate: ax.map((a) => a.rcRate * 100) as [number, number, number], rate: ax.map((a) => a.rate * 100) as [number, number, number], expo: ax.map((a) => a.rcExpo * 100) as [number, number, number] };
+    console.log(`rates: Velocidrone quad (${[0, 1, 2].map((i) => Math.round(200 * ax[i]!.rcRate / (1 - ax[i]!.rate))).join('/')} deg/s at full stick)`);
+  }
   const ratesFile = arg('rates');
   if (ratesFile) {
     const header = readHeaderOnly(new Uint8Array(readFileSync(ratesFile)));
