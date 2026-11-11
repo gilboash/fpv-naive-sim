@@ -879,6 +879,34 @@ model on the very next tick and the counter correctly reads zero. The browser
 check holds `poller.connected` true for the measurement, or it would be
 measuring the failsafe.
 
+## Counting visits and downloads (2026-11-11)
+
+`serve.py` writes one JSON line per page visit (`/`, `/web`, `/rc`) or completed zip
+download to `data/events.jsonl`, and `admin.py` (port 5181, the "who is flying" page)
+shows them in a "Radio package and site visits" section: downloads by file, visits by
+page, the last 14 days, countries, and how many people who opened `/rc` downloaded.
+`npm run check:events` is an end-to-end test (the real server on a free port); it was
+mutation-checked (raw addresses stored, health checks counted: both caught).
+
+Decisions, with Gilboa: **a salted one-way hash of the IP, plus Cloudflare's country**,
+not the address. The visitor is `HMAC-SHA256(data/.salt, ip)[:12]`: stable across days
+(so unique-visitor counts work) but not reversible, and not testable against a guess
+without `.salt`. No address, user agent or referrer is stored. The front page and the
+download hint say so; if what is stored ever changes, change that text.
+- The real address is `CF-Connecting-IP` when it is a valid address, else the socket
+  address. Forgeable by anyone who reaches the port directly: fine for counting, never
+  an access control. The tunnel does not run on the Optiplex (no cloudflared there), so
+  the socket address behind it is not the visitor's; the header is what matters.
+- **Not counted:** requests from the box itself with no Cloudflare header (the
+  container health check polls `/` every 30 s and would be most of the file), HEAD,
+  404s, assets, and downloads that did not finish. **Flagged `bot`** and left out of the
+  page's numbers: crawlers, curl/wget/python/node and the like, by user agent. So
+  `rc-check` and my own curls show up as bots, never as visitors.
+- "Unique" is a distinct hash: one person on two networks is two, two people behind one
+  shared address are one. The admin page says so.
+- Do not run `browser-check` against the live box (it adds test records to the real
+  usage collection); `rc-check` is GET-only and is safe.
+
 ## Sound (2026-09-01)
 
 Synthesised, not sampled (`src/audio.ts`). Four oscillators, one per motor, at

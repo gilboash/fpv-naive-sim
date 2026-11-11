@@ -16,7 +16,8 @@
     "check:rc": "node tools/rc-check.mjs",
     "edgetx:map": "node --experimental-strip-types tools/edgetx-map.ts",
     "rc:shots": "lua edgetx/test/shots.lua && node tools/rc-radio-art.mjs",
-    "rc:webshot": "node tools/web-shot.mjs"
+    "rc:webshot": "node tools/web-shot.mjs",
+    "check:events": "python3 tools/events-check.py"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

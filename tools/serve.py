@@ -11,8 +11,10 @@ a tunnel trips over.
     python serve.py [--port 5180] [--root dist] [--host 127.0.0.1] [--data data]
 
 It also accepts POSTs of usage summaries at /api/session and appends them to
-data/sessions.jsonl. That is the only write this server does and the only method
-besides GET and HEAD it answers; everything else is 404. Read the file with
+data/sessions.jsonl, and it counts visits to the three pages and downloads of the
+radio package in data/events.jsonl (see "Counting" below). Those are the only
+writes this server does and the only method besides GET and HEAD it answers;
+everything else is 404. Read the file with
 tools/admin.py, which binds to localhost on another port so a tunnel pointed at
 this one cannot reach it.
 
@@ -24,10 +26,14 @@ is the only way in and there is no reason to answer the rest of the network.
 
 import argparse
 import datetime
+import hashlib
+import hmac
 import http.server
+import ipaddress
 import json
 import os
 import posixpath
+import re
 import socketserver
 import sys
 import threading
@@ -50,6 +56,66 @@ TYPES = {
     ".mp4": "video/mp4",
     ".zip": "application/zip",
 }
+
+# ---- Counting -------------------------------------------------------------
+#
+# One JSON line per page visit or completed zip download, in data/events.jsonl,
+# so the admin page (and anyone with the file) can say how many people came and
+# how many took the radio package.
+#
+# What is kept, and what is not. The visitor is a salted one-way hash of the IP
+# address (HMAC-SHA256 with a random secret in data/.salt, first 12 hex digits),
+# so the same address is the same visitor on every day and a count of unique
+# visitors is possible, but the address cannot be read back out of the file, and
+# without .salt it cannot even be tested against a guess. The country is whatever
+# Cloudflare says (CF-IPCountry). No address, no user agent, no referrer.
+#
+# Behind the tunnel the socket address is not the visitor's; Cloudflare puts the
+# real one in CF-Connecting-IP, which is used when it is present and a valid
+# address, and the socket address otherwise (a visit from the house network).
+# The header can be forged by anyone who reaches the port directly. That is fine
+# for counting; it is not an access control and nothing here treats it as one.
+#
+# Not counted: requests that come from the box itself with no Cloudflare header
+# (the container's health check polls / every 30 s and would otherwise be most of
+# the file), HEAD requests, and downloads that did not finish (the exception on a
+# dropped connection skips the write). Counted but flagged "bot": crawlers,
+# command-line tools and scripts, by user agent, so the page can leave them out.
+PAGES = {
+    "/": "home", "/index.html": "home",
+    "/web": "web", "/web/": "web", "/web.html": "web",
+    "/rc": "rc", "/rc/": "rc", "/rc.html": "rc",
+}
+BOT_UA = re.compile(
+    r"bot|crawl|spider|slurp|curl|wget|python|httpclient|go-http|java/|headless|preview|"
+    r"facebookexternalhit|monitor|uptime|node|undici|axios|okhttp|libwww|scrapy|postman|insomnia",
+    re.I,
+)
+ZIP_VERSION = re.compile(r"^NacoSim-(\d+\.\d+\.\d+)\.zip$")
+LOOPBACK = ("127.0.0.1", "::1")
+
+
+def load_salt(data_dir: str) -> bytes:
+    """The secret the visitor hashes are keyed with, created on first use."""
+    path = os.path.join(data_dir, ".salt")
+    try:
+        with open(path, "r", encoding="ascii") as f:
+            return bytes.fromhex(f.read().strip())
+    except (FileNotFoundError, ValueError):
+        pass
+    salt = os.urandom(32)
+    try:
+        # "x": never overwrite a salt another worker created a moment ago.
+        with open(path, "x", encoding="ascii") as f:
+            f.write(salt.hex() + "\n")
+    except FileExistsError:
+        with open(path, "r", encoding="ascii") as f:
+            return bytes.fromhex(f.read().strip())
+    return salt
+
+
+def visitor_id(ip: str) -> str:
+    return hmac.new(SALT, ip.encode("ascii", "replace"), hashlib.sha256).hexdigest()[:12]
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -79,6 +145,60 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not os.path.splitext(base)[1] and os.path.isfile(base + ".html"):
                 return base + ".html"
         return p
+
+    def send_response(self, code, message=None):
+        self._status = code
+        super().send_response(code, message)
+
+    def do_GET(self):
+        self._status = None
+        super().do_GET()
+        # Reached only if the whole response was written: a client that hangs up
+        # mid-download raises out of the line above, so it is not counted.
+        self._count()
+
+    def _client_ip(self):
+        """(address, came_through_cloudflare)."""
+        header = self.headers.get("CF-Connecting-IP", "").strip()
+        if header:
+            try:
+                return str(ipaddress.ip_address(header)), True
+            except ValueError:
+                pass
+        return self.client_address[0], False
+
+    def _count(self):
+        if EVENTS_FILE is None or self._status != 200:
+            return
+        path = urllib.parse.urlparse(self.path).path
+        if path in PAGES:
+            kind, name, version = "page", PAGES[path], ""
+        elif path.startswith("/downloads/") and path.endswith(".zip"):
+            kind, name = "download", posixpath.basename(path)
+            m = ZIP_VERSION.match(name)
+            version = m.group(1) if m else ("latest" if "latest" in name else "")
+        else:
+            return
+        ip, via_cloudflare = self._client_ip()
+        if ip in LOOPBACK and not via_cloudflare:
+            return  # the box itself: health checks, a deploy's own verification
+        cc = self.headers.get("CF-IPCountry", "").strip().upper()
+        event = {
+            "t": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+            "kind": kind,
+            "name": name,
+            "ver": version,
+            "v": visitor_id(ip),
+            "cc": cc if re.fullmatch(r"[A-Z0-9]{2}", cc) else "",
+            "bot": bool(BOT_UA.search(self.headers.get("User-Agent", "")) or not self.headers.get("User-Agent")),
+        }
+        try:
+            with WRITE_LOCK:
+                with open(EVENTS_FILE, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(event, separators=(",", ":")) + "\n")
+        except OSError as e:
+            # Counting must never be the reason a page or a download fails.
+            sys.stderr.write("could not record event: %s\n" % e)
 
     def guess_type(self, path):
         ext = os.path.splitext(path)[1].lower()
@@ -161,12 +281,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
 
-# Set in main(), before the server starts. None means collection is off.
+# Set by setup_data(), before the server starts. None means collection is off.
 DATA_FILE = None
+EVENTS_FILE = None
+SALT = b""
 # Where the reference-lap videos live, or "" for none.
 REFERENCE_DIR = ""
 WRITE_LOCK = threading.Lock()
 MAX_BODY = 64 * 1024
+
+
+def setup_data(data_dir: str) -> None:
+    """Point the collection at data_dir (created if need be): the sessions file,
+    the events file and the secret that keys the visitor hashes."""
+    global DATA_FILE, EVENTS_FILE, SALT
+    os.makedirs(data_dir, exist_ok=True)
+    DATA_FILE = os.path.join(data_dir, "sessions.jsonl")
+    EVENTS_FILE = os.path.join(data_dir, "events.jsonl")
+    SALT = load_salt(data_dir)
 
 
 class Server(socketserver.ThreadingTCPServer):
@@ -182,7 +314,7 @@ def main() -> int:
     ap.add_argument(
         "--data",
         default="data",
-        help="directory for sessions.jsonl; empty string turns collection off",
+        help="directory for sessions.jsonl, events.jsonl and .salt; empty string turns collection off",
     )
     ap.add_argument(
         "--reference",
@@ -198,13 +330,11 @@ def main() -> int:
         return 2
     # Resolved before the chdir below, or --data would silently mean a
     # directory inside dist and be mirrored away by the next deploy.
-    global DATA_FILE, REFERENCE_DIR
+    global REFERENCE_DIR
     if args.reference:
         REFERENCE_DIR = os.path.abspath(args.reference)
     if args.data:
-        data_dir = os.path.abspath(args.data)
-        os.makedirs(data_dir, exist_ok=True)
-        DATA_FILE = os.path.join(data_dir, "sessions.jsonl")
+        setup_data(os.path.abspath(args.data))
 
     os.chdir(root)
 

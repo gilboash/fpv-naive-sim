@@ -222,6 +222,134 @@ def num(seq, i):
     return "—"
 
 
+def load_events(path):
+    """Visits and downloads from events.jsonl (written by serve.py), skipping
+    lines that do not parse. Same BOM tolerance as load(), for the same reason."""
+    events, bad = [], 0
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                    if not isinstance(e, dict) or e.get("kind") not in ("page", "download"):
+                        raise ValueError("not an event")
+                    e["t"] = str(e["t"])
+                    e["v"] = str(e["v"])
+                except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                    bad += 1
+                    continue
+                events.append(e)
+    except FileNotFoundError:
+        pass
+    return events, bad
+
+
+def summarise_events(events):
+    """Numbers for the page. 'Unique' is a distinct hashed address: one person on
+    two networks is two, and two people behind one shared address are one."""
+    humans = [e for e in events if not e.get("bot")]
+    downloads = [e for e in humans if e["kind"] == "download"]
+    visits = [e for e in humans if e["kind"] == "page"]
+
+    def uniq(rows):
+        return len({e["v"] for e in rows})
+
+    by_file = {}
+    for e in downloads:
+        by_file.setdefault(str(e.get("name", "?")), []).append(e)
+    by_page = {}
+    for e in visits:
+        by_page.setdefault(str(e.get("name", "?")), []).append(e)
+    by_day = {}
+    for e in humans:
+        d = e["t"][:10]
+        row = by_day.setdefault(d, {"download": [], "home": [], "web": [], "rc": []})
+        if e["kind"] == "download":
+            row["download"].append(e)
+        elif str(e.get("name")) in row:
+            row[str(e["name"])].append(e)
+    countries = {}
+    for e in humans:
+        cc = str(e.get("cc") or "?")
+        row = countries.setdefault(cc, {"download": [], "visit": []})
+        row["download" if e["kind"] == "download" else "visit"].append(e)
+
+    rc_visitors = {e["v"] for e in by_page.get("rc", [])}
+    downloaders = {e["v"] for e in downloads}
+    return {
+        "bots": len(events) - len(humans),
+        "first": min((e["t"] for e in events), default=""),
+        "last": max((e["t"] for e in events), default=""),
+        "downloads": len(downloads),
+        "downloaders": len(downloaders),
+        "visitors": uniq(visits),
+        "by_file": sorted(((n, len(r), uniq(r)) for n, r in by_file.items()), reverse=True),
+        "by_page": [(n, len(by_page.get(n, [])), uniq(by_page.get(n, []))) for n in ("home", "web", "rc")],
+        "by_day": sorted(
+            ((d, len(r["download"]), uniq(r["download"]), len(r["home"]), len(r["web"]), len(r["rc"])) for d, r in by_day.items()),
+            reverse=True,
+        )[:14],
+        "countries": sorted(
+            ((c, len(r["download"]), uniq(r["download"]), uniq(r["download"] + r["visit"])) for c, r in countries.items()),
+            key=lambda x: (x[2], x[3]),
+            reverse=True,
+        )[:10],
+        "rc_visitors": len(rc_visitors),
+        "rc_then_download": len(rc_visitors & downloaders),
+        "direct": len(downloaders - rc_visitors),
+    }
+
+
+def events_html(path):
+    events, bad = load_events(path)
+    if not events:
+        return "<div class=pilot><h2>Radio package and site visits</h2><p class=dim>Nothing counted yet.</p></div>"
+    m = summarise_events(events)
+
+    def table(head, rows, empty="nothing yet"):
+        if not rows:
+            return "<table><tr><td class=dim>%s</td></tr></table>" % empty
+        return "<table><tr>%s</tr>%s</table>" % (
+            "".join("<th>%s</th>" % E(h) for h in head),
+            "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % E(str(c)) for c in r) for r in rows),
+        )
+
+    days = [(d, dl, du, hm, wb, rc) for d, dl, du, hm, wb, rc in m["by_day"]]
+    out = [
+        "<div class=pilot><div class=head><h2>Radio package and site visits</h2>"
+        "<span class=dim>%d download(s) by %d unique visitor(s) · %d unique visitor(s) of the pages"
+        " · %d request(s) from bots left out</span></div>"
+        "<p class=dim>first %s · last %s · a visitor is a one-way hash of the address, so repeat visits "
+        "count once and the address is not stored%s</p>"
+        % (
+            m["downloads"], m["downloaders"], m["visitors"], m["bots"],
+            E(m["first"][:19].replace("T", " ")), E(m["last"][:19].replace("T", " ")),
+            (" · <span class=warn>%d unreadable line(s) skipped</span>" % bad) if bad else "",
+        ),
+        "<div class=cols>",
+        "<div><h4>Downloads by file</h4>%s</div>" % table(("file", "downloads", "unique"), m["by_file"], "no downloads yet"),
+        "<div><h4>Page visits</h4>%s</div>" % table(("page", "visits", "unique"), [("/ front page" if n == "home" else "/" + n, v, u) for n, v, u in m["by_page"]]),
+        "<div><h4>Radio page to download</h4>%s</div>"
+        % table(
+            ("", ""),
+            [
+                ("opened /rc", m["rc_visitors"]),
+                ("of those, downloaded", "%d (%s)" % (m["rc_then_download"], ("%d%%" % round(100 * m["rc_then_download"] / m["rc_visitors"])) if m["rc_visitors"] else "—")),
+                ("downloaded without opening /rc", m["direct"]),
+            ],
+        ),
+        "</div>",
+        "<div class=cols>",
+        "<div><h4>Last 14 days</h4>%s</div>" % table(("day (UTC)", "downloads", "unique", "/ visits", "/web visits", "/rc visits"), days),
+        "<div><h4>Countries</h4>%s</div>" % table(("country", "downloads", "unique downloaders", "unique visitors"), m["countries"]),
+        "</div></div>",
+    ]
+    return "".join(out)
+
+
 PAGE = """<!doctype html>
 <meta charset=utf-8><title>fpvsim — who is flying</title>
 <style>
@@ -243,6 +371,7 @@ PAGE = """<!doctype html>
 </style>
 <h1>fpvsim — who is flying</h1>
 <p class=totals>%(totals)s</p>
+%(events)s
 %(pilots)s
 <p class=dim>%(file)s · reload for the latest</p>
 """
@@ -310,6 +439,7 @@ def render(path):
 
     return PAGE % {
         "totals": totals,
+        "events": events_html(os.path.join(os.path.dirname(path), "events.jsonl")),
         "pilots": "".join(blocks),
         "file": E(path),
     }
@@ -322,6 +452,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # The raw file, for anything this page does not answer.
             try:
                 with open(DATA_FILE, "rb") as f:
+                    body = f.read()
+            except FileNotFoundError:
+                body = b""
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/events.jsonl":
+            try:
+                with open(os.path.join(os.path.dirname(DATA_FILE), "events.jsonl"), "rb") as f:
                     body = f.read()
             except FileNotFoundError:
                 body = b""

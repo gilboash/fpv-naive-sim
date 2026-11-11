@@ -102,9 +102,11 @@
           It is built in the open and checked against the real thing wherever that is possible.
           The model's timing is compared with logs from real quads, and where it still falls
           short, that gap is written down rather than hidden. The web sim runs entirely in your
-          browser; the only thing it sends here is a session summary (your settings, the maps you
-          flew, how long, and a random ID), and there is a switch in its Settings to turn that
-          off.
+          browser. It sends this server a session summary (your settings, the maps you flew, how
+          long, and a random ID), and there is a switch in its Settings to turn that off.
+          Separately, the site counts visits to its pages and downloads of the radio package: it
+          keeps your country and a one-way hash of your address, not the address itself, so
+          repeat visits count once.
         </p>
         <p class="hint">
           Made by <a href="https://www.instagram.com/nacofpv" target="_blank" rel="noopener noreferrer">@nacofpv</a>.
