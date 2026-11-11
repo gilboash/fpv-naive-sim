@@ -41,7 +41,9 @@ if (href) {
   writeFileSync(file, buf);
   const names = execFileSync('unzip', ['-Z1', file]).toString().split('\n').filter(Boolean);
   check('zip has the tool script', names.includes('SCRIPTS/TOOLS/NacoSim.lua'));
+  check('zip has the memory check', names.includes('SCRIPTS/TOOLS/NacoMem.lua'));
   check('zip has every module', ['model', 'course', 'view', 'display', 'settings'].every((m) => names.includes(`SCRIPTS/NacoSim/${m}.lua`)));
+  check('zip carries the map files', names.some((n) => /^SCRIPTS\/NacoSim\/maps\/.+\.map$/.test(n)), names.filter((n) => n.endsWith('.map')).join(', ') || 'none');
   check('zip carries no dev probes or compiled copies', !names.some((n) => /Probe|Bisect|\.luac$/.test(n)), names.join(', '));
 
   const latest = await fetch(`${base}/downloads/NacoSim-latest.zip`);

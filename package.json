@@ -13,7 +13,8 @@
     "replay": "node --experimental-strip-types tools/replay.ts",
     "identify": "node --experimental-strip-types tools/identify.ts",
     "reference": "node --experimental-strip-types tools/optimal-lap.ts",
-    "check:rc": "node tools/rc-check.mjs"
+    "check:rc": "node tools/rc-check.mjs",
+    "edgetx:map": "node --experimental-strip-types tools/edgetx-map.ts"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

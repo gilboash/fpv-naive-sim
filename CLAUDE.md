@@ -1530,9 +1530,39 @@ no screen), `course.lua` (maps, gate crossing, 3-lap race), `view.lua`
 (wireframe), `display.lua` (everything that differs per radio: size, fonts,
 colours, how much to draw), `settings.lua` (sound, map, laps, tilt, rates,
 Info; saved to the SD card with a format version, older files migrate, newer
-ones are ignored). Tests, from the repo root: `lua edgetx/test/run.lua`,
-`tool.lua`, `sizes.lua` (seven screens, mono and colour, strict LCD),
-`cost.lua`. `brew install lua` for the interpreter.
+ones are ignored). **Maps are files** (2026-11-11): `SCRIPTS/NacoSim/maps/<key>.map`, text, one
+record per line (format in `edgetx/README.md`), parsed on selection, listed with
+`dir()` and chosen in the Map setting; the choice is saved by file key, not by
+position (settings format 5; every older file meant "oval"). Upright gates and
+flags only. `tools/edgetx-map.ts` (`npm run edgetx:map`) converts a web-sim
+course or a dumped `Course` JSON and verifies by reading the file back.
+`race-vibes.map` is committed. **`macabim.map` is not**: it is another
+designer's track, so it lives in the git-ignored `edgetx/maps-local/`, which the
+zip build includes when present (so a deployment built on that Mac carries it,
+and a build elsewhere does not). Made by dumping the imported `Course` from the
+`velocidrone-pilot` branch's `trackFromSaved` (a temporary `git worktree`), then
+the converter. The flag rule is the web sim's `testFlag`: `across*side > 0`,
+side +1 = pass on the RIGHT of the pole (the doc comment on `Flag.side` in
+`course.ts` says the opposite; the code is the truth). Skipped: horizontal
+gates (cube openings, the dive gate), obstacles, flag height.
+
+**MultiGP maps (2026-11-11)**: `mgp-q2024-1/2/3` and `mgp-micro-2024`, from the
+plain-JSON tracks in the Velocidrone library (only 7 of its 178 MultiGP-named
+tracks are plain JSON; the other 171 use the game's newer encoded storage,
+which the importer does not read and we do not try to break). Chosen for: no
+dive gates, 15-18 checkpoints. **The importer did not know `DefaultMGPRF`** and
+defaulted it to +z; every one of the four tracks flowed 15-25% worse that way
+(lap with approach stubs 324 vs 254 m etc.), so for the dump a throwaway
+worktree set `DefaultMGPRF: [0,0,-1]` in `FORWARD`. That is inferred from the
+flow, not documented, and the flag sides come from the same shortest-lap search
+as Macabim's, unverified against the game. The fix is not in the
+`velocidrone-pilot` branch yet. Flags on the radio are forgiving
+(`FLAG_SCALE` 2, `FLAG_GRACE` 1 m) and gates 25% bigger (`GATE_SCALE`), both in
+`course.lua`.
+Tests, from the repo root: `lua edgetx/test/run.lua`,
+`tool.lua`, `sizes.lua` (seven screens, mono and colour, strict LCD, every
+checkpoint of every map drawn from both sides), `cost.lua` (worst frame per
+map), `snap.lua` (renders what the radio would show to an image). `brew install lua` for the interpreter.
 
 Things the radio taught us that no desktop test would have, all now covered:
 

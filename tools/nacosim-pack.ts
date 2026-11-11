@@ -14,7 +14,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -38,19 +38,37 @@ function walk(dir: string, base: string, out: string[]): void {
   }
 }
 
-/** The files that go in the zip, relative to edgetx/, sorted. */
-function sources(root: string): string[] {
+/** One file in the zip: where it is, and where it goes. */
+interface Source {
+  src: string;
+  dest: string;
+}
+
+/**
+ * The files that go in the zip, sorted by destination. `edgetx/maps-local/` is
+ * git-ignored and holds maps that are not published in the repository; when it
+ * exists on the machine doing the build, its maps ride along into
+ * SCRIPTS/NacoSim/maps/ so a deployment built here carries them.
+ */
+function sources(root: string): Source[] {
   const files: string[] = [];
   walk(root, 'SCRIPTS/NacoSim', files);
-  // Only NacoSim: SCRIPTS/TOOLS also holds dev probes that are not a release.
+  // Only NacoSim and its memory check: SCRIPTS/TOOLS also holds dev probes.
   // Compiled copies are the radio's own cache and are never part of one.
-  const keep = files.filter((f) => !f.endsWith('.luac'));
-  keep.push('SCRIPTS/TOOLS/NacoSim.lua', 'README.md');
-  return keep.sort();
+  const out: Source[] = files.filter((f) => !f.endsWith('.luac')).map((f) => ({ src: f, dest: f }));
+  out.push({ src: 'SCRIPTS/TOOLS/NacoSim.lua', dest: 'SCRIPTS/TOOLS/NacoSim.lua' });
+  out.push({ src: 'SCRIPTS/TOOLS/NacoMem.lua', dest: 'SCRIPTS/TOOLS/NacoMem.lua' });
+  out.push({ src: 'README.md', dest: 'README.md' });
+  if (existsSync(join(root, 'maps-local'))) {
+    for (const e of readdirSync(join(root, 'maps-local'))) {
+      if (e.endsWith('.map')) out.push({ src: `maps-local/${e}`, dest: `SCRIPTS/NacoSim/maps/${e}` });
+    }
+  }
+  return out.sort((a, b) => (a.dest < b.dest ? -1 : a.dest > b.dest ? 1 : 0));
 }
 
 export function packKey(root: string): string {
-  return sources(root).map((f) => `${f}:${statSync(join(root, f)).mtimeMs}:${statSync(join(root, f)).size}`).join('|');
+  return sources(root).map((f) => `${f.dest}:${statSync(join(root, f.src)).mtimeMs}:${statSync(join(root, f.src)).size}`).join('|');
 }
 
 export function packRc(repoRoot: string): RcPack {
@@ -64,14 +82,14 @@ export function packRc(repoRoot: string): RcPack {
   const tmp = mkdtempSync(join(tmpdir(), 'nacosim-pack-'));
   try {
     for (const f of files) {
-      const dest = join(tmp, f);
+      const dest = join(tmp, f.dest);
       mkdirSync(dirname(dest), { recursive: true });
-      copyFileSync(join(root, f), dest);
+      copyFileSync(join(root, f.src), dest);
       utimesSync(dest, FIXED_TIME, FIXED_TIME);
     }
     const out = join(tmp, 'out.zip');
     try {
-      execFileSync('zip', ['-X', '-q', out, '-@'], { cwd: tmp, input: files.join('\n') + '\n' });
+      execFileSync('zip', ['-X', '-q', out, '-@'], { cwd: tmp, input: files.map((f) => f.dest).join('\n') + '\n' });
     } catch (err) {
       throw new Error(`nacosim-pack: could not run \`zip\` (${(err as Error).message}). Install it, or the download link on rc.html would be dead.`);
     }
