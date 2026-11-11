@@ -12,6 +12,11 @@
 # credential helper, so this image builds over a plain SSH connection with no
 # scheduled task in the middle. If the base is ever pruned, the first build
 # after that has to be run from the desktop.
+#
+# (Update 2026-11-11, the Optiplex: the same failure showed up there, because the
+# 3.20 tag was no longer on the box. deploy-windows.sh now builds with a Docker
+# config that has no credential helper and with the classic builder, which pulls a
+# public image without one, so no desktop session is needed any more.)
 FROM alpine:3.20
 
 # Python, not Node: the box has no Node and needs none. Every byte of flight

@@ -750,6 +750,10 @@ figure in the README is the atomics backend and the fallback is described as
 
 ## Deployed on the Windows desktop (2026-08-29)
 
+**Superseded 2026-11-11: the deployment moved to the Optiplex, see "Deployed on the
+Optiplex" below.** The old box (192.168.7.54) is retired; the rest of this
+section is history, and its cmd-syntax commands do not work on the new box.
+
 `./deploy-windows.sh` with `SSHPASS` set. Same host as genius-invester
 (`gilboash@hotmail.com@192.168.7.54`), destination `C:\Users\gilbo\fpvsim`,
 serving **127.0.0.1:5180** for a Cloudflare tunnel to point at.
@@ -1632,6 +1636,44 @@ Only `SCRIPTS/NacoSim`, the tool script and the README ship; dev probes and
 `serve.py` needed `.zip` in its MIME table (Windows registry trap again).
 Deploy is the usual `deploy-windows.sh`: it builds on the Mac, so the zip comes
 with `dist`. Verify a live deployment with `node tools/rc-check.mjs <url>`.
+
+## Deployed on the Optiplex (2026-11-11)
+
+The sim runs on the Dell OptiPlex that also hosts the portal (`naco-portal`,
+`genius-invester`): `DELL@192.168.7.195`, **key login, PowerShell** (not cmd).
+It lives in `C:\services\fpvsim` (`dist`, `serve.py`, `admin.py`, `Dockerfile`,
+`docker-fpvsim.bat`, and the box's own `data`, `reference`, `backup`), as two
+containers from one image: `fpvsim` on 5180 and `fpvsim-admin` on 5181,
+`--restart unless-stopped`, data mounted (admin read-only). The portal's notes
+(`~/fpv-field-access/portal/MIGRATION-FROM-OLD-BOX.md`) are where the address is
+written down.
+
+`./deploy-windows.sh` deploys it (`DRY_RUN=1` first to list what the mirror would
+copy and delete): build on this Mac, back up `data\sessions.jsonl` into `backup\`,
+keep the previous `dist` as `dist.prev` and the previous image as `fpvsim:prev`,
+copy to a staging folder, `robocopy /MIR` with `/XD data reference backup dist.prev`,
+then rebuild and restart through `docker-fpvsim.bat` (which runs from its own
+folder; the copy on the box used to say `C:\Users\gilbo\fpvsim`, the old box's
+path, and would have built in the wrong place). It verifies `/`, `/web`, `/rc`,
+the zip and the admin view from the box. Afterwards
+`node tools/rc-check.mjs http://192.168.7.195:5180` from the Mac. Do not run the
+browser check against the live box: it would add test records to the real usage
+collection. Rollback: `docker tag fpvsim:prev fpvsim:latest`, then the two
+`docker run` lines in `docker-fpvsim.bat`.
+
+**The build fails over SSH without a trick.** Docker Desktop's credential helper
+needs an interactive logon session ("A specified logon session does not exist"),
+and BuildKit calls it when it looks up `alpine:3.20`, which was no longer a local
+tag, even though Alpine is public. A Docker config with the credential helper
+removed did *not* help BuildKit; the **classic builder (`DOCKER_BUILDKIT=0`) with
+that clean config** builds. The deploy script sets both for the build only
+(`C:\services\_dockercfg_fpvsim`). Found by trying, in a throwaway `fpvsim:test`
+build, before anything live was touched. The first deploy attempt failed at the
+build step, which is before the containers are replaced, so the old site kept
+serving and nothing was lost: keep it that way (build before `docker rm`).
+
+The deployed zip is whatever the Mac built, and it was verified byte-identical to
+`dist/downloads` here; all seven tracks ship (the maps are tracked in git).
 
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:
