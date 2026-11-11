@@ -43,6 +43,10 @@ tmp = tempfile.mkdtemp(prefix="events-check-")
 root, data = os.path.join(tmp, "dist"), os.path.join(tmp, "data")
 os.makedirs(os.path.join(root, "downloads"))
 os.makedirs(os.path.join(root, "assets"))
+os.makedirs(os.path.join(root, "media"))
+MEDIA = bytes(range(256)) * 4  # 1024 bytes, each position distinguishable
+with open(os.path.join(root, "media", "demo.mp4"), "wb") as f:
+    f.write(MEDIA)
 for name, body in {
     "index.html": "front", "web.html": "sim", "rc.html": "radio",
     "downloads/NacoSim-0.7.1.zip": "PK-fake-zip", "downloads/NacoSim-latest.zip": "PK-fake-zip",
@@ -55,6 +59,17 @@ os.chdir(root)
 server = serve.Server(("127.0.0.1", 0), serve.Handler)
 port = server.server_address[1]
 threading.Thread(target=server.serve_forever, daemon=True).start()
+
+
+def get(path, headers=None, method="GET"):
+    """(status, headers, body)."""
+    c = http.client.HTTPConnection("127.0.0.1", port)
+    c.request(method, path, headers=headers or {})
+    r = c.getresponse()
+    body = r.read()
+    out = (r.status, {k.lower(): v for k, v in r.getheaders()}, body)
+    c.close()
+    return out
 
 
 def req(path, headers=None, method="GET"):
@@ -99,6 +114,26 @@ check("no user agent in the file", "Mozilla" not in text and "curl" not in text)
 check("countries are kept", [e["cc"] for e in events] == ["IL", "IL", "DE", "US"], [e["cc"] for e in events])
 check("only the crawler is flagged as a bot", [e["bot"] for e in events] == [False, False, False, True])
 check("the secret persists across restarts", serve.load_salt(data) == serve.SALT and os.path.exists(os.path.join(data, ".salt")))
+
+print("\nbyte ranges (a <video> needs these: Safari will not play without them)")
+st, h, body = get("/media/demo.mp4")
+check("no Range: the whole file, 200, and ranges are advertised", st == 200 and body == MEDIA and h.get("accept-ranges") == "bytes", (st, h.get("accept-ranges")))
+st, h, body = get("/media/demo.mp4", {"Range": "bytes=0-99"})
+check("bytes=0-99 is a 206 with those 100 bytes", st == 206 and body == MEDIA[:100] and h.get("content-range") == "bytes 0-99/1024" and h.get("content-length") == "100", (st, h.get("content-range"), len(body)))
+st, h, body = get("/media/demo.mp4", {"Range": "bytes=900-"})
+check("an open-ended range runs to the end", st == 206 and body == MEDIA[900:] and h.get("content-range") == "bytes 900-1023/1024", (st, h.get("content-range")))
+st, h, body = get("/media/demo.mp4", {"Range": "bytes=-50"})
+check("a suffix range is the last 50 bytes", st == 206 and body == MEDIA[-50:] and h.get("content-range") == "bytes 974-1023/1024", (st, h.get("content-range")))
+st, h, body = get("/media/demo.mp4", {"Range": "bytes=1000-5000"})
+check("an end past the file is clamped", st == 206 and body == MEDIA[1000:] , (st, len(body)))
+st, h, body = get("/media/demo.mp4", {"Range": "bytes=5000-6000"})
+check("a start past the end is a 416 with the size", st == 416 and h.get("content-range") == "bytes */1024", (st, h.get("content-range")))
+st, h, body = get("/media/demo.mp4", {"Range": "pages=1-2"})
+check("a Range it cannot read gets the whole file", st == 200 and body == MEDIA, st)
+check("the content type is right on a partial response", get("/media/demo.mp4", {"Range": "bytes=0-9"})[1].get("content-type") == "video/mp4")
+before = open(os.path.join(data, "events.jsonl")).read().count("\n")
+get("/downloads/NacoSim-0.7.1.zip", {**alice, "Range": "bytes=0-4"})
+check("a partial response is not counted as a download", open(os.path.join(data, "events.jsonl")).read().count("\n") == before)
 
 print("\nthe statistics page")
 s = admin.summarise_events(admin.load_events(os.path.join(data, "events.jsonl"))[0])

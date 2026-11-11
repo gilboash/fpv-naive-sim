@@ -869,3 +869,6 @@ button.confirm {
 .visual a { display: block; }
 .thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: -4px 0 6px; }
 .thumbs .visual { margin: 0; }
+
+/* the demo video on rc.html */
+.demo video { display: block; width: 100%; height: auto; background: #000; border: 1px solid var(--line); border-radius: 6px; }

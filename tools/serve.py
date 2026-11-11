@@ -118,6 +118,25 @@ def visitor_id(ip: str) -> str:
     return hmac.new(SALT, ip.encode("ascii", "replace"), hashlib.sha256).hexdigest()[:12]
 
 
+class _Limited:
+    """A file read to the end of a byte range and no further. The stock handler
+    copies whatever read() yields, so this is all a 206 needs."""
+
+    def __init__(self, f, length):
+        self._f, self._left = f, length
+
+    def read(self, n=-1):
+        if self._left <= 0:
+            return b""
+        n = self._left if n is None or n < 0 else min(n, self._left)
+        data = self._f.read(n)
+        self._left -= len(data)
+        return data
+
+    def close(self):
+        self._f.close()
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
         """Serve /reference/ from outside the build directory.
@@ -145,6 +164,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not os.path.splitext(base)[1] and os.path.isfile(base + ".html"):
                 return base + ".html"
         return p
+
+    def send_head(self):
+        """Byte ranges (one range, as browsers ask for it). Safari and iPhones
+        will not play a <video> from a server that cannot answer Range with 206,
+        and every browser needs it to seek. Anything this cannot parse falls
+        through to the stock handler and gets the whole file."""
+        rng = (self.headers.get("Range") or "").strip()
+        path = self.translate_path(self.path)
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng)
+        if not m or (not m.group(1) and not m.group(2)) or not os.path.isfile(path):
+            return super().send_head()
+        size = os.path.getsize(path)
+        if not m.group(1):  # "-N": the last N bytes
+            start, end = max(0, size - int(m.group(2))), size - 1
+        else:
+            start = int(m.group(1))
+            end = int(m.group(2)) if m.group(2) else size - 1
+        if start >= size or start > end:
+            self.send_response(416)
+            self.send_header("Content-Range", "bytes */%d" % size)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+        end = min(end, size - 1)
+        f = open(path, "rb")
+        f.seek(start)
+        self.send_response(206)
+        self.send_header("Content-Type", self.guess_type(path))
+        self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
+        self.send_header("Content-Length", str(end - start + 1))
+        self.end_headers()
+        return _Limited(f, end - start + 1)
 
     def send_response(self, code, message=None):
         self._status = code
@@ -209,6 +260,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # and the ticker runs on Atomics rather than falling back to a timer.
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+        self.send_header("Accept-Ranges", "bytes")
         # The build is content-hashed, but the pages are not (/, /web, /rc and
         # their .html files), so they must never be cached or a redeploy is
         # invisible to anyone who has visited before. rc.html also names the

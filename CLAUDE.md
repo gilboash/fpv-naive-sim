@@ -879,6 +879,25 @@ model on the very next tick and the counter correctly reads zero. The browser
 check holds `poller.connected` true for the measurement, or it would be
 measuring the failsafe.
 
+## The demo video (2026-11-11)
+
+A 40 s demo of NacoSim on the T14 and the TX16S is on the `/rc` page ("Watch it"):
+`public/nacosim/demo.mp4` (720p, 6.7 MB) and `demo-poster.jpg`. It is cut from four
+of Gilboa's five iPhone clips (in `~/Downloads`, not in the repo; the fifth,
+`IMG_7561`, is a glare-washed TX16S menu and was not used) by `tools/demo/build.py`
+with a soundtrack synthesised by `tools/demo/music.py` (120 BPM, so every cut is on
+a beat; the three gate beeps sit where the radios really beeped; the radios' own
+audio is almost silent). The phone footage is **HLG HDR**: it is tone-mapped with
+zscale + tonemap, or it comes out flat. Gilboa asked for **no version number and no
+repository address on the end card**: keep it that way when re-rendering. The
+full-quality master and an 18 MB share copy are in `~/Downloads`
+(`NacoSim-demo.mp4`, `NacoSim-demo-share.mp4`); 30 MiB is the upload limit for
+sending a file into a conversation.
+
+`serve.py` now answers **byte ranges** (206): Safari and iPhones will not play a
+`<video>` without them, and every browser needs them to seek. They are not counted as
+downloads. `check:rc` asserts the video answers a range request.
+
 ## Counting visits and downloads (2026-11-11)
 
 `serve.py` writes one JSON line per page visit (`/`, `/web`, `/rc`) or completed zip

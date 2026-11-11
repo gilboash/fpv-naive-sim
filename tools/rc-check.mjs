@@ -31,6 +31,21 @@ for (const alt of ['/rc/', '/rc.html']) {
   const t = await r.text();
   check(`${alt} also serves it`, r.ok && t === html);
 }
+const videoSrc = /<source src="([^"]+\.mp4)"/.exec(html)?.[1];
+check('page has the demo video', Boolean(videoSrc), videoSrc ?? 'none');
+if (videoSrc) {
+  const full = await fetch(base + videoSrc, { headers: { Range: 'bytes=0-99' } });
+  const part = Buffer.from(await full.arrayBuffer());
+  check('the video answers a range request with 206 (Safari needs it)', full.status === 206 && part.length === 100, `HTTP ${full.status}, ${part.length} bytes`);
+  check('the video is served as video/mp4', (full.headers.get('content-type') ?? '').includes('video/mp4'), full.headers.get('content-type') ?? '');
+  const total = Number(/\/(\d+)$/.exec(full.headers.get('content-range') ?? '')?.[1] ?? 0);
+  check('the video has a real size', total > 1_000_000, `${total} bytes`);
+}
+const poster = /poster="([^"]+)"/.exec(html)?.[1];
+if (poster) {
+  const pr = await fetch(base + poster);
+  check('the video poster loads', pr.ok && (pr.headers.get('content-type') ?? '').includes('jpeg'), pr.headers.get('content-type') ?? '');
+}
 const shots = [...html.matchAll(/src="(\/nacosim\/[^"]+\.svg)"/g)].map((m) => m[1]);
 check('page shows screenshots', shots.length >= 9, `${shots.length} images`);
 for (const src of shots) {
