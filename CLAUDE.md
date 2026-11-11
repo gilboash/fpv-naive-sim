@@ -1590,6 +1590,15 @@ Things the radio taught us that no desktop test would have, all now covered:
 estimates. Key mapping (MENU/PAGE/touch) for other radios is a guess. EdgeTX
 Companion is not installed here.
 
+**The page is at `/rc`** (also `/rc/` and `/rc.html`): `serve.py` maps an
+extensionless path to `<path>.html` when nothing by that name exists, and the
+Vite dev server rewrites `/rc` in the `nacosim-rc` plugin (without it `/rc/`
+fell through to the sim). The pictures on it are **drawn by the sim's own code**:
+`lua edgetx/test/shots.lua` (`npm run rc:shots`) runs the real view, menu and
+finish code against a stub LCD and writes SVGs into `public/nacosim/`, which are
+committed. Re-run it whenever a screen changes. It uses only maps that are in the
+repository, so it rebuilds from a clean clone. `rc-check` fetches every image.
+
 **The download page** (`rc.html`, `src/rc.ts`, `tools/nacosim-pack.ts`, the
 `nacosim-rc` plugin in vite.config.ts, `npm run check:rc`). The zip is built
 from `edgetx/` at build time and emitted to `dist/downloads/` (versioned name

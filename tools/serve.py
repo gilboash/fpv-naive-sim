@@ -71,7 +71,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if rel.startswith("..") or rel.startswith("/") or os.path.isabs(rel):
                 return ""
             return os.path.join(REFERENCE_DIR, rel)
-        return super().translate_path(path)
+        p = super().translate_path(path)
+        # Clean URLs: /rc (or /rc/) serves rc.html. Only when nothing by that
+        # name exists, so a real file or directory always wins.
+        if not os.path.exists(p):
+            base = p.rstrip("/\\")
+            if not os.path.splitext(base)[1] and os.path.isfile(base + ".html"):
+                return base + ".html"
+        return p
 
     def guess_type(self, path):
         ext = os.path.splitext(path)[1].lower()
@@ -84,7 +91,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
         # The build is content-hashed, but index.html is not, so it must never
         # be cached or a redeploy is invisible to anyone who has visited before.
-        if self.path in ("/", "/index.html"):
+        # (rc.html is the same: it names the current download by version.)
+        if self.path.split("?")[0] in ("/", "/index.html", "/rc", "/rc/", "/rc.html"):
             self.send_header("Cache-Control", "no-store")
         super().end_headers()
 

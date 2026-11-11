@@ -1,5 +1,5 @@
 /**
- * Checks the NacoSim-for-your-radio page of a running server: the page loads
+ * Checks the NacoSim-for-your-radio page (at /rc) of a running server: the page loads
  * with no unfilled placeholders, its download link serves a zip, the sha256
  * printed on the page is the sha256 of that file, and the zip holds the
  * scripts and nothing from the dev folders.
@@ -19,9 +19,23 @@ const check = (name, ok, detail = '') => {
   console.log(`  ${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ' — ' + detail : ''}`);
 };
 
-const page = await fetch(`${base}/rc.html`);
+const page = await fetch(`${base}/rc`);
 const html = await page.text();
-check('page loads', page.ok && html.includes('NacoSim'), `HTTP ${page.status}`);
+check('page loads at /rc', page.ok && html.includes('NacoSim'), `HTTP ${page.status}`);
+const ctype = page.headers.get('content-type') ?? '';
+check('/rc is served as html, not the sim page', ctype.includes('html') && html.includes('NacoSim for your radio') && !html.includes('id="tab-fly"'), ctype);
+for (const alt of ['/rc/', '/rc.html']) {
+  const r = await fetch(base + alt);
+  const t = await r.text();
+  check(`${alt} also serves it`, r.ok && t === html);
+}
+const shots = [...html.matchAll(/src="(\/nacosim\/[^"]+\.svg)"/g)].map((m) => m[1]);
+check('page shows screenshots', shots.length >= 9, `${shots.length} images`);
+for (const src of shots) {
+  const r = await fetch(base + src);
+  const body = await r.text();
+  check(`image ${src}`, r.ok && (r.headers.get('content-type') ?? '').includes('svg') && body.includes('<svg'));
+}
 check('no unfilled placeholders', !html.includes('{{'));
 
 const href = /href="(\/downloads\/NacoSim-[^"]+\.zip)"/.exec(html)?.[1];
@@ -52,7 +66,7 @@ if (href) {
 }
 
 const home = await (await fetch(`${base}/`)).text();
-check('the sim page links to it', home.includes('href="/rc.html"'));
+check('the sim page links to it at /rc', home.includes('href="/rc"'));
 
 console.log(failed === 0 ? '\nrc check passed' : `\n${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

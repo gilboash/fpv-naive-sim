@@ -58,6 +58,13 @@ function nacosimRc(): Plugin {
       },
     },
     configureServer(server) {
+      // /rc is the page's address and rc.html the file, so /rc and /rc/ both
+      // serve it; otherwise the sim's HTML fallback answers with index.html.
+      server.middlewares.use((req, _res, next) => {
+        const m = /^\/rc\/?(\?.*)?$/.exec(req.url ?? '');
+        if (m) req.url = `/rc.html${m[1] ?? ''}`;
+        next();
+      });
       server.middlewares.use((req, res, next) => {
         const m = /^\/downloads\/(NacoSim-[^/?#]*\.zip)/.exec(req.url ?? '');
         if (!m) return next();

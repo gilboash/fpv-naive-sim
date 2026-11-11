@@ -40,6 +40,114 @@
         </p>
       </section>
 
+      <section id="screens">
+        <h2>What it looks like</h2>
+        <p>
+          These are the sim's real screens, drawn by its own code. On the T14 the screen is 128
+          by 64 pixels, black and white; colour radios get coloured lines.
+        </p>
+        <div class="shots">
+          <figure>
+            <img src="/nacosim/fly-gate.svg" width="640" height="320" loading="lazy"
+              alt="First-person view approaching a gate, with a diamond marker and a short arrow showing the way through" />
+            <figcaption>
+              <strong>Flying at a gate.</strong> The diamond marks the next gate and the arrow
+              shows the way through. Top left: NacoSim and your speed in km/h. Top right: the race
+              clock. Bottom: height, which gate is next, and the lap.
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/fly-gates.svg" width="640" height="320" loading="lazy"
+              alt="Two gates ahead in a banked turn; the horizon is tilted" />
+            <figcaption>
+              <strong>The next gate and the one after.</strong> The horizon tilts when you bank, and
+              the dotted lines are a ground grid for a sense of speed.
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/wrong-side.svg" width="640" height="320" loading="lazy"
+              alt="A gate seen from the wrong side with an X through the marker" />
+            <figcaption>
+              <strong>Wrong side.</strong> Flying at a gate from behind would not count, so the
+              marker gets an X.
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/flag.svg" width="640" height="320" loading="lazy"
+              alt="A flag pole with a pennant next to a gate" />
+            <figcaption>
+              <strong>A flag.</strong> Pass the pole on the side its pennant points to.
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/edge-arrow.svg" width="640" height="320" loading="lazy"
+              alt="An arrow at the edge of the screen pointing to a gate that is out of view" />
+            <figcaption>
+              <strong>Gate out of view.</strong> An arrow at the edge of the screen points to it.
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/finish.svg" width="640" height="320" loading="lazy"
+              alt="Finish screen listing the total time and three lap times" />
+            <figcaption>
+              <strong>The finish.</strong> Total time for the three laps and each lap, with the best
+              one marked.
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/menu.svg" width="640" height="320" loading="lazy"
+              alt="Settings menu with sound, map, laps, tilt and rates" />
+            <figcaption>
+              <strong>Settings.</strong> Press MENU: sound, map, laps, camera tilt and rates.
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/rates.svg" width="640" height="320" loading="lazy"
+              alt="Rates editor with rate, super rate and expo for roll, pitch and yaw and the resulting maximum degrees per second" />
+            <figcaption>
+              <strong>Your rates.</strong> Rate, super rate and expo for each axis, with the
+              resulting maximum deg/s underneath.
+            </figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/info.svg" width="640" height="320" loading="lazy"
+              alt="Info screen with version, radio, screen size, frame rate and map" />
+            <figcaption>
+              <strong>Info.</strong> Version, radio, screen size and speed: what to tell us when you
+              report something.
+            </figcaption>
+          </figure>
+        </div>
+
+        <h3>On a colour radio</h3>
+        <div class="shots wide">
+          <figure>
+            <img src="/nacosim/colour-fly.svg" width="768" height="435" loading="lazy"
+              alt="Colour screen approaching a gate: yellow next gate, blue gate, green ground grid" />
+            <figcaption>The next gate is yellow, other gates blue, the ground grid green.</figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/colour-flag.svg" width="768" height="435" loading="lazy"
+              alt="Colour screen with a yellow flag pole and pennant beside a blue gate" />
+            <figcaption>A flag on a colour screen.</figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/colour-menu.svg" width="768" height="435" loading="lazy"
+              alt="Colour settings menu listing all items" />
+            <figcaption>The settings menu shows every item at once.</figcaption>
+          </figure>
+          <figure>
+            <img src="/nacosim/colour-finish.svg" width="768" height="435" loading="lazy"
+              alt="Colour finish screen with total and lap times" />
+            <figcaption>The finish screen.</figcaption>
+          </figure>
+        </div>
+        <p class="hint">
+          Colour radios use a separate drawing path; the colour pictures show how it is meant to
+          look, and it has so far been run on a TX16S only.
+        </p>
+      </section>
+
       <section>
         <h2>Install</h2>
         <ol class="steps">

@@ -14,7 +14,8 @@
     "identify": "node --experimental-strip-types tools/identify.ts",
     "reference": "node --experimental-strip-types tools/optimal-lap.ts",
     "check:rc": "node tools/rc-check.mjs",
-    "edgetx:map": "node --experimental-strip-types tools/edgetx-map.ts"
+    "edgetx:map": "node --experimental-strip-types tools/edgetx-map.ts",
+    "rc:shots": "lua edgetx/test/shots.lua"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
