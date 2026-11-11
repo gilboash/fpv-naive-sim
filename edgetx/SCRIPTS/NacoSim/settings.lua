@@ -7,7 +7,7 @@ local floor, abs = math.floor, math.abs
 local FILE = "/SCRIPTS/NacoSim/settings.txt"
 
 S.sound = true
-S.map = 1
+S.map = "oval"   -- the map's file key, not a position: a list can grow and change order
 S.preset = 1
 S.laps = 3
 S.tilt = 25
@@ -36,9 +36,11 @@ end
 -- Settings file format. Versions 1-3 had no tag and are told apart by how many
 -- numbers they hold; from 4 on the first field is "v<N>". A file from a newer
 -- NacoSim is ignored rather than misread; an older one is migrated step by
--- step. Layout (v4): sound, map, preset, 9 rates, laps, tilt.
-S.APP = "0.5.0"      -- NacoSim version, shown in Info and written to the logs
-S.FORMAT = 4
+-- step. Layout: sound, map, preset, 9 rates, laps, tilt. The map is its file
+-- key (text) from v5; before that it was a position in the list, and there was
+-- only ever one map, so every older file means "oval".
+S.APP = "0.7.0"      -- NacoSim version, shown in Info and written to the logs
+S.FORMAT = 5
 local NVALUES = 14
 
 function S.save()
@@ -59,6 +61,7 @@ local function migrate(v, ver)
   if ver == 1 then v[13] = 3; ver = 2 end     -- Laps arrived in 2
   if ver == 2 then v[14] = 25; ver = 3 end    -- Tilt arrived in 3
   if ver == 3 then ver = 4 end                -- 4 only added the version tag
+  if ver == 4 then v[2] = "oval"; ver = 5 end -- 5: the map is a name, not a number
   return v, ver
 end
 
@@ -77,8 +80,13 @@ function S.load(C)
       if not ver then return false end
     else
       n = n + 1
-      v[n] = tonumber(tok)
-      if not v[n] then return false end
+      if n == 2 and ver and ver >= 5 then
+        if not string.find(tok, "^[a-z0-9%-]+$") then return false end
+        v[n] = tok
+      else
+        v[n] = tonumber(tok)
+        if not v[n] then return false end
+      end
     end
   end
   if not ver then
@@ -89,7 +97,11 @@ function S.load(C)
   v, ver = migrate(v, ver)
   if n < 12 or #v < NVALUES then return false end
   S.sound = v[1] == 1
-  S.map = floor(clamp(v[2], 1, C and #C.maps or 1))
+  S.map = "oval"
+  if C and C.keys then
+    for i = 1, #C.keys do if C.keys[i] == v[2] then S.map = v[2] end end
+    if S.map ~= v[2] then S.loadNote = "map " .. tostring(v[2]) .. " not on the card; using oval" end
+  end
   S.preset = floor(clamp(v[3], 0, #S.presets))
   for i = 1, 9 do S.rates[i] = v[3 + i] end
   S.laps = (v[13] >= 1 and v[13] <= 10) and floor(v[13]) or 3
@@ -123,7 +135,10 @@ function S.event(event, M, C)
     if step ~= 0 then cur = (cur - 1 + step) % ITEMS + 1 end
     if event == ENTER then
       if cur == 1 then S.sound = not S.sound
-      elseif cur == 2 then S.map = S.map % #C.maps + 1
+      elseif cur == 2 then
+        local k = 1
+        for i = 1, #C.keys do if C.keys[i] == S.map then k = i end end
+        S.map = C.keys[k % #C.keys + 1]
       elseif cur == 3 then
         local k = 1
         for i = 1, #LAPS do if LAPS[i] == S.laps then k = i end end
@@ -174,26 +189,29 @@ end
 function S.setDisplay(d) D = d end
 function S.setStats(fps, ms) stats.fps, stats.ms = fps, ms end
 
-local function info()
+local function info(C)
   local ver, radio = "?", "?"
   if getVersion then
     local v, r = getVersion()
     ver, radio = tostring(v), tostring(r)
   end
-  local mem = collectgarbage and floor(collectgarbage("count")) or 0
   return {
     "NacoSim " .. S.APP .. " (cfg v" .. S.FORMAT .. ")",
     "radio " .. radio .. "  EdgeTX " .. ver,
     string.format("screen %dx%d %s", D.W, D.H, D.colour and "colour" or "mono"),
     string.format("%.0f fps  %d ms/frame", stats.fps, stats.ms),
-    string.format("lua mem %dk", mem),
+    (C.loadNote or S.loadNote) and tostring(C.loadNote or S.loadNote)
+      or string.format("map %s (%d)", C.title, #C.gates),
   }
 end
 
 function S.draw(M, C)
   D.clear()
   local lh, sm = D.lh, D.small
-  mapName = C.maps[S.map].name
+  mapName = C.titleOf(S.map)
+  -- a long file name must not run off the screen: the row is "Map     " + name
+  local room = floor((D.W - 8) / D.cw) - 8
+  if #mapName > room then mapName = string.sub(mapName, 1, room - 1) .. "." end
   if screen == 1 then
     D.text(2, 1, "NacoSim settings", sm)
     D.line(0, D.hh, D.W - 1, D.hh, SOLID, "horizon")
@@ -209,7 +227,7 @@ function S.draw(M, C)
   elseif screen == 3 then
     D.text(2, 1, "NacoSim info", sm)
     D.line(0, D.hh, D.W - 1, D.hh, SOLID, "horizon")
-    local lines = info()
+    local lines = info(C)
     for i = 1, #lines do D.text(4, D.hh + 3 + (i - 1) * D.rowH, lines[i], sm) end
   else
     local x0, colw = D.cw * 3, floor((D.W - D.cw * 4) / 3)

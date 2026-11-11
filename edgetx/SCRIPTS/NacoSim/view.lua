@@ -130,11 +130,29 @@ local function gate(g, hw, hh, thick)
   end
 end
 
+-- A flag: a pole to the ground with a pennant on the side to pass it on.
+local function flag(g, thick)
+  local role = thick and "next" or "gate"
+  local x, y, h = g[1], g[2], g[3]
+  local sx, sy = g.ax * g.side * 1.6, g.ay * g.side * 1.6
+  local x1, y1, z1 = toCam(x, y, 0)
+  local x2, y2, z2 = toCam(x, y, h)
+  local x3, y3, z3 = toCam(x + sx, y + sy, h - 0.6)
+  local x4, y4, z4 = toCam(x, y, h - 1.2)
+  seg(x1, y1, z1, x2, y2, z2, SOLID, role)
+  seg(x2, y2, z2, x3, y3, z3, SOLID, role)
+  seg(x3, y3, z3, x4, y4, z4, SOLID, role)
+  if thick then seg(x1 + 1, y1, z1, x2 + 1, y2, z2, SOLID, role) end
+end
+
 -- Where the next gate is: a diamond on its centre when it is in view, an
 -- arrow at the screen edge pointing to it when it is off to the side or behind.
 local function marker(g)
-  local x, y, z = toCam(g[1], g[2], g[3])
+  local x, y, z = toCam(g[1], g[2], g.mz)
   local m = D.lh * 0.7                     -- marker size scales with the text
+  -- Wrong side: the quad is already past the plane, so flying at it would cross
+  -- it backwards and not count.
+  local wrong = (cx - g[1]) * g.nx + (cy - g[2]) * g.ny > 0
   if z > NEAR then
     local sx, sy = W / 2 + x / z * F, H / 2 - y / z * F
     if sx > m + 2 and sx < W - m - 3 and sy > m + 2 and sy < H - m - 3 then
@@ -142,6 +160,16 @@ local function marker(g)
       draw(sx, sy - m, sx + m, sy, SOLID, "next")
       draw(sx + m, sy, sx, sy + m, SOLID, "next")
       draw(sx, sy + m, sx - m, sy, SOLID, "next")
+      -- the way through: an arrow along the direction of travel, in the world
+      local mz, nx, ny, ax, ay = g.mz, g.nx, g.ny, g.ax, g.ay
+      local tx, ty = g[1] + nx * 3.5, g[2] + ny * 3.5
+      line3(g[1], g[2], mz, tx, ty, mz, SOLID, "next")
+      line3(tx, ty, mz, tx - nx * 1 + ax * 0.9, ty - ny * 1 + ay * 0.9, mz, SOLID, "next")
+      line3(tx, ty, mz, tx - nx * 1 - ax * 0.9, ty - ny * 1 - ay * 0.9, mz, SOLID, "next")
+      if wrong then   -- X through the diamond: this side does not count
+        draw(sx - m, sy - m, sx + m, sy + m, SOLID, "msg")
+        draw(sx - m, sy + m, sx + m, sy - m, SOLID, "msg")
+      end
       return
     end
   end
@@ -160,7 +188,17 @@ local function marker(g)
   draw(px, py, bx + nx, by + ny, SOLID, "next")
   draw(px, py, bx - nx, by - ny, SOLID, "next")
   draw(bx + nx, by + ny, bx - nx, by - ny, SOLID, "next")
+  if wrong then     -- the same X, beside the arrow
+    local ex, ey, k = bx - dx * m, by - dy * m, m * 0.6
+    draw(ex - k, ey - k, ex + k, ey + k, SOLID, "msg")
+    draw(ex - k, ey + k, ex + k, ey - k, SOLID, "msg")
+  end
 end
+
+V.marker = marker   -- for the tests: the marker alone, after V.camera(s)
+
+-- true when the quad is on the side of checkpoint g that does not count
+function V.wrongSide(s, g) return (s.x - g[1]) * g.nx + (s.y - g[2]) * g.ny > 0 end
 
 -- s: model state, course: course module, cs: course state, info: table of
 -- strings/flags from the tool (msg, ms)
@@ -173,7 +211,10 @@ function V.draw(s, course, cs, info)
   for i = 1, n do
     -- the next gate and a few after it: every line costs instructions
     local d = (i - cs.nxt) % n
-    if d <= D.gatesAhead then gate(course.gates[i], course.hw, course.hh, d == 0) end
+    if d <= D.gatesAhead then
+      local g = course.gates[i]
+      if g.kind == 1 then flag(g, d == 0) else gate(g, g.hw, g.hh, d == 0) end
+    end
   end
   marker(course.gates[cs.nxt])
   -- HUD: trademark and speed top left, race clock top right, height bottom

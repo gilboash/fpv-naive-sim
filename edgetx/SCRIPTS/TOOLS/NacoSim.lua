@@ -44,24 +44,47 @@ end
 local function load(name) return assert(loadScript(base .. name .. ".lua"))() end
 
 local function respawn()
-  model.reset(s, 0, 0, 0, 0)
+  model.reset(s, course.start[1], course.start[2], 0, course.start[3])
   cs = course.new(settings.laps)
   armed = false
   crashAt = 0
 end
 
+-- Boot is staged and the heap is collected between modules: compiling a
+-- module needs more memory than the module keeps, and an ELRS model leaves a
+-- script far less than an empty one ("not enough memory" at load). The last
+-- stage reached is written to the log if the boot dies.
+local function boot(stage)
+  collectgarbage()
+  local f = io.open("/LOGS/nacosim_boot.txt", "w")
+  if f then
+    io.write(f, stage .. string.format(" mem=%dk\n", math.floor(collectgarbage("count"))))
+    io.close(f)
+  end
+end
+
 local function init()
-  model, course, view, settings = load("model"), load("course"), load("view"), load("settings")
+  boot("model")
+  model = load("model")
+  boot("course")
+  course = load("course")
+  boot("view")
+  view = load("view")
+  boot("settings")
+  settings = load("settings")
+  boot("setup")
   D = view.display
   settings.setDisplay(D)
+  course.scan()
   settings.load(course)
   settings.apply(model)
   view.setTilt(settings.tilt)
   course.select(settings.map)
+  collectgarbage()
   s = model.new(0, 0, 0, 0)
   respawn()
   local f = io.open(LOG, "w")
-  if f then io.write(f, "# NacoSim " .. settings.APP .. " settings v" .. settings.FORMAT .. "\n"); io.write(f, "t,ail,ele,rud,thr,x,y,z,vx,vy,vz,bx_z,bz_z,w1,w2,w3,armed,memk,note\n"); io.close(f) end
+  if f then io.write(f, "# NacoSim " .. settings.APP .. " settings v" .. settings.FORMAT .. " map " .. course.current .. " (" .. #course.gates .. ")" .. ((course.loadNote or settings.loadNote) and (" NOTE " .. tostring(course.loadNote or settings.loadNote)) or "") .. "\n"); io.write(f, "t,ail,ele,rud,thr,x,y,z,vx,vy,vz,bx_z,bz_z,w1,w2,w3,armed,memk,note\n"); io.close(f) end
   lastTick = getTime()
   hint = 60
 end
@@ -83,7 +106,7 @@ local function runInner(event)
       menu = false
       settings.save()
       view.setTilt(settings.tilt)
-      if course.index ~= settings.map then course.select(settings.map); respawn() end
+      if course.current ~= settings.map then course.select(settings.map); respawn() end
     else
       settings.draw(model, course)
     end
@@ -159,4 +182,4 @@ local function run(event)
 end
 
 -- peek is for the desktop tests
-return { init = init, run = run, peek = function() return s, cs end }
+return { init = init, run = run, peek = function() return s, cs, course, model end }

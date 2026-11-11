@@ -21,6 +21,7 @@ io.write = function(f, ...) return f:write(...) end
 local tones = 0
 playTone = function() tones = tones + 1 end
 PLAY_NOW = 1
+dofile(here .. "/test/stubs.lua").install(here)
 -- the radio's Lua has no table or os library: hide them from the script
 local _tmpname, _remove = os.tmpname, os.remove
 table, os = nil, nil
@@ -41,6 +42,32 @@ do
   print("saved settings: " .. txt:gsub("\n", ""))
   assert(txt:match("^v%d+,(%d)") == "0", "sound should be saved as off")
   tool.run(EVT_VIRTUAL_MENU); tool.run(EVT_VIRTUAL_ENTER); tool.run(EVT_VIRTUAL_EXIT) -- back ON
+end
+-- map switch: Map row, ENTER takes the next map on the card, the quad is
+-- respawned at that map's start and the choice is saved by name
+do
+  local s0, _, course = tool.peek()
+  local before = course.current
+  tool.run(EVT_VIRTUAL_MENU)
+  tool.run(EVT_VIRTUAL_NEXT)        -- Map row
+  tool.run(EVT_VIRTUAL_ENTER)       -- next map
+  tool.run(EVT_VIRTUAL_EXIT)        -- close, save, respawn
+  local s1, cs1, course1 = tool.peek()
+  assert(course1.current ~= before, "map did not change: " .. tostring(course1.current))
+  assert(math.abs(s1.x - course1.start[1]) < 1e-6 and math.abs(s1.y - course1.start[2]) < 1e-6, "not at the map start")
+  local f = assert(realOpen(setPath)); local txt = f:read("a"); f:close()
+  assert(txt:find("," .. course1.current .. ",", 1, true), "map not saved by name: " .. txt)
+  print("map switched: " .. before .. " -> " .. course1.current .. ", start " .. course1.start[1] .. "," .. course1.start[2])
+  -- back to the oval so the gate-1 test below is unchanged
+  local n = 0
+  while course1.current ~= "oval" and n < 10 do
+    tool.run(EVT_VIRTUAL_MENU); tool.run(EVT_VIRTUAL_NEXT); tool.run(EVT_VIRTUAL_ENTER); tool.run(EVT_VIRTUAL_EXIT)
+    n = n + 1
+  end
+  assert(course1.current == "oval", "could not get back to the oval")
+  -- a respawn is disarmed: bring the throttle down so it arms again
+  sticks.thr = -1024
+  frames(10)
 end
 -- beep on pass: put the quad just south of gate 1, flying north through it
 do

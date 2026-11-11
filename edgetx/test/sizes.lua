@@ -80,6 +80,8 @@ local function runProfile(P)
   io.write = function(f, ...) return f:write(...) end
   io.read = function(f, n) return f:read(n) end
   io.close = function(f) return f:close() end
+  require_stubs = require_stubs or dofile(here .. "/test/stubs.lua")
+  require_stubs.install(here)
   playTone = function() end
   PLAY_NOW = 1
 
@@ -111,6 +113,29 @@ local function runProfile(P)
   key(EV.ENTER); key(EV.ENTER)               -- open info, close it
   key(EV.EXIT)                               -- close the menu
   frames(10)
+  -- every map on the card: switch to it through the menu, then draw every
+  -- checkpoint from in front and from behind (flags, arrows, gates, markers)
+  do
+    local _, _, course, model = tool.peek()
+    local nmaps = #course.keys
+    local visited, nvis = {}, 0
+    for _ = 1, nmaps do
+      key(EV.MENU); key(EV.NEXT); key(EV.ENTER); key(EV.EXIT)
+      local s2, cs2, course2 = tool.peek()
+      if not visited[course2.current] then visited[course2.current] = true; nvis = nvis + 1 end
+      for i = 1, #course2.gates do
+        local g = course2.gates[i]
+        for _, back in ipairs({ 0, 180 }) do
+          cs2.nxt = i
+          local h = (g[4] + back) % 360
+          model.reset(s2, g[1] - g.nx * 8, g[2] - g.ny * 8, 3, h)
+          s2.z = 3
+          frames(1)
+        end
+      end
+    end
+    if nvis ~= nmaps or nmaps < 2 then bad("maps visited " .. nvis .. " of " .. nmaps) end
+  end
   -- finish screens: 3 laps and a long race
   local s, cs = tool.peek()
   for _, laps in ipairs({ 3, 10 }) do

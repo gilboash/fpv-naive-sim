@@ -1,6 +1,7 @@
 -- Headless checks for the model and the course. Run: lua edgetx/test/run.lua
 local here = arg[0]:match("^(.*)/test/run.lua$") or "edgetx"
 here_dir = here
+dofile(here .. "/test/stubs.lua").install(here)
 EVT_VIRTUAL_EXIT, EVT_VIRTUAL_ENTER, EVT_VIRTUAL_MENU, EVT_VIRTUAL_NEXT, EVT_VIRTUAL_PREV, EVT_VIRTUAL_INC, EVT_VIRTUAL_DEC = 1, 2, 3, 4, 5, 6, 7
 INVERS, BLINK = 64, 128
 LCD_W, LCD_H = 128, 64
@@ -117,6 +118,11 @@ do
   check("gate: too far left", not pass(-3, 2, 1))
   check("gate: too high", not pass(0, 5, 1))
   check("gate: edge inside", pass(1.9, 2, 1))
+  check("gate: the extra 25% counts, past it does not", pass(2.4, 2, 1) and not pass(2.6, 2, 1))
+  check("gate: top edge scaled too", (function()
+    local c = C.new(); local hit = false
+    for i = 0, 60 do hit = C.update(c, 0, 27 + 6 * i / 60, 2 + 1.8, i * 0.01) or hit end
+    return hit end)())
 end
 
 -- 9. a lap counts gate 1 -> 8 -> gate 1
@@ -327,7 +333,7 @@ do
   io.write = function(f, ...) return f:write(...) end
   io.read = function(f, n) return f:read(n) end
   local function put(txt) local f = oldOpen(path, "w"); f:write(txt); f:close() end
-  local function reset() St.sound, St.map, St.preset, St.laps, St.tilt = true, 1, 1, 3, 25 end
+  local function reset() St.sound, St.map, St.preset, St.laps, St.tilt = true, "oval", 1, 3, 25 end
   local r12 = "0,1,1,1.05,0.59,0.01,0.90,0.59,0.01,0.90,0.58,0.10"
   reset(); put(r12 .. "\n")
   check("v1 (12 numbers) migrates: sound off, laps 3, tilt 25", St.load(C) and not St.sound and St.laps == 3 and St.tilt == 25)
@@ -344,12 +350,164 @@ do
   put("v99,1,1,1," .. string.rep("0.5,", 9) .. "3,25\n")
   reset()
   check("a newer file is ignored, defaults stay", not St.load(C) and St.laps == 3 and St.loadNote ~= nil, tostring(St.loadNote))
+  -- the map is stored by name (v5); older files meant the one map there was
+  C.scan()
+  reset(); St.map = "race-vibes"
+  St.save()
+  local f5 = oldOpen(path); local t5 = f5:read("a"); f5:close()
+  check("save stores the map by name", t5:match("^v5,%d,race%-vibes,") ~= nil, t5)
+  St.map = "oval"
+  check("load restores the map by name", St.load(C) and St.map == "race-vibes", St.map)
+  put("v5,1,no-such-map,1," .. string.rep("0.5,", 9) .. "3,25\n"); reset()
+  check("a map missing from the card falls back to oval with a note", St.load(C) and St.map == "oval" and St.loadNote ~= nil, tostring(St.loadNote))
+  put("v5,1,Bad Name!,1," .. string.rep("0.5,", 9) .. "3,25\n"); reset()
+  check("a map key with odd characters is refused", not St.load(C))
+  put("v4,1,2,1," .. string.rep("0.5,", 9) .. "3,25\n"); reset(); St.map = "race-vibes"
+  check("v4 map index migrates to oval", St.load(C) and St.map == "oval", St.map)
   put(""); reset()
   check("an empty file (a save that was cut off) falls back to defaults", not St.load(C))
   put("garbage,1,2\n"); reset()
   check("garbage falls back to defaults", not St.load(C))
   os.remove(path)
   io.open, io.write, io.read = oldOpen, oldWrite, oldRead
+end
+
+-- maps: parsing, errors, flags, shipped files
+do
+  local GOOD = "nacosim-map 1\nname Test\n# a comment\nstart 1 2 90\ng 0 30 2 0 2 1.5\nf 8 40 6 90 -1 4\n"
+  local m = C.parse(GOOD, "test")
+  check("parse: good map", m and #m.gates == 2 and m.title == "Test" and m.start[1] == 1 and m.start[3] == 90)
+  check("parse: gate fields, drawn and timed at GATE_SCALE", m.gates[1].kind == 0 and near(m.gates[1].hw, 2 * C.GATE_SCALE, 1e-9) and near(m.gates[1].hh, 1.5 * C.GATE_SCALE, 1e-9), m.gates[1].hw)
+  local low = C.parse("nacosim-map 1\ng 0 0 1.2 0 1.6 1\n", "low")
+  check("a bigger gate does not dip under the grass", low.gates[1][3] - low.gates[1].hh >= -1e-9, low.gates[1][3] - low.gates[1].hh)
+  check("parse: flag fields, pass width at FLAG_SCALE", m.gates[2].kind == 1 and m.gates[2].side == -1 and m.gates[2].pw == 4 * C.FLAG_SCALE)
+  local function bad(txt) local r, why = C.parse(txt, "x"); return r == nil, why end
+  check("parse: not a map", bad("hello\n"))
+  check("parse: newer format refused", bad("nacosim-map 2\ng 0 0 1 0 2 1\n"))
+  check("parse: bad number", bad("nacosim-map 1\ng 0 oops 1 0 2 1\n"))
+  check("parse: missing field", bad("nacosim-map 1\ng 0 0 1 0 2\n"))
+  check("parse: flag side must be 1 or -1", bad("nacosim-map 1\nf 0 0 4 0 2 4\n"))
+  check("parse: no checkpoints", bad("nacosim-map 1\nname x\n"))
+  check("parse: empty", bad(""))
+  local many = { "nacosim-map 1" }
+  for i = 1, C.MAX + 1 do many[#many + 1] = "g 0 " .. i .. " 2 0 2 1.5" end
+  check("parse: too many checkpoints refused", bad(table.concat(many, "\n")))
+end
+
+-- flags follow the web sim's testFlag: across*side > 0 and |across| <= passWidth
+do
+  local m = C.parse("nacosim-map 1\nf 0 30 6 0 1 4\n", "t")   -- heading north, pass on the right (east) of the pole
+  C.gates = m.gates
+  local function pass(x, dir)
+    local c = C.new()
+    local hit = false
+    for i = 0, 40 do
+      local y = 30 + (-3 + 6 * i / 40) * dir
+      hit = C.update(c, x, y, 2, i * 0.01) or hit
+    end
+    return hit
+  end
+  check("flag: passed on the right side", pass(2, 1))
+  check("flag: not on the wrong side", not pass(-2, 1))
+  check("flag: a metre of grace on the wrong side", pass(-0.8, 1) and not pass(-1.2, 1))
+  check("flag: no need to be close (pass width is doubled)", pass(5, 1) and pass(7.5, 1))
+  check("flag: but not unlimited", not pass(8.5, 1))
+  check("flag: not the wrong way", not pass(2, -1))
+  check("flag: height does not matter", (function() local c = C.new(); local hit = false
+    for i = 0, 40 do hit = C.update(c, 2, 27 + 6 * i / 40, 40, i * 0.01) or hit end return hit end)())
+  local left = C.parse("nacosim-map 1\nf 0 30 6 0 -1 4\n", "t")
+  C.gates = left.gates
+  check("flag: side -1 passes on the left", pass(-2, 1) and not pass(2, 1))
+  -- coming at the pole from the side: crossing its line at a shallow angle, from the east
+  C.gates = m.gates
+  local function sideways(angleDeg)
+    local c = C.new(); local hit = false
+    local a = math.rad(angleDeg)               -- 0 = straight north, 80 = nearly along the line
+    local dx, dy = math.sin(a), math.cos(a)
+    for i = -40, 40 do
+      hit = C.update(c, 4 + dx * i * 0.2, 30 + dy * i * 0.2, 2, (i + 40) * 0.01) or hit
+    end
+    return hit
+  end
+  check("flag: counts when crossed at 60 degrees from the side", sideways(60))
+  check("flag: and at 80 degrees, nearly along the line", sideways(80))
+  C.select("oval")
+end
+
+-- every map on this machine's card/zip loads cleanly and is sane
+do
+  local keys = C.scan()
+  check("scan finds oval first and at least race-vibes", keys[1] == "oval" and #keys >= 2, table.concat(keys, ","))
+  for i = 1, #keys do
+    local k = keys[i]
+    local mm = C.select(k)
+    check("map " .. k .. " loads without a note", C.loadNote == nil and C.current == k, tostring(C.loadNote))
+    local ok = #mm.gates >= 1 and #mm.gates <= C.MAX
+    local lap, px, py = 0, mm.start[1], mm.start[2]
+    for _, g in ipairs(mm.gates) do
+      for j = 1, 4 do if g[j] ~= g[j] or math.abs(g[j]) > 1000 then ok = false end end
+      lap = lap + math.sqrt((g[1] - px) ^ 2 + (g[2] - py) ^ 2)
+      px, py = g[1], g[2]
+      if g.kind == 0 and (g.hw < 0.5 or g.hh < 0.5) then ok = false end
+      if g.kind == 1 and (g.pw <= 0 or g.side * g.side ~= 1) then ok = false end
+    end
+    check("map " .. k .. " is sane (" .. #mm.gates .. " checkpoints, ~" .. math.floor(lap) .. " m)", ok and lap < 3000)
+    -- the quad is placed on the ground, ahead of the first gate it must take
+    local g1 = mm.gates[1]
+    local dx, dy = g1[1] - mm.start[1], g1[2] - mm.start[2]
+    local want = math.deg(math.atan(dx, dy)) % 360
+    local diff = math.abs(((want - mm.start[3]) + 180) % 360 - 180)
+    check("map " .. k .. " starts facing its first checkpoint (off by " .. math.floor(diff) .. " deg)", diff < 60 or k == "oval")
+  end
+  C.select("oval")
+end
+
+-- the marker says which way to go: an X when you are on the wrong side
+do
+  local V = require("view")
+  local lines = 0
+  lcd.clear = function() end
+  lcd.drawText = function() end
+  lcd.drawLine = function() lines = lines + 1 end
+  C.select("oval")
+  local g = C.gates[1]
+  local function markerLines(x, y, h)
+    local s = M.new(0, 0, 3, 0)
+    M.reset(s, x, y, 3, h)
+    s.z = g.mz      -- level with the gate, so it sits on screen with the camera tilted up
+    V.camera(s)
+    lines = 0
+    V.marker(g)
+    return lines, V.wrongSide(s, g)
+  end
+  -- twenty metres before the gate looking at it, and twenty past it looking back
+  local ok, wrongOk = markerLines(g[1] - g.nx * 20, g[2] - g.ny * 20, g[4])
+  local bad, wrongBad = markerLines(g[1] + g.nx * 20, g[2] + g.ny * 20, (g[4] + 180) % 360)
+  check("right side is not wrong, far side is", wrongOk == false and wrongBad == true)
+  check("diamond and arrow: 4 + 3 lines on the right side", ok == 7, ok)
+  check("the wrong side adds the X (2 lines)", bad == ok + 2, ok .. " vs " .. bad)
+  -- gate off screen (looking away): arrow only, plus an X when it is behind the plane
+  local offOk = markerLines(g[1] - g.nx * 10, g[2] - g.ny * 10, (g[4] + 180) % 360)   -- before it, facing away
+  local offBad = markerLines(g[1] + g.nx * 10, g[2] + g.ny * 10, g[4])                -- past it, facing away
+  check("an off-screen marker is an edge arrow (3 lines)", offOk == 3, offOk)
+  check("off-screen on the wrong side: edge arrow plus X", offBad == offOk + 2, offOk .. " vs " .. offBad)
+end
+
+-- a very long map name is cut to fit the menu row on a 128 px screen
+do
+  local St = require("settings")
+  St.setDisplay(require("view").display)
+  local C2 = C
+  local saved = C2.titleOf
+  C2.titleOf = function() return "an extremely long map file name indeed" end
+  local widest = 0
+  lcd.clear = function() end
+  lcd.drawLine = function() end
+  lcd.drawText = function(x, y, t) if #t * 5 + x > widest then widest = #t * 5 + x end end
+  St.open()
+  St.draw(M, C2)
+  C2.titleOf = saved
+  check("a long map name fits the menu row", widest <= 128, widest)
 end
 
 print(string.format("%d checks, %d failed", count, fails))
