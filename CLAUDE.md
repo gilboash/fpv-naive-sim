@@ -44,7 +44,7 @@ instead of relying on a chat transcript surviving.
 **M0 done and signed off (2026-08-25).** Measured on real hardware in a focused
 Chrome 147 window with a Radiomaster TX16S: tick source holds 1 kHz, sd 0.062 ms,
 p99 1.175 ms, zero stalls over 8 ms, and it beat the headless floor on every
-statistic. Raw results in `measurements/`, writeup in the README.
+statistic. Raw results in `measurements/`, writeup in `docs/DEVELOPMENT.md`.
 
 **The M0 finding that shaped M1:** the TX16S reports at **~200 Hz, not 1 kHz**.
 One poll in five sees new data, so the stick signal is a zero-order hold updated
@@ -744,7 +744,7 @@ isolation as a warning rather than a failure, since that is the host's property
 and not the build's.
 
 Still unmeasured: what the `setTimeout` fallback actually costs. Every jitter
-figure in the README is the atomics backend and the fallback is described as
+figure in `docs/DEVELOPMENT.md` is the atomics backend and the fallback is described as
 "measurably worse" on no evidence. A 60 s run against the plain static server on
 :8099 would settle it.
 
@@ -818,7 +818,7 @@ reboot.~~ It did not, on 2026-09-06. Containerised the same day — see
 Gilboa wanted to see who is actually flying the thing he lent out: which
 profiles exist, what rates and PIDs they use, which maps and for how long. So
 **the page is no longer purely client-side**, and that was the whole design
-constraint — it had been a deliberate property, defended in the README, rather
+constraint — it had been a deliberate property, defended in `docs/DEVELOPMENT.md`, rather
 than a gap.
 
 The shape: `src/telemetry.ts` accumulates a session summary and POSTs it to

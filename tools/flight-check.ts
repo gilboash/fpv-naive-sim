@@ -190,7 +190,7 @@ section('Airframe: thrust, hover, and endurance');
   // 6.4 A at hover (p10 3.0, p90 10.5) in NACRONOS session 14; this airframe is
   // 650 g, so roughly 10 A. The model sits near the bottom of that range
   // because its prop torque coefficient is about 1.7x low against the same log
-  // — a known open gap, listed in the README, not a licence to widen this.
+  // — a known open gap, listed in docs/DEVELOPMENT.md, not a licence to widen this.
   inRange('hover current', hs.telemetry.batteryA, 2, 20, ' A');
   ok(
     'hover holds altitude',

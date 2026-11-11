@@ -35,3 +35,10 @@ Not covered by the above, because they are not this project's to license:
   measurements/                    Blackbox logs and jitter measurements from
                                    real flights on real hardware. Data rather
                                    than software; kept for reproducibility.
+
+  edgetx/SCRIPTS/NacoSim/maps/     The track layouts other than race-vibes.map
+                                   (Macabim and the MultiGP 2024 tracks) are
+                                   the gate layouts of tracks designed by others,
+                                   converted from their Velocidrone files for
+                                   practice. Remove them before redistributing,
+                                   and they will be removed from here on request.

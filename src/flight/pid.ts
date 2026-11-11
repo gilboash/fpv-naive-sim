@@ -9,7 +9,7 @@
  *
  * Ported from src/main/flight/pid.c. Not modelled yet: anti-gravity, dynamic
  * idle, and the D_MIN gain scheduler. Each is a real part of modern feel and
- * each is listed in the README as a known gap rather than quietly omitted.
+ * each is listed in docs/DEVELOPMENT.md as a known gap rather than quietly omitted.
  */
 
 import { PT1 } from './filter.ts';

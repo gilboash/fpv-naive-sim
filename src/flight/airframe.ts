@@ -48,7 +48,7 @@ export interface Airframe {
  * 470 g all-up it accelerates harder than its thrust-to-weight alone suggests.
  *
  * Inertia and the rotor's aerodynamic scale are not guesses here — both were
- * measured from the logs, see tools/identify.ts and the README.
+ * measured from the logs, see tools/identify.ts and docs/DEVELOPMENT.md.
  */
 export function kronos(): Airframe {
   // 205 mm motor-to-motor diagonal, measured on the frame. A symmetric X, so
