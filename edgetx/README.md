@@ -43,6 +43,8 @@ Until it is made lighter:
   file with the radio and EdgeTX version.
 - `LOGS/nacosim_boot.txt` says how far NacoSim got before it stopped.
 
+Release notes are in `CHANGELOG.md`; the version you have is in **Settings > Info**.
+
 ## Flying
 
 - Sticks are read as they are in the model's setup. Throttle must be at zero to

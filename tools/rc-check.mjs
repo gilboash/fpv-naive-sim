@@ -57,6 +57,8 @@ if (href) {
   writeFileSync(file, buf);
   const names = execFileSync('unzip', ['-Z1', file]).toString().split('\n').filter(Boolean);
   check('zip has the tool script', names.includes('SCRIPTS/TOOLS/NacoSim.lua'));
+  check('zip has the release notes', names.includes('CHANGELOG.md'));
+  check('the version on the page is the one in the zip name', Boolean(href) && href.includes(/NacoSim (\d+\.\d+\.\d+)/.exec(html)?.[1] ?? '?'), href ?? '');
   check('zip has the memory check', names.includes('SCRIPTS/TOOLS/NacoMem.lua'));
   check('zip has every module', ['model', 'course', 'view', 'display', 'settings'].every((m) => names.includes(`SCRIPTS/NacoSim/${m}.lua`)));
   check('zip carries the map files', names.some((n) => /^SCRIPTS\/NacoSim\/maps\/.+\.map$/.test(n)), names.filter((n) => n.endsWith('.map')).join(', ') || 'none');

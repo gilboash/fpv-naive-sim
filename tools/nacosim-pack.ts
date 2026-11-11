@@ -69,6 +69,7 @@ function sources(root: string): Source[] {
   out.push({ src: 'SCRIPTS/TOOLS/NacoSim.lua', dest: 'SCRIPTS/TOOLS/NacoSim.lua' });
   out.push({ src: 'SCRIPTS/TOOLS/NacoMem.lua', dest: 'SCRIPTS/TOOLS/NacoMem.lua' });
   out.push({ src: 'README.md', dest: 'README.md' });
+  out.push({ src: 'CHANGELOG.md', dest: 'CHANGELOG.md' });
   if (existsSync(join(root, 'maps-local'))) {
     for (const e of readdirSync(join(root, 'maps-local'))) {
       if (e.endsWith('.map')) out.push({ src: `maps-local/${e}`, dest: `SCRIPTS/NacoSim/maps/${e}` });

@@ -39,7 +39,7 @@ end
 -- step. Layout: sound, map, preset, 9 rates, laps, tilt. The map is its file
 -- key (text) from v5; before that it was a position in the list, and there was
 -- only ever one map, so every older file means "oval".
-S.APP = "0.7.0"      -- NacoSim version, shown in Info and written to the logs
+S.APP = "0.7.1"      -- NacoSim version, shown in Info and written to the logs
 S.FORMAT = 5
 local NVALUES = 14
 

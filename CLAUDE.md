@@ -1632,7 +1632,12 @@ plus `NacoSim-latest.zip`), so there is no committed copy to forget. It is
 deterministic, so the sha256 printed on the page is the file's. Needs the
 `zip` command and fails the build without it — a dead download link is worse.
 Only `SCRIPTS/NacoSim`, the tool script and the README ship; dev probes and
-`.luac` caches do not. Bump `S.APP` in `settings.lua` for a release.
+`.luac` caches do not. **A release rule:** whenever the contents of the zip change (code, a map, the
+README, anything that ships), bump `S.APP` in `settings.lua` and add an entry to
+`edgetx/CHANGELOG.md`, so one version number never means two different zips. 0.7.0
+went out twice with different contents (first with two tracks, then with seven)
+because this was skipped; 0.7.1 is the fix. The page, the zip name and the Info
+screen all follow `S.APP`; `check:rc` asserts the page and the zip name agree.
 `serve.py` needed `.zip` in its MIME table (Windows registry trap again).
 Deploy is the usual `deploy-windows.sh`: it builds on the Mac, so the zip comes
 with `dist`. Verify a live deployment with `node tools/rc-check.mjs <url>`.
