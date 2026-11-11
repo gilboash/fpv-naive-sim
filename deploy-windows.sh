@@ -78,7 +78,9 @@ if ! $SSH "${OPTS[@]}" "$T" "$WIN_DEST_BS\\docker-fpvsim.bat" 2>&1 | tr -d '\r';
   exit 1
 fi
 echo "      verifying"
-$SSH "${OPTS[@]}" "$T" "curl.exe -s -m 5 -o NUL -w \"      HTTP %{http_code}, %{size_download} bytes\n\" http://127.0.0.1:5180/" 2>&1 | tr -d '\r'
+for p in / /web /rc; do
+  $SSH "${OPTS[@]}" "$T" "curl.exe -s -m 5 -o NUL -w \"      $p HTTP %{http_code}, %{size_download} bytes\n\" http://127.0.0.1:5180$p" 2>&1 | tr -d '\r'
+done
 # The admin view answers only on localhost, which is why it needs checking from
 # the box rather than from here: a deploy that leaves it down is invisible
 # otherwise, since nothing a pilot does touches it.

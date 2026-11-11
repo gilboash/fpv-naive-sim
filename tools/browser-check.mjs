@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const URL_TO_CHECK = process.argv[2] ?? 'http://localhost:5180/';
+const URL_TO_CHECK = process.argv[2] ?? 'http://localhost:5180/web';
 const PORT = 9222 + Math.floor(Math.random() * 500);
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 

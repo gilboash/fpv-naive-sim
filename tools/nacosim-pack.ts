@@ -18,12 +18,22 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+/** A map that is really in the zip, read from its own file. */
+export interface MapInfo {
+  slug: string;
+  title: string;
+  gates: number;
+  flags: number;
+}
+
 export interface RcPack {
   version: string;
   /** Versioned file name, e.g. NacoSim-0.5.0.zip. */
   name: string;
   data: Buffer;
   sha256: string;
+  /** The maps in this zip (not counting the built-in oval), by file name. */
+  maps: MapInfo[];
   /** Changes when any packed source file changes. */
   key: string;
 }
@@ -67,6 +77,24 @@ function sources(root: string): Source[] {
   return out.sort((a, b) => (a.dest < b.dest ? -1 : a.dest > b.dest ? 1 : 0));
 }
 
+/** What is actually in the zip, so the website describes the file it serves. */
+function describeMaps(root: string, files: Source[]): MapInfo[] {
+  const out: MapInfo[] = [];
+  for (const f of files) {
+    const m = /^SCRIPTS\/NacoSim\/maps\/([a-z0-9-]+)\.map$/.exec(f.dest);
+    if (!m) continue;
+    const text = readFileSync(join(root, f.src), 'utf8');
+    const lines = text.split('\n');
+    out.push({
+      slug: m[1]!,
+      title: lines.find((l) => l.startsWith('name '))?.slice(5).trim() ?? m[1]!,
+      gates: lines.filter((l) => l.startsWith('g ')).length,
+      flags: lines.filter((l) => l.startsWith('f ')).length,
+    });
+  }
+  return out;
+}
+
 export function packKey(root: string): string {
   return sources(root).map((f) => `${f.dest}:${statSync(join(root, f.src)).mtimeMs}:${statSync(join(root, f.src)).size}`).join('|');
 }
@@ -99,6 +127,7 @@ export function packRc(repoRoot: string): RcPack {
       name: `NacoSim-${version}.zip`,
       data,
       sha256: createHash('sha256').update(data).digest('hex'),
+      maps: describeMaps(root, files),
       key: packKey(root),
     };
   } finally {

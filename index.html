@@ -3,297 +3,128 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- A quad, drawn rather than an emoji: there is no quadcopter emoji, and a
-         helicopter on an FPV trainer is the wrong aircraft in the tab strip. -->
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Cg%20stroke='%23e8b923'%20stroke-width='3.5'%20stroke-linecap='round'%3E%3Cline%20x1='9'%20y1='9'%20x2='23'%20y2='23'/%3E%3Cline%20x1='23'%20y1='9'%20x2='9'%20y2='23'/%3E%3C/g%3E%3Cg%20fill='none'%20stroke='%23f2f2f2'%20stroke-width='2.5'%3E%3Ccircle%20cx='8'%20cy='8'%20r='5.5'/%3E%3Ccircle%20cx='24'%20cy='8'%20r='5.5'/%3E%3Ccircle%20cx='8'%20cy='24'%20r='5.5'/%3E%3Ccircle%20cx='24'%20cy='24'%20r='5.5'/%3E%3C/g%3E%3Crect%20x='12'%20y='12'%20width='8'%20height='8'%20rx='2'%20fill='%23e8b923'/%3E%3C/svg%3E"
+    <title>naco.fpvsim — an FPV trainer you can fly anywhere</title>
+    <meta
+      name="description"
+      content="naco.fpvsim: a free FPV simulator that runs in your browser with your own radio, and a pocket version that runs on the radio itself."
     />
-    <title>naco.fpvsim — FPV trainer</title>
   </head>
   <body>
     <header>
-      <h1>naco.fpvsim <span class="dim">/ trainer</span></h1>
-      <div id="status-pills" class="pills"></div>
+      <h1>naco.fpvsim <span class="dim">/ FPV trainer</span></h1>
+      <div class="pills">
+        <a class="pill-link" href="/web">web sim</a>
+        <a class="pill-link" href="/rc">NacoSim for your radio</a>
+      </div>
       <img id="brand-logo" alt="Breaking Carbon" />
     </header>
 
-    <div id="notice" class="notice" hidden></div>
-
-    <main>
-      <nav class="tabs" role="tablist">
-        <button id="tab-fly" class="tab" type="button" role="tab" aria-selected="true">Go fly</button>
-        <button id="tab-settings" class="tab" type="button" role="tab" aria-selected="false">Settings</button>
-        <button id="tab-instruments" class="tab" type="button" role="tab" aria-selected="false">Instruments</button>
-      </nav>
-
-      <div id="panel-fly" class="panel" role="tabpanel">
-      <section id="scene">
-        <h2>Sim</h2>
-        <div id="scene-view"></div>
-        <div id="race-panel"></div>
-        <div id="flight-live"></div>
-      </section>
-      </div>
-
-      <div id="panel-settings" class="panel" role="tabpanel" hidden>
-      <p class="startup">
-        <strong>New here?</strong> Put the radio in USB Joystick mode, plug it in, and
-        <strong>move a stick</strong> — browsers hide gamepads until they see activity.
-        Then: pick it in <em>1 · Device</em> and map your channels in
-        <em>2 · Channel mapping</em>. Load your rates from a Blackbox log in
-        <em>Instruments &rarr; 2 · Rates</em>, and fly on <em>Go fly</em>
-        (throttle down, then <kbd>A</kbd> to arm).
-      </p>
-
-      <section id="device">
-        <h2>1 · Device</h2>
-        <div class="row">
-          <select id="device-select"><option value="-1">— no device —</option></select>
-          <button id="device-refresh" type="button">Rescan</button>
-        </div>
-        <p class="hint" id="device-hint">
-          Put the radio in USB Joystick mode, plug it in, then <strong>move a stick or press a
-          button</strong> — browsers hide gamepads until they see activity.
+    <main class="landing">
+      <section class="hero">
+        <h2>An FPV trainer you can fly anywhere</h2>
+        <p class="lead">
+          naco.fpvsim is a free FPV simulator built on one idea: the stick feel has to be right
+          before anything else. Plug in your own radio and fly a 5&Prime; racing quad in the
+          browser, or load a pocket version onto the radio itself and fly on its own screen, with
+          nothing else needed.
         </p>
       </section>
 
-      <section id="mapping">
-        <h2>2 · Channel mapping</h2>
-        <div class="row">
-          <label>Stick mode
-            <select id="mode-select">
-              <option value="1">Mode 1</option>
-              <option value="2" selected>Mode 2</option>
-              <option value="3">Mode 3</option>
-              <option value="4">Mode 4</option>
-            </select>
-          </label>
-          <button id="calib-toggle" type="button">Calibrate endpoints</button>
-          <button id="center-capture" type="button">Capture centre</button>
-          <button id="mapping-reset" type="button" class="danger">Reset mapping</button>
-          <span id="save-state" class="dim"></span>
-        </div>
-        <p class="hint" id="mapping-hint">
-          The presets are a guess and often a wrong one: EdgeTX applies the stick mode in the
-          radio and emits AETR, so both the axis numbers and the invert flags may not match
-          yours. <strong>Use <em>Detect</em> per channel</strong> — it reads the direction you
-          actually moved, which is the only thing that is reliably right. Check pitch in
-          particular: forward stick must fly you <em>forward</em>.
-        </p>
-        <div id="channel-rows" class="channels"></div>
-
-        <h3 class="sub-head">Switches</h3>
-        <p class="hint">
-          Bind arm and reset to switches and the whole session runs from the radio.
-          <strong>Arm is held on</strong>, exactly as on a flight controller — flick it off in
-          the air and you disarm in the air. Reset fires once on the flick, so holding it does
-          not respawn over and over. A switch that is already on when the page loads will not
-          arm until you flick it off once, which is the same guard a real quad has.
-        </p>
-        <div id="aux-rows" class="channels"></div>
-        <p class="hint" id="bind-message"></p>
-      </section>
-
-
-      <section id="tracks">
-        <h2>Your own tracks</h2>
-        <p class="hint">
-          A track is a JSON description — where the gates go, what else is standing there, and the
-          order to take them in. Paste one below and it joins the map list on <em>Go fly</em>.
-          <strong>It stays in this browser.</strong> Nothing is uploaded, so a track you are still
-          working on is nobody else's problem; when one is good enough to keep, send the JSON to
-          <a href="https://www.instagram.com/nacofpv" target="_blank" rel="noopener noreferrer">@nacofpv</a>
-          or open a pull request on
-          <a href="https://github.com/gilboash/fpv-naive-sim" target="_blank" rel="noopener noreferrer">GitHub</a>
-          and it can become a built-in map.
-        </p>
-        <details class="track-help">
-          <summary>What can go in one</summary>
-          <p class="hint">
-            Positions are <strong>north</strong>, <strong>east</strong> and <strong>up</strong> in
-            metres from the middle of the field, and <strong>heading</strong> is a compass bearing
-            in degrees — 0 north, 90 east. Keep everything inside about 200 m.
-          </p>
-          <p class="hint">
-            <strong>pieces</strong> — things to fly around:
-            <code>cube</code> (add <code>storeys</code> to stack it),
-            <code>pole</code>, <code>pylon</code>, <code>ladder</code>, <code>arch</code>,
-            <code>chimney</code>, <code>roundChimney</code>, <code>tube</code>,
-            <code>window</code>.
-          </p>
-          <p class="hint">
-            <strong>gates and flags</strong> are pieces too — <code>gate</code> needs a
-            <code>heading</code>, <code>flag</code> also needs <code>side</code> (1 or -1). On their
-            own they are just things to fly through.
-          </p>
-          <p class="hint">
-            <strong>order</strong> is what makes it a race: give the gates you want timed an
-            <code>id</code>, then list those ids in the order to fly them. Anything without an
-            <code>id</code>, or left out of the order, is still there to fly — it just is not part
-            of the race. No <code>order</code> at all means a freestyle map with no timer.
-          </p>
-          <p class="hint">
-            For long runs there is <strong>course</strong> instead, which takes
-            <code>gateLine</code> (<code>count</code> and <code>spacing</code>) and
-            <code>gateRing</code> (<code>count</code> and <code>radius</code>) — a twenty-gate
-            circle in one line. Use <code>order</code> or <code>course</code>, not both.
-          </p>
-        </details>
-        <div class="row">
-          <button id="track-example-race" type="button">Example: race</button>
-          <button id="track-example-free" type="button">Example: freestyle</button>
-          <button id="track-save" type="button">Save track</button>
-          <span id="track-status" class="dim"></span>
-        </div>
-        <textarea id="track-json" spellcheck="false" rows="12"
-          placeholder="Paste a track here, or load one of the examples."></textarea>
-        <div id="track-list" class="track-list"></div>
-      </section>
-
-      <section id="sound">
-        <h2>Sound</h2>
-        <p class="hint">
-          Motor noise synthesised from the model's own rotor speeds — one tone per motor at
-          blade-pass frequency, so it beats and swells the way a real quad does under load,
-          and impacts you can hear. There is nothing to download; it is generated as you fly.
-          <strong>Turned off, it is exactly as before:</strong> the audio graph is closed
-          rather than muted, so nothing runs at all.
-        </p>
-        <div class="row">
-          <label><input type="checkbox" id="sound-enabled" checked /> Motor sound</label>
-          <label>Volume
-            <input type="range" id="sound-volume" min="0" max="100" step="1" />
-          </label>
-          <span id="sound-state" class="dim"></span>
-        </div>
-      </section>
-
-      <section id="telemetry">
-        <h2>Improving the simulator</h2>
-        <p class="hint">
-          This sends a short summary to the machine hosting this page — which maps you flew and
-          for how long, your rates and PIDs, lap times and crash count. It is used to improve
-          the simulator and goes nowhere else. No inputs, no positions and no recording of the
-          flight itself; you are identified by a random id, which
-          <em>Reset everything</em> below erases.
-        </p>
-        <div class="row">
-          <label><input type="checkbox" id="telemetry-enabled" checked /> Share usage data</label>
-          <label>Name (optional)
-            <input type="text" id="pilot-name" maxlength="60" placeholder="so it is not just an id" />
-          </label>
-        </div>
-        <p class="hint" id="telemetry-state"></p>
-      </section>
-
-      <section id="reset-all">
-        <h2>Reset everything</h2>
-        <p class="hint">
-          Puts every setting back to its default — channel mapping and calibration, rates,
-          PIDs and filters, camera and map — and erases your pilot id, so the next session
-          is a new pilot as far as the host is concerned. It only affects this browser, and
-          it cannot be undone. The page reloads afterwards.
-        </p>
-        <div class="row">
-          <button id="reset-all-btn" type="button" class="danger">Reset all settings</button>
-          <span id="reset-all-state" class="dim"></span>
-        </div>
-      </section>
-
-      <details class="diagnostics">
-        <summary>Diagnostics — raw axes and loop timing</summary>
-        <p class="hint">
-          Development instrumentation, kept because it is how the input path was
-          measured in the first place. Raw input is worth opening if a channel is
-          mapped to the wrong axis; the jitter test is a 60 s measurement of loop
-          pacing and nothing to do with how the quad flies.
-        </p>
-
-        <section id="recorder">
-          <h2>Flight recorder</h2>
-          <p class="hint">
-            Captures a flight in the same field layout Betaflight Blackbox uses, so a sim
-            flight and a real log can be read through one path. Sampling happens inside the
-            1 kHz tick; the export happens off it.
-          </p>
-          <div id="recorder-panel"></div>
-        </section>
-      <section id="raw">
-          <h2>Raw input</h2>
-          <div class="grid-2">
-            <div>
-              <h3>Axes</h3>
-              <div id="axes-list" class="axes"></div>
-            </div>
-            <div>
-              <h3>Buttons</h3>
-              <div id="buttons-list" class="buttons"></div>
-            </div>
+      <div class="choices">
+        <section class="choice">
+          <h2>The web sim</h2>
+          <figure class="visual">
+            <a href="/web"><img src="/nacosim/web-sim.jpg" width="1026" height="558" loading="lazy"
+              alt="The web sim: a first-person view flying toward a yellow race gate, with battery, height and speed on screen and the radio's sticks in the corner" /></a>
+            <figcaption>A first-person flight in the web sim, with its on-screen display and the stick view.</figcaption>
+          </figure>
+          <div class="thumbs">
+            <figure class="visual">
+              <img src="/nacosim/web-circle.jpg" width="1026" height="558" loading="lazy"
+                alt="The web sim on the Circle track: a row of gates curving away ahead" />
+              <figcaption>The Circle: twenty gates round a ring.</figcaption>
+            </figure>
+            <figure class="visual">
+              <img src="/nacosim/web-180s.jpg" width="1026" height="558" loading="lazy"
+                alt="The web sim on the 180s track: a gate with a turnaround behind it" />
+              <figcaption>The 180s: nothing but turnarounds.</figcaption>
+            </figure>
           </div>
-        </section>
-      <section id="jitter">
-          <h2>Polling jitter</h2>
-          <div class="row">
-            <label>Duration <input id="jitter-duration" type="number" min="5" max="600" step="5" value="60" /> s</label>
-            <label>Target <input id="jitter-hz" type="number" min="100" max="2000" step="100" value="1000" /> Hz</label>
-            <button id="jitter-start" type="button">Run test</button>
-            <span id="jitter-progress" class="dim"></span>
-          </div>
-          <p class="hint">
-            Measures the interval between physics-loop ticks on the main thread, how late each tick
-            fired, and how often the radio actually reports new data. Keep this tab focused — a
-            background tab is throttled and the numbers become meaningless.
+          <p>
+            Put your radio in USB Joystick mode, plug it in, and fly. The flight model has rotors,
+            motors, battery sag and a Betaflight-style PID loop, and it is checked against Blackbox
+            logs from real quads; you can load your own rates and tune from a log so the sticks
+            feel the way yours do.
           </p>
-          <div id="jitter-results"></div>
+          <ul class="steps">
+            <li>Race tracks with gates, flags and cubes, with lap timing and a result screen.</li>
+            <li>Your own tracks, written as plain data and kept in your browser.</li>
+            <li>Motor sound, an on-screen display and a fullscreen view, including on a phone.</li>
+          </ul>
+          <p class="download-row"><a class="download" href="/web">Fly the web sim</a></p>
         </section>
-      </details>
+
+        <section class="choice">
+          <h2>NacoSim for your radio</h2>
+          <figure class="visual art">
+            <a href="/rc"><img src="/nacosim/radio.svg" width="640" height="470" loading="lazy"
+              alt="A handheld radio transmitter with the NacoSim flight screen on its display" /></a>
+          </figure>
+          <div class="thumbs">
+            <figure class="visual">
+              <img src="/nacosim/fly-gate.svg" width="640" height="320" loading="lazy"
+                alt="The NacoSim screen on a black and white radio: a gate with a marker" />
+              <figcaption>Jumper T14: black and white.</figcaption>
+            </figure>
+            <figure class="visual">
+              <img src="/nacosim/colour-fly.svg" width="768" height="435" loading="lazy"
+                alt="The NacoSim screen on a colour radio: a yellow next gate and green ground grid" />
+              <figcaption>RadioMaster TX16S: colour.</figcaption>
+            </figure>
+          </div>
+          <p>
+            A small rate-mode quad simulator that runs as a script on an EdgeTX radio. It draws a
+            wireframe view on the radio's own screen and reads your real sticks and your own
+            rates, so you can practise gates and laps anywhere, with no computer or cable.
+          </p>
+          <ul class="steps">
+            <li>Tested on a Jumper T14 and a RadioMaster TX16S, black and white or colour.</li>
+            <li>{{TRACK_BULLET}}</li>
+            <li>A lap timer, gate beeps, and a marker that tells you which way through a gate.</li>
+          </ul>
+          <p class="download-row"><a class="download" href="/rc">See it and download</a></p>
+        </section>
       </div>
 
-      <div id="panel-instruments" class="panel" role="tabpanel" hidden>
-      <section id="flight">
-        <h2>1 · Stick check</h2>
-        <p class="hint">
-          Driven by your sticks, not by the flight model, so it answers one question:
-          are the channels mapped the right way round? Push right and it should bank right;
-          push forward and the nose should drop. Throttle does not move it — it hangs in
-          space — but it does spin the props, so that channel can be checked too.
+      <section>
+        <h2>About the project</h2>
+        <p>
+          It is built in the open and checked against the real thing wherever that is possible.
+          The model's timing is compared with logs from real quads, and where it still falls
+          short, that gap is written down rather than hidden. The web sim runs entirely in your
+          browser; the only thing it sends here is a session summary (your settings, the maps you
+          flew, how long, and a random ID), and there is a switch in its Settings to turn that
+          off.
         </p>
-        <div id="quad-check"></div>
+        <p class="hint">
+          Made by <a href="https://www.instagram.com/nacofpv" target="_blank" rel="noopener noreferrer">@nacofpv</a>.
+          Open source on
+          <a href="https://github.com/gilboash/fpv-naive-sim" target="_blank" rel="noopener noreferrer">GitHub</a>.
+        </p>
       </section>
 
-        <section id="tune">
-          <h2>2 · Rates</h2>
-          <p class="hint">
-            The rate curve is most of what makes muscle memory transfer, so it has to be
-            <em>your</em> curve. Every value here lives in the header of any Blackbox log —
-            load one and it comes across, PIDs and filters included, rather than being
-            retyped from a configurator. Saved in this browser.
-          </p>
-          <div id="tune-panel"></div>
-        </section>
-
-        <section id="pids">
-          <h2>3 · PIDs and filters</h2>
-          <p class="hint">
-            The gains the model flies on. Loading a Blackbox log in <em>Settings → Rates</em>
-            brings these across too, which is the reliable way to fly your own tune. Changes
-            apply about a second after you stop typing — sooner would rebuild the controller on
-            every keystroke and jolt the quad mid-air.
-          </p>
-          <div id="pid-panel"></div>
-        </section>
-
-        <section id="response">
-          <h2>4 · Response</h2>
-          <p class="hint">
-            What the controller is doing with those gains: commanded rate against achieved
-            rate, and the motor outputs the mixer is asking for. The gap between the two is
-            the tune.
-          </p>
-          <div id="flight-panel"></div>
-        </section>
-      </div>
+      <section class="support">
+        <h2>Support the project</h2>
+        <p>
+          To support continued development and server costs, you can buy me a coffee &#9749; &mdash;
+          or a steak &#129385;:
+        </p>
+        <div class="coffee-row">
+          <a class="coffee" href="https://www.paypal.com/paypalme/nacofpv/20USD" target="_blank" rel="noopener">&#9749; $20</a>
+          <a class="coffee" href="https://www.paypal.com/paypalme/nacofpv/40USD" target="_blank" rel="noopener">&#127866; $40</a>
+          <a class="coffee" href="https://www.paypal.com/paypalme/nacofpv/100USD" target="_blank" rel="noopener">&#129385; $100</a>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">
@@ -301,7 +132,6 @@
       <span class="site-by">
         naco.fpvsim by
         <a href="https://www.instagram.com/nacofpv" target="_blank" rel="noopener noreferrer">@nacofpv</a>
-        · <a href="/rc">NacoSim for your radio</a>
       </span>
       <span class="site-source">
         open source —
@@ -311,6 +141,6 @@
       </span>
     </footer>
 
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/landing.ts"></script>
   </body>
 </html>

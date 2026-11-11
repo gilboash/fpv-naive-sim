@@ -12,7 +12,10 @@
   <body>
     <header>
       <h1>naco.fpvsim <span class="dim">/ NacoSim for your radio</span></h1>
-      <div class="pills"><a class="pill-link" href="/">&larr; back to the sim</a></div>
+      <div class="pills">
+        <a class="pill-link" href="/">&larr; naco.fpvsim</a>
+        <a class="pill-link" href="/web">web sim</a>
+      </div>
       <img id="brand-logo" alt="Breaking Carbon" />
     </header>
 
@@ -34,7 +37,8 @@
           </span>
         </p>
         <p class="hint">
-          Developed and tested on a <strong>Jumper T14 with EdgeTX 2.10</strong>. Other radios are
+          Tested on a <strong>Jumper T14</strong> (EdgeTX 2.10, black and white screen) and a
+          <strong>RadioMaster TX16S</strong> (EdgeTX 2.11.5, colour screen). Other radios are
           untested; there is a short list of things worth checking
           <a href="#testing">below</a>.
         </p>
@@ -143,8 +147,8 @@
           </figure>
         </div>
         <p class="hint">
-          Colour radios use a separate drawing path; the colour pictures show how it is meant to
-          look, and it has so far been run on a TX16S only.
+          Colour radios use a separate drawing path. It has been tried on a TX16S, where it
+          works; other colour radios are untested.
         </p>
       </section>
 
@@ -181,6 +185,11 @@
           receiver (ELRS with telemetry) leaves less than an empty one. On a T14, NacoSim ran
           from an empty model but stopped at start-up with
           <code>NacoSim.lua:44 not enough memory</code> when an ELRS model was selected.
+        </p>
+        <p>
+          A colour radio has far more room: on a TX16S (EdgeTX 2.11.5, empty SIM model)
+          <strong>NacoMem</strong> showed NacoSim's parts taking about 64 KB with more than 400 KB
+          still free. A T14 has not been measured with it yet.
         </p>
         <ul class="steps">
           <li>
@@ -232,22 +241,7 @@
 
       <section>
         <h2>Tracks</h2>
-        <ul class="steps">
-          <li><strong>Oval</strong> — a simple eight-gate loop to learn the sim on.</li>
-          <li><strong>Race vibes</strong> — the sim's own track: ten gates and three flags.</li>
-          <li>
-            <strong>Macabim</strong> — the Velocidrone track <em>Macabim 2027 FRIL Race 2</em>:
-            15 gates and 10 flags in a tight field.
-          </li>
-          <li>
-            <strong>MGP Qualifier 2024 1, 2 and 3</strong> — the MultiGP 2024 qualifier tracks:
-            10 to 12 gates and 5 flags each, about 160 to 180 m a lap.
-          </li>
-          <li>
-            <strong>MGP Micro 2024</strong> — the 2024 MultiGP spring micro qualifier: 14 gates
-            and 4 flags in a small field, about 70 m a lap.
-          </li>
-        </ul>
+        {{TRACKS}}
         <p>
           A <em>flag</em> is a pole you pass on one side, in the right direction; the pennant on it
           points to the side to pass. Flags are forgiving: you do not need to be close, and
@@ -255,11 +249,9 @@
         </p>
         <p class="hint">
           The radio sim flies upright gates and flags only. Dive gates and cube openings are
-          left out (the MultiGP qualifiers have none) and obstacles such as posts and barriers
+          left out and obstacles such as posts and barriers
           are not modelled, so these are the courses, not the full tracks. Gate sizes are
-          estimates. On the MultiGP tracks the way each gate is flown and the side to pass each
-          flag are worked out from the course layout, not read from the game, so a gate or flag
-          may be the wrong way round compared with the real track: tell us if you see one.
+          estimates.{{MGP_NOTE}}
         </p>
         <p>
           Want your own? A track is one text file; copy it into
@@ -273,8 +265,7 @@
         <ul class="steps">
           <li><strong>Sound</strong> — gate and lap beeps on or off.</li>
           <li>
-            <strong>Map</strong> — the track: <em>Oval</em> (built in), <em>Race vibes</em> and
-            <em>Macabim</em>, the MultiGP 2024 qualifiers and more. Each track is a small file in <code>SCRIPTS/NacoSim/maps</code>.
+            <strong>Map</strong> — the track: {{TRACK_NAMES}}. Each track is a small file in <code>SCRIPTS/NacoSim/maps</code>.
           </li>
           <li><strong>Laps</strong> — 1, 3, 5 or 10.</li>
           <li><strong>Tilt</strong> — camera up-tilt, 0 to 60 degrees.</li>
@@ -292,7 +283,7 @@
       <section id="testing">
         <h2>Helping test on another radio</h2>
         <p>
-          If you try it on a radio other than a T14, please open <strong>Settings &rarr; Info</strong>
+          If you try it on a radio other than a T14 or a TX16S, please open <strong>Settings &rarr; Info</strong>
           and note what it says, then tell us:
         </p>
         <ul class="steps">

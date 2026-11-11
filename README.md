@@ -15,7 +15,7 @@ any art exists, and the instrument panel is how you judge it in the meantime.
 
 ```
 npm install
-npm run dev            # http://localhost:5180
+npm run dev            # http://localhost:5180  (front page; the sim is /web, the radio page /rc)
 npm run build          # typecheck + production build
 
 npm run check:flight   # physical acceptance tests for the model, headless

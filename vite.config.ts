@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
-import { packKey, packRc, type RcPack } from './tools/nacosim-pack.ts';
+import { packKey, packRc, type MapInfo, type RcPack } from './tools/nacosim-pack.ts';
 
 /**
  * A build stamp, so a session report can be tied to what was actually running.
@@ -26,6 +26,42 @@ function buildId(): string {
   }
 }
 
+// What to say about each track, by file name; a track not listed here is
+// described by its own file (name and counts). Counts always come from the file.
+const TRACK_NOTES: Record<string, string> = {
+  'race-vibes': "the sim's own track",
+  macabim: 'the Velocidrone track <em>Macabim 2027 FRIL Race 2</em>, in a tight field',
+  'mgp-q2024-1': 'a MultiGP 2024 qualifier track',
+  'mgp-q2024-2': 'a MultiGP 2024 qualifier track',
+  'mgp-q2024-3': 'a MultiGP 2024 qualifier track',
+  'mgp-micro-2024': 'the 2024 MultiGP spring micro qualifier, a small field',
+};
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** The pages' track text, written from the maps that are actually in the zip. */
+function trackText(maps: MapInfo[]): { list: string; names: string; bullet: string; mgpNote: string } {
+  const items = [
+    '<li><strong>Oval</strong> — a simple eight-gate loop to learn the sim on (built in).</li>',
+    ...maps.map((m) => {
+      const note = TRACK_NOTES[m.slug] ?? 'a track from a map file';
+      const counts = m.flags > 0 ? `${plural(m.gates, 'gate')} and ${plural(m.flags, 'flag')}` : plural(m.gates, 'gate');
+      return `<li><strong>${m.title}</strong> — ${note}: ${counts}.</li>`;
+    }),
+  ];
+  const n = maps.length + 1;
+  const hasMgp = maps.some((m) => m.slug.startsWith('mgp-'));
+  const word = NUMBER_WORDS[n] ?? String(n);
+  return {
+    list: `<ul class="steps">\n          ${items.join('\n          ')}\n        </ul>`,
+    names: ['Oval', ...maps.map((m) => m.title)].join(', '),
+    bullet: `${word[0]!.toUpperCase()}${word.slice(1)} ${n === 1 ? 'track' : 'tracks'} to start with${hasMgp ? ', including MultiGP qualifier courses' : ''}.`,
+    mgpNote: hasMgp
+      ? ' On the MultiGP tracks the way each gate is flown and the side to pass each flag are worked out from the course layout, not read from the game, so a gate or flag may be the wrong way round compared with the real track: tell us if you see one.'
+      : '',
+  };
+}
+
 /**
  * The NacoSim-for-your-radio page (rc.html) and its download. The zip is built
  * from edgetx/ every time, so what is offered can never differ from what is in
@@ -48,9 +84,14 @@ function nacosimRc(): Plugin {
     transformIndexHtml: {
       order: 'pre',
       handler(html: string): string {
-        if (!html.includes('{{ZIP}}')) return html;
+        if (!html.includes('{{')) return html;
         const p = pack();
+        const t = trackText(p.maps);
         return html
+          .replaceAll('{{TRACKS}}', t.list)
+          .replaceAll('{{TRACK_NAMES}}', t.names)
+          .replaceAll('{{TRACK_BULLET}}', t.bullet)
+          .replaceAll('{{MGP_NOTE}}', t.mgpNote)
           .replaceAll('{{ZIP}}', p.name)
           .replaceAll('{{VERSION}}', p.version)
           .replaceAll('{{SIZE}}', `${Math.max(1, Math.round(p.data.length / 1024))} KB`)
@@ -58,11 +99,12 @@ function nacosimRc(): Plugin {
       },
     },
     configureServer(server) {
-      // /rc is the page's address and rc.html the file, so /rc and /rc/ both
-      // serve it; otherwise the sim's HTML fallback answers with index.html.
+      // /rc and /web are addresses, rc.html and web.html the files, so /rc,
+      // /rc/, /web and /web/ all serve them; otherwise the HTML fallback would
+      // answer with the front page.
       server.middlewares.use((req, _res, next) => {
-        const m = /^\/rc\/?(\?.*)?$/.exec(req.url ?? '');
-        if (m) req.url = `/rc.html${m[1] ?? ''}`;
+        const m = /^\/(rc|web)\/?(\?.*)?$/.exec(req.url ?? '');
+        if (m) req.url = `/${m[1]}.html${m[2] ?? ''}`;
         next();
       });
       server.middlewares.use((req, res, next) => {
@@ -120,7 +162,13 @@ export default defineConfig({
   plugins: [nacosimRc()],
   build: {
     target: 'esnext',
-    // Two pages: the sim and the radio download page.
-    rollupOptions: { input: { main: resolve(import.meta.dirname, 'index.html'), rc: resolve(import.meta.dirname, 'rc.html') } },
+    // Three pages: the front page (/), the web sim (/web) and the radio page (/rc).
+    rollupOptions: {
+      input: {
+        landing: resolve(import.meta.dirname, 'index.html'),
+        web: resolve(import.meta.dirname, 'web.html'),
+        rc: resolve(import.meta.dirname, 'rc.html'),
+      },
+    },
   },
 });

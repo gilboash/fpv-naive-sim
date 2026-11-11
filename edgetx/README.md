@@ -16,8 +16,9 @@ Pure Lua, no PC or cable needed.
 3. Eject, then open it from the radio's **Tools** menu (how you reach Tools
    depends on the radio: see its EdgeTX manual).
 
-Developed and tested on a Jumper T14 running EdgeTX 2.10. Other radios and
-other EdgeTX versions are untested, see below.
+Tested on a **Jumper T14** (EdgeTX 2.10, black and white screen) and a
+**RadioMaster TX16S** (EdgeTX 2.11.5, colour screen). Other radios and other
+EdgeTX versions are untested, see below.
 
 ## Memory: use a light model, or "not enough memory"
 
@@ -26,6 +27,10 @@ what is left depends on the **model that is active**: a model set up for a real
 receiver (ELRS with telemetry and its sensors) leaves less than an empty one.
 On a T14, NacoSim ran from an empty model (named SIM) but stopped at start-up
 with `NacoSim.lua:44 not enough memory` when an ELRS model was selected.
+
+A colour radio has far more room: on a TX16S (EdgeTX 2.11.5, empty SIM model)
+NacoMem showed NacoSim's parts taking about 64 KB with more than 400 KB still
+free. A T14 has not been measured with NacoMem yet.
 
 Until it is made lighter:
 
@@ -91,9 +96,16 @@ Tracks from the web sim (or a Velocidrone import) are converted with
 `npm run edgetx:map -- --course course.json --name my-track`. Cube
 drop-throughs (horizontal gates) are skipped and reported, and obstacles are not
 carried across. Velocidrone tracks stored in the game's newer encoded format
-cannot be read by the importer, so they cannot be converted. `edgetx/maps-local/` is git-ignored: maps put there are not in
-the repository, but the website's zip includes them when it is built on that
-machine.
+cannot be read by the importer, so they cannot be converted. Maps in
+`SCRIPTS/NacoSim/maps/` are tracked and ship in the zip. `edgetx/maps-local/` is
+git-ignored, for maps that should stay private: the zip build adds them when it
+is built on a machine that has them.
+
+**Credits.** Race vibes is this project's own. Macabim and the MultiGP 2024
+qualifier and micro tracks are the gate layouts of tracks designed by others,
+converted from their Velocidrone files for practice; the sizes, directions and
+flag sides are estimates. If you made one of them and would rather it was not
+here, say so and it will be removed.
 
 ## Helping test on another radio
 
@@ -110,8 +122,8 @@ log, one line per frame) and `LOGS/nacosim_last.txt` (the last state, and any
 error). Send them with your report.
 
 Colour radios use a separate drawing path (coloured lines instead of black and
-white) that has only been tested against a simulated API, not real hardware.
-Expect rough edges there and please report them.
+white). It has been tried on a TX16S, where it works; other colour radios are
+untested, so expect some rough edges there and please report them.
 
 ## Developing
 

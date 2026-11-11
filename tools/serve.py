@@ -89,10 +89,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # and the ticker runs on Atomics rather than falling back to a timer.
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
-        # The build is content-hashed, but index.html is not, so it must never
-        # be cached or a redeploy is invisible to anyone who has visited before.
-        # (rc.html is the same: it names the current download by version.)
-        if self.path.split("?")[0] in ("/", "/index.html", "/rc", "/rc/", "/rc.html"):
+        # The build is content-hashed, but the pages are not (/, /web, /rc and
+        # their .html files), so they must never be cached or a redeploy is
+        # invisible to anyone who has visited before. rc.html also names the
+        # current download by version.
+        page = self.path.split("?")[0]
+        if page.endswith("/") or os.path.splitext(page)[1] in ("", ".html"):
             self.send_header("Cache-Control", "no-store")
         super().end_headers()
 

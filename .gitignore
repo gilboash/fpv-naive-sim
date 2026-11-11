@@ -21,6 +21,7 @@ build/
 # rather than bundled, and far too large to live in git.
 /reference/
 
-# NacoSim maps that are not ours to publish in the repo. The zip build picks them
-# up from here when present, so a deployment built on this Mac still carries them.
+# Private NacoSim maps. Anything in edgetx/SCRIPTS/NacoSim/maps is tracked and
+# ships in the zip; a .map file put here instead stays out of git, and the zip
+# build adds it when it is present on the machine doing the build.
 /edgetx/maps-local/

@@ -1536,10 +1536,12 @@ record per line (format in `edgetx/README.md`), parsed on selection, listed with
 position (settings format 5; every older file meant "oval"). Upright gates and
 flags only. `tools/edgetx-map.ts` (`npm run edgetx:map`) converts a web-sim
 course or a dumped `Course` JSON and verifies by reading the file back.
-`race-vibes.map` is committed. **`macabim.map` is not**: it is another
-designer's track, so it lives in the git-ignored `edgetx/maps-local/`, which the
-zip build includes when present (so a deployment built on that Mac carries it,
-and a build elsewhere does not). Made by dumping the imported `Course` from the
+All of them are committed in `SCRIPTS/NacoSim/maps/` (decided 2026-11-11 after a
+friend unzipping a build made elsewhere saw only Oval and Race vibes: the maps
+had been git-ignored in `edgetx/maps-local/`, which only the zip built on this
+Mac included). `maps-local/` remains for any map that must stay private. Macabim,
+the MultiGP tracks and the README credit note: they are other designers' layouts.
+Macabim was made by dumping the imported `Course` from the
 `velocidrone-pilot` branch's `trackFromSaved` (a temporary `git worktree`), then
 the converter. The flag rule is the web sim's `testFlag`: `across*side > 0`,
 side +1 = pass on the RIGHT of the pole (the doc comment on `Flag.side` in
@@ -1585,18 +1587,38 @@ Things the radio taught us that no desktop test would have, all now covered:
   not methods; the test stubs match.
 - `%d` in `string.format` needs an integer on newer Lua: round first.
 
-**Not verified:** anything on a radio other than the T14. The colour path
-(`display.lua`) has only run against a simulated API; text sizes there are
-estimates. Key mapping (MENU/PAGE/touch) for other radios is a guess. EdgeTX
-Companion is not installed here.
+**Tested on real hardware (Gilboa, 2026-11-11):** a Jumper T14 (EdgeTX 2.10) and a
+RadioMaster TX16S (EdgeTX 2.11.5, "works great"), so the colour path is verified
+on a TX16S. **Not verified:** any other radio or colour screen (text sizes in
+`display.lua` were estimates), key mapping (MENU/PAGE/touch) elsewhere, and the
+T14 with an ELRS model (it ran out of memory; NacoMem on the TX16S SIM model:
+modules ~64 KB, >400 KB free; the T14 has not been measured with it yet).
+EdgeTX Companion is not installed here.
 
-**The page is at `/rc`** (also `/rc/` and `/rc.html`): `serve.py` maps an
+**The site has three pages** (2026-11-11): `/` is the front page (`index.html`,
+`src/landing.ts`: what the project is, the two ways to use it, a PayPal support
+card with the same tiers and wording as the mediabox portal in
+`~/fpv-field-access/portal`), `/web` is the web sim (`web.html`, what used to be
+`/`) and `/rc` the radio page. `serve.py` turns any extensionless path into
+`<path>.html`, the Vite dev server rewrites `/web` and `/rc`, and every page is
+`no-store` (they are not content-hashed). `npm run check:browser` defaults to
+`/web` now; `check:rc` covers all three pages and their links; the deploy script
+verifies `/`, `/web` and `/rc`. Anything that used to open the sim at the root
+now lands on the front page.
+
+**The radio page is at `/rc`** (also `/rc/` and `/rc.html`): `serve.py` maps an
 extensionless path to `<path>.html` when nothing by that name exists, and the
 Vite dev server rewrites `/rc` in the `nacosim-rc` plugin (without it `/rc/`
 fell through to the sim). The pictures on it are **drawn by the sim's own code**:
 `lua edgetx/test/shots.lua` (`npm run rc:shots`) runs the real view, menu and
 finish code against a stub LCD and writes SVGs into `public/nacosim/`, which are
-committed. Re-run it whenever a screen changes. It uses only maps that are in the
+committed. Re-run it whenever a screen changes. The front page's pictures: `public/nacosim/radio.svg` is a generic radio drawn by `tools/rc-radio-art.mjs`
+(`npm run rc:shots` runs it after `shots.lua`) with the real flight screen lifted
+from `fly-gate.svg`; `web-sim.jpg`, `web-circle.jpg` and `web-180s.jpg` are
+captured from the running dev server by `tools/web-shot.mjs` (`npm run
+rc:webshot`): headless Chrome with the software GL renderer, the quad placed in
+flight ten metres before a map's first checkpoint through the `__fpvsim` debug
+handle. Re-run it when the sim's look changes. It uses only maps that are in the
 repository, so it rebuilds from a clean clone. `rc-check` fetches every image.
 
 **The download page** (`rc.html`, `src/rc.ts`, `tools/nacosim-pack.ts`, the

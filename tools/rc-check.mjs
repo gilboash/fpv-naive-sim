@@ -5,6 +5,8 @@
  * scripts and nothing from the dev folders.
  *
  *   node tools/rc-check.mjs [base-url]      (default http://localhost:5180)
+ * Also checks the front page and the sim's address: / is the front page, /web the
+ * sim, /rc this page.
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -58,6 +60,10 @@ if (href) {
   check('zip has the memory check', names.includes('SCRIPTS/TOOLS/NacoMem.lua'));
   check('zip has every module', ['model', 'course', 'view', 'display', 'settings'].every((m) => names.includes(`SCRIPTS/NacoSim/${m}.lua`)));
   check('zip carries the map files', names.some((n) => /^SCRIPTS\/NacoSim\/maps\/.+\.map$/.test(n)), names.filter((n) => n.endsWith('.map')).join(', ') || 'none');
+  for (const entry of names.filter((n) => /^SCRIPTS\/NacoSim\/maps\/.+\.map$/.test(n))) {
+    const title = /^name (.+)$/m.exec(execFileSync('unzip', ['-p', file, entry]).toString())?.[1]?.trim();
+    check(`the page lists the track in ${entry.split('/').pop()}`, Boolean(title) && html.includes(title), title ?? 'no name line');
+  }
   check('zip carries no dev probes or compiled copies', !names.some((n) => /Probe|Bisect|\.luac$/.test(n)), names.join(', '));
 
   const latest = await fetch(`${base}/downloads/NacoSim-latest.zip`);
@@ -65,8 +71,36 @@ if (href) {
   check('NacoSim-latest.zip is the same file', latest.ok && createHash('sha256').update(lbuf).digest('hex') === shaOnPage);
 }
 
-const home = await (await fetch(`${base}/`)).text();
-check('the sim page links to it at /rc', home.includes('href="/rc"'));
+// The three pages and how they link: front page (/), web sim (/web), radio (/rc).
+const homeRes = await fetch(`${base}/`);
+const home = await homeRes.text();
+check('front page loads at /', homeRes.ok && home.includes('An FPV trainer you can fly anywhere'), `HTTP ${homeRes.status}`);
+check('front page links to the web sim and the radio page', home.includes('href="/web"') && home.includes('href="/rc"'));
+check('front page has the support card', home.includes('paypal.com/paypalme/nacofpv') && home.includes('Support the project'));
+check('front page is not the sim', !home.includes('id="tab-fly"'));
+const homeImgs = [...home.matchAll(/src="(\/nacosim\/[^"]+)"/g)].map((m) => m[1]);
+check('front page shows the sim, the radio and its screens', ['web-sim.jpg', 'web-circle.jpg', 'web-180s.jpg', 'radio.svg', 'fly-gate.svg', 'colour-fly.svg'].every((n) => homeImgs.some((u) => u.endsWith(n))), `${homeImgs.length} images`);
+for (const src of homeImgs) {
+  const r = await fetch(base + src);
+  const buf = Buffer.from(await r.arrayBuffer());
+  const ct = r.headers.get('content-type') ?? '';
+  check(`front page image ${src}`, r.ok && buf.length > 500 && (ct.includes('svg') || ct.includes('jpeg')), `${ct}, ${buf.length} bytes`);
+}
+const webRes = await fetch(`${base}/web`);
+const web = await webRes.text();
+check('the web sim is at /web', webRes.ok && web.includes('id="tab-fly"'), `HTTP ${webRes.status}`);
+for (const alt of ['/web/', '/web.html']) {
+  const r = await fetch(base + alt);
+  const t = await r.text();
+  check(`${alt} also serves the sim`, r.ok && t === web);
+}
+check('the sim links back to the front page and to /rc', web.includes('href="/"') && web.includes('href="/rc"'));
+check('the radio page links back to the front page and the sim', html.includes('href="/"') && html.includes('href="/web"'));
+const cc = (await fetch(`${base}/web`)).headers.get('cache-control');
+if (cc !== null) check('pages are not cached', /no-store|no-cache/.test(cc), cc);
+const missing = await fetch(`${base}/no-such-page`);
+// the production server answers 404; the Vite dev server falls back to the front page
+if ((missing.headers.get('server') ?? '').includes('SimpleHTTP')) check('unknown paths are a 404', missing.status === 404, `HTTP ${missing.status}`);
 
 console.log(failed === 0 ? '\nrc check passed' : `\n${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
