@@ -1516,6 +1516,62 @@ on 5181 — it failed three times and settled on "unhealthy" while the page was
 answering perfectly well. Caught by watching the failing streak climb rather
 than by trusting the first green `docker ps`.
 
+## NacoSim on the radio (2026-11-11)
+
+`edgetx/` is a small rate-mode FPV sim that runs **on an EdgeTX radio** as a
+Lua tool, flown with the real sticks (Gilboa's Jumper T14, monochrome 128x64,
+EdgeTX 2.10). Orthogonal to the web sim and the Velocidrone work: it shares no
+code with `src/`. Install and tester notes are in `edgetx/README.md`; the
+website offers it at `/rc.html` (built from `edgetx/` every time, see below).
+
+Layout: `SCRIPTS/TOOLS/NacoSim.lua` (loop, menu wiring, logging) and
+`SCRIPTS/NacoSim/` — `model.lua` (point mass + orientation, Betaflight rates,
+no screen), `course.lua` (maps, gate crossing, 3-lap race), `view.lua`
+(wireframe), `display.lua` (everything that differs per radio: size, fonts,
+colours, how much to draw), `settings.lua` (sound, map, laps, tilt, rates,
+Info; saved to the SD card with a format version, older files migrate, newer
+ones are ignored). Tests, from the repo root: `lua edgetx/test/run.lua`,
+`tool.lua`, `sizes.lua` (seven screens, mono and colour, strict LCD),
+`cost.lua`. `brew install lua` for the interpreter.
+
+Things the radio taught us that no desktop test would have, all now covered:
+
+- **The radio's Lua has no `table` and no `os` library.** `table.concat` in the
+  settings save threw on the first close of the menu, after the file had
+  already been truncated to zero bytes. The tool and size tests hide both
+  globals now. The log on the SD card is what showed it.
+- **Lines far outside the screen end the script.** At steep roll or pitch the
+  horizon and ground-grid endpoints reach thousands of pixels; handing those to
+  `lcd.drawLine` made the app quit. Every line is clipped to the screen first
+  (`view.lua`); a test sweeps 625 attitudes and fails on any coordinate off
+  screen or not an integer, and fails on the old code.
+- **A file held open across frames was never written** (0 bytes). Buffer lines
+  and open/append/close once a second; a crash flushes immediately.
+- **Instruction budget.** A frame cost ~7700 Lua instructions at first; it is
+  ~5000 worst case now (`cost.lua`). Drawing was most of it: project a gate's
+  four corners once, draw few gates, keep the grid small. The radio's own
+  `getUsage` read 0% throughout, so it is no measure.
+- **EdgeTX's `io` is `io.write(file, ...)` / `io.read(file, n)` / `io.close(file)`**,
+  not methods; the test stubs match.
+- `%d` in `string.format` needs an integer on newer Lua: round first.
+
+**Not verified:** anything on a radio other than the T14. The colour path
+(`display.lua`) has only run against a simulated API; text sizes there are
+estimates. Key mapping (MENU/PAGE/touch) for other radios is a guess. EdgeTX
+Companion is not installed here.
+
+**The download page** (`rc.html`, `src/rc.ts`, `tools/nacosim-pack.ts`, the
+`nacosim-rc` plugin in vite.config.ts, `npm run check:rc`). The zip is built
+from `edgetx/` at build time and emitted to `dist/downloads/` (versioned name
+plus `NacoSim-latest.zip`), so there is no committed copy to forget. It is
+deterministic, so the sha256 printed on the page is the file's. Needs the
+`zip` command and fails the build without it — a dead download link is worse.
+Only `SCRIPTS/NacoSim`, the tool script and the README ship; dev probes and
+`.luac` caches do not. Bump `S.APP` in `settings.lua` for a release.
+`serve.py` needed `.zip` in its MIME table (Windows registry trap again).
+Deploy is the usual `deploy-windows.sh`: it builds on the Mac, so the zip comes
+with `dist`. Verify a live deployment with `node tools/rc-check.mjs <url>`.
+
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:
 

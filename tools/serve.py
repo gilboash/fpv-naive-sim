@@ -48,6 +48,7 @@ TYPES = {
     ".png": "image/png",
     ".map": "application/json; charset=utf-8",
     ".mp4": "video/mp4",
+    ".zip": "application/zip",
 }
 
 

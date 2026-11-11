@@ -1,5 +1,7 @@
 import { execSync } from 'node:child_process';
-import { defineConfig } from 'vite';
+import { resolve } from 'node:path';
+import { defineConfig, type Plugin } from 'vite';
+import { packKey, packRc, type RcPack } from './tools/nacosim-pack.ts';
 
 /**
  * A build stamp, so a session report can be tied to what was actually running.
@@ -22,6 +24,56 @@ function buildId(): string {
   } catch {
     return day;
   }
+}
+
+/**
+ * The NacoSim-for-your-radio page (rc.html) and its download. The zip is built
+ * from edgetx/ every time, so what is offered can never differ from what is in
+ * the repository; the page text gets the version, size and checksum of that
+ * exact file.
+ *
+ * Build: the zip is emitted into dist/downloads, once under its versioned name
+ * and once as NacoSim-latest.zip. Dev: the same two URLs are answered from
+ * memory.
+ */
+function nacosimRc(): Plugin {
+  let memo: RcPack | null = null;
+  const pack = (): RcPack => {
+    const root = resolve(import.meta.dirname, 'edgetx');
+    if (!memo || memo.key !== packKey(root)) memo = packRc(import.meta.dirname);
+    return memo;
+  };
+  return {
+    name: 'nacosim-rc',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html: string): string {
+        if (!html.includes('{{ZIP}}')) return html;
+        const p = pack();
+        return html
+          .replaceAll('{{ZIP}}', p.name)
+          .replaceAll('{{VERSION}}', p.version)
+          .replaceAll('{{SIZE}}', `${Math.max(1, Math.round(p.data.length / 1024))} KB`)
+          .replaceAll('{{SHA}}', p.sha256);
+      },
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const m = /^\/downloads\/(NacoSim-[^/?#]*\.zip)/.exec(req.url ?? '');
+        if (!m) return next();
+        const p = pack();
+        if (m[1] !== p.name && m[1] !== 'NacoSim-latest.zip') return next();
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Length', String(p.data.length));
+        res.end(p.data);
+      });
+    },
+    generateBundle() {
+      const p = pack();
+      this.emitFile({ type: 'asset', fileName: `downloads/${p.name}`, source: p.data });
+      this.emitFile({ type: 'asset', fileName: 'downloads/NacoSim-latest.zip', source: p.data });
+    },
+  };
 }
 
 // COOP/COEP are set so SharedArrayBuffer / Atomics.wait are available.
@@ -58,5 +110,10 @@ export default defineConfig({
       .filter((h) => h.length > 0),
   },
   define: { __FPVSIM_BUILD__: JSON.stringify(buildId()) },
-  build: { target: 'esnext' },
+  plugins: [nacosimRc()],
+  build: {
+    target: 'esnext',
+    // Two pages: the sim and the radio download page.
+    rollupOptions: { input: { main: resolve(import.meta.dirname, 'index.html'), rc: resolve(import.meta.dirname, 'rc.html') } },
+  },
 });
