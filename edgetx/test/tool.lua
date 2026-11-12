@@ -27,6 +27,13 @@ local _tmpname, _remove = os.tmpname, os.remove
 table, os = nil, nil
 local tool = dofile(here .. "/SCRIPTS/TOOLS/NacoSim.lua")
 tool.init()
+-- the key that launched the tool must not respawn or open anything in the first second
+do
+  local s0 = tool.peek(); s0.x = 5
+  tool.run(EVT_VIRTUAL_ENTER); tool.run(EVT_VIRTUAL_MENU)
+  assert(s0.x == 5, "an ENTER right after launch must be ignored (it would respawn)")
+  tick = tick + 100
+end
 local function frames(n) for _ = 1, n do tick = tick + 5; assert(tool.run(0) == 0) end end
 frames(10)                      -- arm on the ground
 -- settings menu: MENU opens (the quad pauses), ENTER on Sound toggles, EXIT closes and saves

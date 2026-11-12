@@ -41,7 +41,18 @@ local function logRow(t, ail, ele, rud, thr, note)
   if nbuf >= 20 then flush() end
 end
 
-local function load(name) return assert(loadScript(base .. name .. ".lua"))() end
+-- A failed compile ("not enough memory") is retried once after a full
+-- collection; if it still fails the reason is shown instead of a raw error.
+local bootError, bornAt = nil, 0
+local function load(name)
+  local chunk, err = loadScript(base .. name .. ".lua")
+  if not chunk then
+    collectgarbage(); collectgarbage()
+    chunk, err = loadScript(base .. name .. ".lua")
+  end
+  if not chunk then error(name .. ": " .. tostring(err), 0) end
+  return chunk()
+end
 
 local function respawn()
   model.reset(s, course.start[1], course.start[2], 0, course.start[3])
@@ -63,15 +74,17 @@ local function boot(stage)
   end
 end
 
-local function init()
+local function initInner()
+  -- settings is the biggest module, so compile it first, while the heap is
+  -- emptiest: the compile peak is what runs out on small radios.
+  boot("settings")
+  settings = load("settings")
   boot("model")
   model = load("model")
   boot("course")
   course = load("course")
   boot("view")
   view = load("view")
-  boot("settings")
-  settings = load("settings")
   boot("setup")
   D = view.display
   settings.setDisplay(D)
@@ -89,7 +102,29 @@ local function init()
   hint = 60
 end
 
+local function init()
+  bornAt = getTime()
+  local ok, err = pcall(initInner)
+  if not ok then
+    bootError = tostring(err)
+    local f = io.open("/LOGS/nacosim_boot.txt", "a")
+    if f then io.write(f, "FAILED " .. bootError .. "\n"); io.close(f) end
+  end
+end
+
 local function runInner(event)
+  if bootError then
+    lcd.clear()
+    lcd.drawText(2, 2, "NacoSim: not enough memory", SMLSIZE)
+    lcd.drawText(2, 14, "Run NacoMem once from", SMLSIZE)
+    lcd.drawText(2, 24, "Tools, then open NacoSim", SMLSIZE)
+    lcd.drawText(2, 34, "again. EXIT leaves.", SMLSIZE)
+    lcd.drawText(2, 48, bootError, SMLSIZE)
+    return (event == (EVT_VIRTUAL_EXIT or EVT_EXIT_BREAK)) and 1 or 0
+  end
+  -- the key that launched the tool can arrive as its first ENTER or MENU:
+  -- ignore those for the first second
+  if getTime() - bornAt < 100 and event ~= (EVT_VIRTUAL_EXIT or EVT_EXIT_BREAK) then event = 0 end
   local EXIT = EVT_VIRTUAL_EXIT or EVT_EXIT_BREAK
   local ENTER = EVT_VIRTUAL_ENTER or EVT_ENTER_BREAK
   local OPEN = { EVT_VIRTUAL_MENU, EVT_VIRTUAL_NEXT_PAGE, EVT_VIRTUAL_PREV_PAGE, EVT_TOUCH_TAP }

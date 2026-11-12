@@ -42,7 +42,9 @@
         </p>
         <p class="hint">
           Tested on a <strong>Jumper T14</strong> (EdgeTX 2.10, black and white screen) and a
-          <strong>RadioMaster TX16S</strong> (EdgeTX 2.11.5, colour screen). Other radios are
+          <strong>RadioMaster TX16S</strong> (EdgeTX 2.11.5, colour screen), and by other pilots
+          on a <strong>RadioMaster TX15</strong> (colour) and a <strong>RadioMaster Pocket</strong>
+          (EdgeTX 2.10, black and white screen). Other radios are
           untested; there is a short list of things worth checking
           <a href="#testing">below</a>.
         </p>
@@ -193,6 +195,10 @@
         <p class="hint">
           To update, copy the new <code>SCRIPTS</code> folder over the old one. Your settings
           are kept; if a new version changes how settings are stored, it migrates yours.
+          <strong>When updating, also delete the old <code>.luac</code> files</strong> (the
+          radio's compiled copies) next to the scripts, in <code>SCRIPTS/TOOLS</code> and
+          <code>SCRIPTS/NacoSim</code>, so the radio compiles the new ones instead of
+          running the old code.
         </p>
       </section>
 
@@ -302,7 +308,7 @@
       <section id="testing">
         <h2>Helping test on another radio</h2>
         <p>
-          If you try it on a radio other than a T14 or a TX16S, please open <strong>Settings &rarr; Info</strong>
+          If you try it on a radio other than a T14, TX16S, TX15 or Pocket, please open <strong>Settings &rarr; Info</strong>
           and note what it says, then tell us:
         </p>
         <ul class="steps">

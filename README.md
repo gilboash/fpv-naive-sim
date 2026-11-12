@@ -12,9 +12,11 @@ to be right before anything else.** There are two ways to use it:
 
 A rate-mode quad with a wireframe view, gates and flags, a lap timer, gate
 beeps, a settings menu (sound, track, laps, camera tilt, your Betaflight rates)
-and seven tracks, including MultiGP qualifier courses. Tested on a **Jumper T14**
-(EdgeTX 2.10, black and white) and a **RadioMaster TX16S** (EdgeTX 2.11.5,
-colour); other radios are untested and reports are welcome.
+and eight tracks, including MultiGP qualifier courses. Tested on a **Jumper T14**
+(EdgeTX 2.10, black and white), a **RadioMaster TX16S** (EdgeTX 2.11.5,
+colour) and, by other pilots, a **RadioMaster TX15** (colour) and a
+**RadioMaster Pocket** (EdgeTX 2.10, black and white); other radios are
+untested and reports are welcome.
 
 **Install**
 
@@ -30,7 +32,10 @@ colour); other radios are untested and reports are welcome.
    SCRIPTS/NacoSim/maps/         the tracks, one .map file each
    ```
 
-3. Eject the card and open **NacoSim** from the **Tools** menu. Bring the throttle
+3. **Updating?** Delete the old `.luac` files in `SCRIPTS/TOOLS` and
+   `SCRIPTS/NacoSim` first (the radio's compiled copies), or it may keep running
+   the old code.
+4. Eject the card and open **NacoSim** from the **Tools** menu. Bring the throttle
    to zero to arm. **MENU** (or a PAGE key, or a tap on a touch radio) opens the
    settings; **ENTER** respawns; **EXIT** leaves.
 

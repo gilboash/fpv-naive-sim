@@ -13,11 +13,17 @@ Pure Lua, no PC or cable needed.
    - `SCRIPTS/TOOLS/NacoSim.lua` (and `NacoMem.lua`, the memory check)
    - `SCRIPTS/NacoSim/` (`model.lua`, `course.lua`, `view.lua`, `display.lua`, `settings.lua`)
    - `SCRIPTS/NacoSim/maps/` (the tracks, one `.map` file each)
-3. Eject, then open it from the radio's **Tools** menu (how you reach Tools
+3. **Updating?** Delete the old `.luac` files in `SCRIPTS/TOOLS` and
+   `SCRIPTS/NacoSim` (the radio's compiled copies of NacoSim, NacoMem and the
+   parts): the files in the zip carry a fixed date, so the radio may otherwise
+   keep running the old compiled code. Settings are kept.
+4. Eject, then open it from the radio's **Tools** menu (how you reach Tools
    depends on the radio: see its EdgeTX manual).
 
 Tested on a **Jumper T14** (EdgeTX 2.10, black and white screen) and a
-**RadioMaster TX16S** (EdgeTX 2.11.5, colour screen). Other radios and other
+**RadioMaster TX16S** (EdgeTX 2.11.5, colour screen), and by other pilots on a
+**RadioMaster TX15** (colour) and a **RadioMaster Pocket** (EdgeTX 2.10, black
+and white). Other radios and other
 EdgeTX versions are untested, see below.
 
 ## Memory: use a light model, or "not enough memory"
@@ -31,6 +37,12 @@ with `NacoSim.lua:44 not enough memory` when an ELRS model was selected.
 A colour radio has far more room: on a TX16S (EdgeTX 2.11.5, empty SIM model)
 NacoMem showed NacoSim's parts taking about 64 KB with more than 400 KB still
 free. A T14 has not been measured with NacoMem yet.
+
+On a **RadioMaster Pocket** (EdgeTX 2.10, black and white) the first start can
+say `not enough memory` even from an empty model with the radio modules off:
+compiling the parts needs more memory than keeping them. Run **NacoMem** once,
+then open NacoSim again; the radio keeps the compiled parts and later starts
+work. (Reported by a tester; 0.7.2 loads the biggest part first and retries.)
 
 Until it is made lighter:
 
@@ -137,6 +149,7 @@ Needs a desktop `lua` (`brew install lua`). From the repository root:
                                 # strict about the LCD API and the screen edge
     lua edgetx/test/cost.lua    # Lua instructions per frame, worst checkpoint of every map
     lua edgetx/test/mem.lua     # the NacoMem probe against a stub radio
+    lua edgetx/test/lowmem.lua  # a part that will not load: retry, then the on-screen message
     lua edgetx/test/snap.lua out.html race-vibes:2:0 ...   # what the screen shows, as an image
 
 The tool and sizes tests hide Lua's `table` and `os` libraries because the

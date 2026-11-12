@@ -4,6 +4,26 @@ The version is in **Settings > Info** and at the top of the logs
 (`LOGS/nacosim.csv`), and is the number in the zip's file name. When you report
 something, say which one you have.
 
+## 0.7.2
+- Also tested by other pilots on a RadioMaster TX15 and a RadioMaster Pocket;
+  the Pocket now starts from an empty model with no memory error.
+- **New track: Freestyle poles.** Orbit practice with flags on tall poles: a
+  figure-eight round two poles, one loop round a three-pole tripod, and a full
+  orbit of a 40 m mast. The radio has no solid poles or dive gates, so there is no
+  chimney in it; each orbit is four flag passes on the same pole, in order.
+
+- **"Not enough memory" on small radios (RadioMaster Pocket).** The biggest part
+  is now compiled first, while the most memory is free, and a part that fails to
+  load is retried once. If it still fails you get a message on screen (run
+  **NacoMem** once from Tools, then open NacoSim again) instead of a raw error.
+- **A reset about a second after starting** is fixed if it was the key that
+  launched the tool arriving as an ENTER: keys are ignored for the first second.
+  If you still see it, send `LOGS/nacosim.csv`.
+- **Updating:** delete the old `.luac` files (in `SCRIPTS/TOOLS` and
+  `SCRIPTS/NacoSim`) after copying. The zip's files have a fixed date, so the
+  radio can keep running old compiled code. (A tester reported the dates; the
+  stale-code effect itself was not seen.)
+
 ## 0.7.1
 - **Every zip now has all seven tracks.** In 0.7.0 the five tracks other than Oval
   and Race vibes were only in a zip built on one computer, so some people unzipped

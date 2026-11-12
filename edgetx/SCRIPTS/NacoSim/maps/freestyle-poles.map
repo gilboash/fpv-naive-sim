@@ -1,0 +1,25 @@
+nacosim-map 1
+name Freestyle poles
+# Orbit practice: flags are poles you pass on one side, so four flags on one pole
+# make one orbit. Left-hand pole = counter-clockwise, side 1; clockwise uses -1.
+start 0 -40 0
+g 0 -26 2.1 0 2 1.5
+# figure-eight: counter-clockwise round the west pole, clockwise round the east pole
+f -9 0 12 0 1 5
+f -9 0 12 270 1 5
+f -9 0 12 180 1 5
+f -9 0 12 90 1 5
+f 9 0 12 0 -1 5
+f 9 0 12 90 -1 5
+f 9 0 12 180 -1 5
+f 9 0 12 270 -1 5
+# the tripod: three poles taken in one counter-clockwise loop
+f 26 0 8 90 1 5
+f 42 0 10 0 1 5
+f 34 16 14 270 1 5
+f 26 0 8 180 1 5
+# the mast: one tall pole, a full orbit
+f -38 14 40 0 1 6
+f -38 14 40 270 1 6
+f -38 14 40 180 1 6
+f -38 14 40 90 1 6
