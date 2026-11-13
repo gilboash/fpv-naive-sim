@@ -1462,6 +1462,44 @@ const main = async () => {
     `respawned at ${raceReset.racing.north.toFixed(1)}, ${raceReset.racing.east.toFixed(1)} — crashed at 40, 12`,
   );
 
+  // "Reset to last gate passed": in a race, just past the checkpoint before the
+  // one due, facing on; before the hole shot and outside a race, in place.
+  const lastGate = await evaluate(`(async () => {
+    const { scene, flight, racePanel } = globalThis.__fpvsim;
+    const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+    scene.resetMode = 'lastGate';
+    racePanel.race.reset();
+    await frame();
+    flight.sim.reset(0); flight.sim.pos.x = 40; flight.sim.pos.y = 12;
+    scene.reset();
+    const idle = { north: flight.sim.pos.x, east: flight.sim.pos.y };
+    racePanel.race.start(0);
+    const cps = racePanel.race.course.checkpoints;
+    // a gate with a horizontal direction, so "past it" means something
+    let i = cps.findIndex((c, k) => k > 0 && c.kind === 'gate' && !c.dirU);
+    racePanel.race.holeShot = 1;
+    racePanel.race.next = (i + 1) % cps.length;
+    flight.sim.pos.x = 40; flight.sim.pos.y = 12;
+    await frame(); await frame();
+    scene.reset();
+    const cp = cps[i];
+    const dn = flight.sim.pos.x - cp.north, de = flight.sim.pos.y - cp.east;
+    const res = { idle, past: dn * cp.dirN + de * cp.dirE, dist: Math.hypot(dn, de), onGround: flight.sim.pos.z > -1, i };
+    racePanel.race.reset();
+    scene.resetMode = 'inPlace';
+    return res;
+  })()`);
+  check(
+    'outside a race, "last gate" respawns where you crashed (there is no gate to go back to)',
+    Math.hypot(lastGate.idle.north - 40, lastGate.idle.east - 12) < 3,
+    `at ${lastGate.idle.north.toFixed(1)}, ${lastGate.idle.east.toFixed(1)}`,
+  );
+  check(
+    'in a race, "last gate" puts you just past the last checkpoint cleared, on the ground',
+    lastGate.past > 1 && lastGate.dist < 6 && lastGate.onGround,
+    `checkpoint ${lastGate.i + 1}: ${lastGate.past.toFixed(1)} m past it, ${lastGate.dist.toFixed(1)} m from it`,
+  );
+
   // Crashing mid-race must recover on its own. Without it the quad lies there
   // with the clock running while the pilot reaches for a key, which ends the
   // race in practice.

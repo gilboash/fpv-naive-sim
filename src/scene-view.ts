@@ -12,6 +12,7 @@ import { raceField, type Track } from './render/track.ts';
 import { clearance } from './flight/collision.ts';
 import { StickView } from './stick-view.ts';
 import type { Checkpoint } from './race/course.ts';
+import { respawnPose } from './race/respawn.ts';
 import { Osd } from './osd.ts';
 import type { Commands, StickMode } from './mapping.ts';
 
@@ -44,8 +45,11 @@ interface StoredScene {
   trackName?: string;
   /** Legacy index, read once and migrated. */
   track?: number;
-  resetMode: 'inPlace' | 'start';
+  resetMode: ResetMode;
 }
+
+/** Where a reset puts you. Stored by these names. */
+export type ResetMode = 'inPlace' | 'start' | 'lastGate';
 
 const el = <T extends HTMLElement>(tag: string, cls?: string, text?: string): T => {
   const n = document.createElement(tag) as T;
@@ -117,7 +121,13 @@ export class SceneView {
   readonly osd: Osd;
   private modeSel!: HTMLSelectElement;
   private restartBtn!: HTMLButtonElement;
-  resetMode: 'inPlace' | 'start' = 'inPlace';
+  resetMode: ResetMode = 'inPlace';
+  /**
+   * The checkpoint last cleared in the race running now, and the one due next.
+   * Set by the owner every frame; null outside a race or before the hole shot,
+   * when "last gate" falls back to where you crashed.
+   */
+  private lastPassed: { at: Checkpoint; toward: Checkpoint | null } | null = null;
   /**
    * Camera settings live here as well as on the renderer, because the controls
    * are built before the renderer exists and because they have to survive a
@@ -199,6 +209,7 @@ export class SceneView {
     const modeSel = el<HTMLSelectElement>('select');
     for (const [v, label] of [
       ['inPlace', 'where you crashed'],
+      ['lastGate', 'last gate passed'],
       ['start', 'start line'],
     ] as const) {
       const o = el<HTMLOptionElement>('option');
@@ -209,7 +220,8 @@ export class SceneView {
     this.modeSel = modeSel;
     modeSel.value = this.resetMode;
     modeSel.onchange = () => {
-      this.resetMode = modeSel.value === 'start' ? 'start' : 'inPlace';
+      const v = modeSel.value;
+      this.resetMode = v === 'start' || v === 'lastGate' ? v : 'inPlace';
       this.saveSettings();
     };
     const ml = el('label', undefined, 'Reset to ');
@@ -272,7 +284,7 @@ export class SceneView {
       if (st.version !== 1) return;
       if (Number.isFinite(st.fovDeg)) this.fovDeg = Math.max(50, Math.min(130, st.fovDeg));
       if (Number.isFinite(st.tiltDeg)) this.tiltDeg = Math.max(0, Math.min(60, st.tiltDeg));
-      if (st.resetMode === 'start' || st.resetMode === 'inPlace') this.resetMode = st.resetMode;
+      if (st.resetMode === 'start' || st.resetMode === 'inPlace' || st.resetMode === 'lastGate') this.resetMode = st.resetMode;
       const wanted = st.trackName ? RENAMED[st.trackName] ?? st.trackName : undefined;
       const byName = wanted ? this.tracks().find((t) => t.name === wanted) : undefined;
       if (byName) this.track = byName;
@@ -349,14 +361,42 @@ export class SceneView {
     if (this.modeSel.disabled === racing) return;
     this.modeSel.disabled = racing;
     this.restartBtn.disabled = racing;
-    this.modeSel.title = racing ? 'Fixed to “where you crashed” during a race.' : '';
+    this.modeSel.title = racing
+      ? this.resetMode === 'lastGate'
+        ? 'Fixed during a race: the last gate you passed.'
+        : 'Fixed to “where you crashed” during a race.'
+      : '';
     this.restartBtn.title = racing ? 'Not while a race is running — abort it first.' : '';
   }
 
-  /** Whatever the current reset mode says, unless a race overrides it. */
+  /** The race's last cleared checkpoint and the next one, or null. From the owner. */
+  setLastPassed(at: Checkpoint | null, toward: Checkpoint | null): void {
+    this.lastPassed = at ? { at, toward } : null;
+  }
+
+  /**
+   * Whatever the current reset mode says, unless a race overrides it. A race
+   * turns "start line" into "where you crashed" (see forceInPlace); "last gate"
+   * is honoured in a race, which is the only place it has a gate to go back to.
+   */
   reset(): void {
-    if (this.resetMode === 'start' && !this.forceInPlace) this.placeAtStart();
+    if (this.resetMode === 'lastGate' && this.lastPassed) this.respawnAtLastGate();
+    else if (this.resetMode === 'start' && !this.forceInPlace) this.placeAtStart();
     else this.respawnInPlace();
+  }
+
+  /**
+   * Just past the last checkpoint cleared, on the ground, facing the next one,
+   * pushed clear of scenery like an in-place respawn. The lap is voided by the
+   * owner as for every respawn: going back is a retry, not a shortcut.
+   */
+  respawnAtLastGate(): void {
+    if (!this.lastPassed) return;
+    const p = respawnPose(this.lastPassed.at, this.lastPassed.toward);
+    const spot = clearance(this.sim.obstacles, p.north, p.east, 0.5, 1.2);
+    this.sim.reset(p.yawDeg);
+    this.sim.pos.x = spot.north;
+    this.sim.pos.y = spot.east;
   }
 
   /** Put the quad on the start line, disarmed and on the ground. */

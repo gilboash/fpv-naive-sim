@@ -732,6 +732,16 @@ function render(tNow: number): void {
 
   const active = racePanel.race.state === 'running' ? racePanel.race.activeCheckpoint : null;
   scene.setNextCheckpoint(active);
+  // For "reset to last gate": the checkpoint before the one due, once the hole
+  // shot has been taken (before it there is nothing to go back to).
+  {
+    const r = racePanel.race;
+    const cps = r.course.checkpoints;
+    const last = r.state === 'running' && r.holeShot !== null && cps.length
+      ? cps[(r.next - 1 + cps.length) % cps.length]!
+      : null;
+    scene.setLastPassed(last, active);
+  }
   scene.osd.render(racePanel.race, flight.sim, crashRecover);
   if (tabs.visible('fly')) scene.updateSticks(commands, mapping.mode);
 

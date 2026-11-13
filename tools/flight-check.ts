@@ -26,6 +26,8 @@ import {
   type Course,
 } from '../src/race/course.ts';
 import { freestyle, raceField, TRACKS, trackFromSpec } from '../src/render/track.ts';
+import { respawnPose } from '../src/race/respawn.ts';
+import { clearance as clearSpot } from '../src/flight/collision.ts';
 import { validateTrackSpec } from '../src/render/track-spec.ts';
 import { checkTrack } from '../src/render/track-check.ts';
 // Only the example strings; localStorage is touched inside functions, not here.
@@ -2299,6 +2301,53 @@ section('Track specs: gates are pieces, and the order is what makes a race');
     !blockedCheck.ok && blockedCheck.errors.some((e) => e.includes('standing in the gate')),
     blockedCheck.errors.join('; '),
   );
+}
+
+section('Respawn at the last gate: past it, on the passing side, facing the next, clear');
+{
+  let checked = 0;
+  const bad: string[] = [];
+  for (const track of TRACKS) {
+    const course = track.course;
+    if (!course) continue;
+    const m = new MeshBuilder();
+    const obs: Obstacle[] = [];
+    track.build(m, obs);
+    const cps = course.checkpoints;
+    cps.forEach((cp, i) => {
+      const next = cps[(i + 1) % cps.length]!;
+      const p = respawnPose(cp, next);
+      const where = `${track.name} #${i + 1}`;
+      const dn = p.north - cp.north;
+      const de = p.east - cp.east;
+      // past the plane, for anything with a horizontal direction
+      if (Math.hypot(cp.dirN, cp.dirE) > 0.5 && dn * cp.dirN + de * cp.dirE <= 0) bad.push(`${where}: not past it`);
+      if (cp.kind === 'flag') {
+        const across = -dn * cp.dirE + de * cp.dirN;
+        if (across * cp.side <= 0) bad.push(`${where}: wrong side of the pole`);
+      }
+      // facing the next checkpoint
+      const want = Math.atan2(next.east - p.east, next.north - p.north);
+      const got = (p.yawDeg * Math.PI) / 180;
+      const diff = Math.abs(Math.atan2(Math.sin(want - got), Math.cos(want - got)));
+      if (Math.hypot(next.east - p.east, next.north - p.north) > 0.5 && diff > 0.01) bad.push(`${where}: facing ${(diff * 57.3).toFixed(0)} deg off`);
+      // the scene's placement: pushed clear, then a second on the ground must not crash
+      const spot = clearSpot(obs, p.north, p.east, 0.5, 1.2);
+      const sim = new FlightSim(kronos());
+      sim.obstacles = obs;
+      sim.reset(p.yawDeg);
+      sim.pos.x = spot.north;
+      sim.pos.y = spot.east;
+      run(sim, sticks(), 1);
+      if (sim.crashed || Math.hypot(sim.pos.x - spot.north, sim.pos.y - spot.east) > 0.3) bad.push(`${where}: not a clean spot`);
+      checked++;
+    });
+  }
+  ok(`every checkpoint of every race map (${checked})`, bad.length === 0 && checked > 50, bad.slice(0, 5).join('; ') || `${checked} checked`);
+  // a flag spot is half the pass width out on the passing side
+  const flag = { kind: 'flag' as const, north: 0, east: 0, height: 7, dirN: 1, dirE: 0, side: 1 as const, passWidth: 6 };
+  const pf = respawnPose(flag, null);
+  ok('a flag passed on the right puts you right of the pole, facing on', Math.abs(pf.east - 3) < 1e-9 && pf.north > 0 && Math.abs(pf.yawDeg) < 1e-9, JSON.stringify(pf));
 }
 
 section('Aux: arming from a switch behaves like a flight controller');
