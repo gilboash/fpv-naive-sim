@@ -37,6 +37,35 @@ export class PT1 {
   }
 }
 
+/**
+ * Two PT1s in series with Betaflight's cutoff correction, the PT2 of
+ * `pt2FilterGain`: the -3 dB point of the pair lands on the cutoff asked for.
+ */
+export class PT2 {
+  private s1 = 0;
+  private y = 0;
+  private k = 1;
+
+  constructor(cutoffHz: number, dt: number) {
+    if (cutoffHz > 0) {
+      const correction = 1 / Math.sqrt(Math.pow(2, 1 / 2) - 1); // 1.553773974
+      const rc = 1 / (2 * correction * Math.PI * cutoffHz);
+      this.k = dt / (rc + dt);
+    }
+  }
+
+  reset(v = 0): void {
+    this.s1 = v;
+    this.y = v;
+  }
+
+  apply(x: number): number {
+    this.s1 += this.k * (x - this.s1);
+    this.y += this.k * (this.s1 - this.y);
+    return this.y;
+  }
+}
+
 /** Second-order Butterworth lowpass, direct form 1. */
 export class Biquad {
   private b0 = 1;

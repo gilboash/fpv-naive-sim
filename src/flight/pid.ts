@@ -7,12 +7,12 @@
  * this file: where a cleaner formulation would have been available, the
  * Betaflight one is used instead, because transferable feel is the product.
  *
- * Ported from src/main/flight/pid.c. Not modelled yet: anti-gravity, dynamic
- * idle, and the D_MIN gain scheduler. Each is a real part of modern feel and
+ * Ported from src/main/flight/pid.c. Not modelled yet: dynamic idle and the
+ * dynamic gyro lowpass. (Anti-gravity and D_MIN are, below.) Each is a real part of modern feel and
  * each is listed in docs/DEVELOPMENT.md as a known gap rather than quietly omitted.
  */
 
-import { PT1 } from './filter.ts';
+import { PT1, PT2 } from './filter.ts';
 import { clamp } from './math.ts';
 
 const PTERM_SCALE = 0.032029;
@@ -33,6 +33,12 @@ const ITERM_RELAX_THRESHOLD = 40;
 const D_MIN_GAIN_FACTOR = 0.00008;
 const D_MIN_SETPOINT_GAIN_FACTOR = 0.00008;
 const D_MIN_LOWPASS_HZ = 35;
+
+// Anti-gravity (Betaflight 4.5, pid.h): the filtered throttle derivative,
+// times anti_gravity_gain, is added to Ki through this factor, and boosts P on
+// roll and pitch through ANTIGRAVITY_KP * anti_gravity_p_gain / 100.
+const ANTIGRAVITY_KI = 0.34;
+const ANTIGRAVITY_KP = 0.0034;
 
 export interface AxisGains {
   p: number;
@@ -155,12 +161,21 @@ function newAxisState(profile: PidProfile, dt: number): AxisState {
 export class RateController {
   readonly axes: [AxisState, AxisState, AxisState];
   private dt: number;
+  private agLowpass: PT2;
+  private agPrevThrottle = 0;
+  /** False until the first throttle is seen: arming at mid stick is not a throttle move. */
+  private agPrimed = false;
+  /** Filtered throttle derivative times the gain: Betaflight's antiGravityThrottleD. */
+  antiGravityThrottleD = 0;
+  /** What anti-gravity adds to Ki this step (zero on yaw). For telemetry and tests. */
+  itermAccelerator = 0;
 
   profile: PidProfile;
 
   constructor(profile: PidProfile, dt: number) {
     this.profile = profile;
     this.dt = dt;
+    this.agLowpass = new PT2(profile.antiGravityCutoffHz ?? 5, dt);
     this.axes = [
       newAxisState(profile, dt),
       newAxisState(profile, dt),
@@ -169,6 +184,11 @@ export class RateController {
   }
 
   reset(): void {
+    this.agLowpass.reset(0);
+    this.agPrevThrottle = 0;
+    this.agPrimed = false;
+    this.antiGravityThrottleD = 0;
+    this.itermAccelerator = 0;
     for (const a of this.axes) {
       a.integral = 0;
       a.prevGyro = 0;
@@ -180,6 +200,33 @@ export class RateController {
       a.ffHeldSteps = 0;
       a.ffSlope = 0;
       a.pOut = a.iOut = a.dOut = a.fOut = a.sum = 0;
+    }
+  }
+
+  /**
+   * Anti-gravity, once per step before the axes: a fast throttle move changes
+   * the props' torque balance and the quad's attitude wanders until the I-term
+   * catches up, so Betaflight speeds the I-term up (and P a little) while the
+   * throttle is moving. Weighted to low throttle, more so when it is rising,
+   * exactly as `pidUpdateAntiGravityThrottleFilter` does.
+   */
+  updateAntiGravity(throttle: number): void {
+    const gain = this.profile.antiGravityGain ?? 0;
+    if (!this.agPrimed) {
+      this.agPrevThrottle = throttle;
+      this.agPrimed = true;
+    }
+    const inv = 1 - throttle;
+    let d = (Math.abs(throttle - this.agPrevThrottle) / this.dt) * inv * inv;
+    if (throttle > this.agPrevThrottle) d *= inv * 0.5;
+    this.agPrevThrottle = throttle;
+    const filtered = this.agLowpass.apply(d);
+    if (gain > 0) {
+      this.antiGravityThrottleD = filtered * gain;
+      this.itermAccelerator = this.antiGravityThrottleD * ANTIGRAVITY_KI;
+    } else {
+      this.antiGravityThrottleD = 0;
+      this.itermAccelerator = 0;
     }
   }
 
@@ -220,6 +267,13 @@ export class RateController {
     }
 
     st.pOut = PTERM_SCALE * g.p * error * tpa;
+    // Anti-gravity's P boost, roll and pitch only, faded out above 50 deg/s of
+    // setpoint so it does not sharpen a flip.
+    if (axis !== 2 && this.antiGravityThrottleD > 0) {
+      const atten = Math.max(Math.abs(setpoint) / 50, 1);
+      const pGain = ((this.profile.antiGravityPGain ?? 100) / 100) * ANTIGRAVITY_KP;
+      st.pOut *= 1 + (this.antiGravityThrottleD / atten) * pGain;
+    }
 
     // I-term relax: while the stick is moving fast the error is mostly "the
     // quad has not got there yet", not a standing bias, and integrating it
@@ -242,7 +296,7 @@ export class RateController {
     }
 
     st.integral = clamp(
-      st.integral + ITERM_SCALE * g.i * iError * dt * windup,
+      st.integral + (ITERM_SCALE * g.i + (axis === 2 ? 0 : this.itermAccelerator)) * iError * dt * windup,
       -this.profile.itermLimit,
       this.profile.itermLimit,
     );

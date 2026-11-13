@@ -13,7 +13,7 @@
 import { FlightSim, type StickInput } from '../src/flight/sim.ts';
 import { kronos, racer5 } from '../src/flight/airframe.ts';
 import { defaultRates, applyRates, AXIS_ROLL, RATE_FIELDS, type RateProfile } from '../src/flight/rates.ts';
-import { defaultPids } from '../src/flight/pid.ts';
+import { defaultPids, RateController } from '../src/flight/pid.ts';
 import { Mixer } from '../src/flight/mixer.ts';
 import { newMapping, computeCommands, loadMapping, type Mapping } from '../src/mapping.ts';
 import { AuxControl } from '../src/aux-control.ts';
@@ -2301,6 +2301,45 @@ section('Track specs: gates are pieces, and the order is what makes a race');
     !blockedCheck.ok && blockedCheck.errors.some((e) => e.includes('standing in the gate')),
     blockedCheck.errors.join('; '),
   );
+}
+
+section('Anti-gravity: the I-term speeds up while the throttle moves, and only then');
+{
+  const dt = 0.001;
+  // Drive one controller through a throttle profile with a constant roll error
+  // and report the roll and yaw integrals and the peak accelerator.
+  const drive = (gain: number, thr: (t: number) => number) => {
+    const c = new RateController({ ...defaultPids(), antiGravityGain: gain }, dt);
+    let peak = 0;
+    for (let i = 0; i < 400; i++) {
+      c.updateAntiGravity(thr(i * dt));
+      peak = Math.max(peak, c.itermAccelerator);
+      c.update(0, 20, 0, thr(i * dt));
+      c.update(2, 20, 0, thr(i * dt));
+    }
+    return { roll: c.axes[0].integral, yaw: c.axes[2].integral, peak, after: c.itermAccelerator };
+  };
+  const steady = drive(80, () => 0.3);
+  // a chop: 0.7 down to 0.15 over 50 ms, the move anti-gravity is mostly for
+  const chop = (t: number) => (t < 0.1 ? 0.7 : t < 0.15 ? 0.7 - ((t - 0.1) / 0.05) * 0.55 : 0.15);
+  const punch = drive(80, chop);
+  const off = drive(0, chop);
+  ok('steady throttle: no boost', steady.peak < 1e-9, `peak accelerator ${steady.peak}`);
+  ok('a throttle chop boosts the roll I-term', punch.roll > off.roll * 1.1,
+    `roll I ${punch.roll.toFixed(1)} with, ${off.roll.toFixed(1)} without`);
+  ok('yaw is left alone, as in Betaflight', Math.abs(punch.yaw - off.yaw) < 1e-9, `${punch.yaw} vs ${off.yaw}`);
+  ok('gain 0 turns it off', off.peak === 0, `${off.peak}`);
+  ok('the boost dies away once the throttle is still', punch.after < punch.peak * 0.2,
+    `${punch.after.toFixed(2)} after 0.3 s, peak ${punch.peak.toFixed(2)}`);
+  // weighted to low throttle: the same move near the top does far less
+  const high = drive(80, (t) => (t < 0.1 ? 0.6 : 0.95));
+  const low = drive(80, (t) => (t < 0.1 ? 0.05 : 0.4));
+  ok('a move at low throttle boosts more than the same move at high throttle', low.peak > high.peak * 3,
+    `peak ${low.peak.toFixed(1)} low, ${high.peak.toFixed(1)} high`);
+  // and a rise counts for less than the same move falling
+  const up = drive(80, (t) => (t < 0.1 ? 0.15 : t < 0.15 ? 0.15 + ((t - 0.1) / 0.05) * 0.55 : 0.7));
+  ok('a rise boosts less than the same move as a chop', up.peak < punch.peak,
+    `peak ${up.peak.toFixed(1)} rising, ${punch.peak.toFixed(1)} falling`);
 }
 
 section('Respawn at the last gate: past it, on the passing side, facing the next, clear');

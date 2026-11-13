@@ -428,6 +428,7 @@ export class FlightSim {
       // the mixer runs after the controller, so the freshest figure available
       // is one step old, and at 1 kHz that is immaterial.
       const range = this.mixer.result.range;
+      this.controller.updateAntiGravity(thr);
       mixRoll = this.controller.update(AXIS_ROLL, sp.x, gyro.x, thr, range) / PID_MIXER_SCALING;
       mixPitch = this.controller.update(AXIS_PITCH, sp.y, gyro.y, thr, range) / PID_MIXER_SCALING;
       mixYaw = this.controller.update(AXIS_YAW, sp.z, gyro.z, thr, range) / PID_MIXER_SCALING;
