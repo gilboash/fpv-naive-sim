@@ -1972,6 +1972,45 @@ const main = async () => {
     `button -> ${soundUi.afterBtn.label}, then M -> ${soundUi.afterKey.label}; one owner, two views`,
   );
 
+  // "On, no gong": the button cycles on -> on, no gong -> off, and with the
+  // gong off a strike makes no voice while the motor sound stays up.
+  const noGong = await evaluate(`(async () => {
+    const { audio, tabs } = globalThis.__fpvsim;
+    tabs.show('fly');
+    const btn = document.querySelector('#audio-toggle');
+    audio.setGong(true);
+    audio.setEnabled(true);
+    const labels = [btn.textContent];
+    btn.click(); labels.push(btn.textContent);
+    const gongBox = document.querySelector('#sound-gong').checked;
+    const stillOn = audio.enabled && audio.active;
+    const before = audio.debug().voices;
+    audio.noteStrike(6);
+    audio.update({ telemetry: { motorRpm: [0, 0, 0, 0], speed: 0 } });
+    let peak = 0;
+    for (let i = 0; i < 6; i++) {
+      peak = Math.max(peak, audio.debug().voices);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    const stored = JSON.parse(localStorage.getItem('fpvsim.audio.v1') || 'null');
+    btn.click(); labels.push(btn.textContent);
+    btn.click(); labels.push(btn.textContent);
+    const restored = audio.enabled && audio.gongOn;
+    audio.setGong(true);
+    audio.setEnabled(true);
+    return { labels, gongBox, stillOn, before, peak, stored, restored };
+  })()`);
+  check(
+    'the sound button cycles on, on with no gong, off',
+    noGong.labels.join(' | ') === 'Sound: on | Sound: on, no gong | Sound: off | Sound: on' && noGong.restored,
+    noGong.labels.join(' -> '),
+  );
+  check(
+    'with no gong, a strike is silent and the rest of the sound stays on',
+    noGong.stillOn && noGong.gongBox === false && noGong.peak <= noGong.before && noGong.stored?.gong === false,
+    `graph ${noGong.stillOn ? 'live' : 'closed'}, voices ${noGong.before} -> ${noGong.peak}, stored gong ${noGong.stored?.gong}`,
+  );
+
   // Usage reporting. It is the first thing here that leaves the browser, so
   // what is checked is mostly what it refuses to do: nothing from a dev build,
   // nothing once the pilot opts out, and nothing counted while disarmed.

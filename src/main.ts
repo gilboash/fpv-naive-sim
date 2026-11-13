@@ -1145,6 +1145,7 @@ if (import.meta.env.DEV) {
   const box = $<HTMLInputElement>('sound-enabled');
   const vol = $<HTMLInputElement>('sound-volume');
   const state = $('sound-state');
+  const gongBox = $<HTMLInputElement>('sound-gong');
 
   // Built here and put in with the view's other settings, rather than in a row
   // of its own above the picture. It is a setting for the thing below it, and
@@ -1153,7 +1154,7 @@ if (import.meta.env.DEV) {
   const btn = document.createElement('button');
   btn.id = 'audio-toggle';
   btn.type = 'button';
-  btn.title = 'Sound on or off — M does the same, and works in fullscreen';
+  btn.title = 'Sound: on, on without the gong, or off. M mutes and unmutes, and works in fullscreen';
   scene.addControl(btn);
 
   // Two controls, one owner. The panel and the button both read and write the
@@ -1163,7 +1164,9 @@ if (import.meta.env.DEV) {
     box.checked = audio.enabled;
     vol.value = String(Math.round(audio.volume * 100));
     vol.disabled = !audio.enabled;
-    btn.textContent = audio.enabled ? 'Sound: on' : 'Sound: off';
+    gongBox.checked = audio.gongOn;
+    gongBox.disabled = !audio.enabled;
+    btn.textContent = !audio.enabled ? 'Sound: off' : audio.gongOn ? 'Sound: on' : 'Sound: on, no gong';
     btn.setAttribute('aria-pressed', audio.enabled ? 'true' : 'false');
     state.textContent = !audio.enabled
       ? 'off — the audio graph is closed, so nothing runs'
@@ -1177,7 +1180,15 @@ if (import.meta.env.DEV) {
 
   box.onchange = () => audio.setEnabled(box.checked);
   vol.oninput = () => audio.setVolume(Number(vol.value) / 100);
-  btn.onclick = () => audio.setEnabled(!audio.enabled);
+  gongBox.onchange = () => audio.setGong(gongBox.checked);
+  // Three states in one button: on -> on, no gong -> off -> on.
+  btn.onclick = () => {
+    if (!audio.enabled) {
+      audio.setGong(true);
+      audio.setEnabled(true);
+    } else if (audio.gongOn) audio.setGong(false);
+    else audio.setEnabled(false);
+  };
 
   // M for mute, because in fullscreen the picture is all there is and a button
   // in a panel underneath does not exist. Same reason the timer went on the

@@ -5,6 +5,13 @@ header of `/web` and on the front page, and sent with each session report. Bump 
 and add an entry here whenever what is deployed changes. The radio app, NacoSim,
 has its own numbers and changelog in `edgetx/CHANGELOG.md`.
 
+## 1.1.0 (2026-11-13)
+
+- **Sound: "on, no gong".** The sound button now has three states: on, on without the
+  gong, and off. Without the gong, hitting a gate or pole is silent and every other
+  sound stays: motors, crashes, gate chimes. Also a checkbox in Settings, Sound. M still
+  mutes and unmutes, and keeps your gong choice.
+
 ## 1.0.0 (2026-11-13)
 
 The first numbered release. Everything before it is unnumbered; see the git history.

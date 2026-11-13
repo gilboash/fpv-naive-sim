@@ -31,6 +31,8 @@ interface Stored {
   version: 1;
   enabled: boolean;
   volume: number;
+  /** The gong on hitting scenery. Missing in files from before it existed: on. */
+  gong?: boolean;
 }
 
 /**
@@ -50,6 +52,12 @@ function clamp(v: number, lo: number, hi: number): number {
 
 export class FlightAudio {
   enabled: boolean;
+  /**
+   * Whether hitting scenery sounds the gong. Off keeps every other sound:
+   * "on, no gong" was asked for by Gilboa, for pilots who clip gates often
+   * enough that a 4.7 s gong every time is too much.
+   */
+  gongOn = true;
   volume: number;
 
   /** Called whenever state changes, so more than one control can show it. */
@@ -89,6 +97,7 @@ export class FlightAudio {
         if (s.version === 1) {
           enabled = s.enabled !== false;
           if (typeof s.volume === 'number') volume = clamp(s.volume, 0, 1);
+          if (s.gong === false) this.gongOn = false;
         }
       }
     } catch {
@@ -158,6 +167,14 @@ export class FlightAudio {
     this.onChange?.();
   }
 
+  /** The gong alone, on or off; the rest of the sound is untouched. */
+  setGong(on: boolean): void {
+    this.gongOn = on;
+    if (on && this.ctx) this.loadGong(this.ctx);
+    this.save();
+    this.onChange?.();
+  }
+
   setVolume(v: number): void {
     this.volume = clamp(v, 0, 1);
     if (this.master && this.ctx) {
@@ -174,7 +191,7 @@ export class FlightAudio {
 
   private save(): void {
     try {
-      const s: Stored = { version: 1, enabled: this.enabled, volume: this.volume };
+      const s: Stored = { version: 1, enabled: this.enabled, volume: this.volume, gong: this.gongOn };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
     } catch {
       /* private mode, quota — not worth failing over */
@@ -195,6 +212,7 @@ export class FlightAudio {
    * common outcome, and it deserves to be audible.
    */
   noteStrike(speed: number): void {
+    if (!this.gongOn) return;
     if (speed > this.pendingStrike) this.pendingStrike = speed;
   }
 
@@ -285,7 +303,7 @@ export class FlightAudio {
     this.airFilter = air;
     this.airGain = airGain;
 
-    this.loadGong(ctx);
+    if (this.gongOn) this.loadGong(ctx);
     if (ctx.state === 'suspended') void ctx.resume();
     this.onChange?.();
   }
@@ -388,7 +406,7 @@ export class FlightAudio {
   private strike(speed: number): void {
     const ctx = this.ctx;
     const master = this.master;
-    if (!ctx || !master || !this.gong) return;
+    if (!ctx || !master || !this.gong || !this.gongOn) return;
     const src = ctx.createBufferSource();
     src.buffer = this.gong;
     const g = ctx.createGain();
