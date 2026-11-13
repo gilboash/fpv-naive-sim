@@ -237,7 +237,9 @@ the bottom of the measured range (3.0 A model, 6.4 A median measured on a
 lighter quad) and overspeeds full throttle to 38 000 rpm against a logged
 28 300. Matching by cd0 alone needs 0.19, four times any real aerofoil, so some
 of the measured torque must be motor and ESC loss misattributed to the prop.
-Deliberately not fudged. Anti-gravity still unimplemented. Yaw keeps 9-18 ms of
+Deliberately not fudged. Anti-gravity implemented 2026-11-13 (Betaflight 4.5's,
+in pid.ts): replayed over three flights it lowers roll RMS 2-4% and pitch 1-2%,
+yaw unchanged, so it is not the cause of the soft response. Yaw keeps 9-18 ms of
 lag that roll and pitch have lost.
 
 **The comparison is not yet sensitive to airframe parameters.** Swapping the
@@ -607,12 +609,12 @@ of them already learned the hard way here:
 1. **Map generation** — still outstanding, and now less pressing: four
    hand-built race maps landed 2026-09-01 (thrust line, circle, 180s, plus the
    original), so the shape of what a generator would produce is at least known.
-2. **Respawn from the last gate passed** — the third variant, and the only one
-   still missing. *In place* landed 2026-08-29 and is now the default, ahead of
-   the pilot feedback round; *start line* is the selector's other option. The
-   part still worth designing rather than bolting on is that a respawn has to
-   invalidate the lap, or the timing added in step 1 measures nothing — so this
-   and lap timing are entangled and should be built together.
+2. ~~**Respawn from the last gate passed.**~~ Done 2026-11-13: a third reset
+   mode, "last gate passed" (`src/race/respawn.ts`). In a race it puts the quad
+   on the ground 3 m past the last checkpoint cleared (a flag: on the passing
+   side, half the pass width out), facing the next one, pushed clear of
+   scenery; the lap is voided like every respawn. Outside a race, or before the
+   hole shot, it falls back to in place. Checked on all 97 race checkpoints.
 3. ~~**Motor sound.**~~ Done 2026-09-01 — see Sound below.
 4. ~~**An OSD**~~ — done 2026-08-30.
 5. **Lens distortion.** The projection is rectilinear where real FPV cameras are
@@ -628,7 +630,7 @@ needed is in the repo and needs no human in the loop except to fly.
    That splits propeller drag from motor loss, which no flight log can.
 2. Anything that explains pitch. Its inertia fits at under half of roll's on a
    square frame, and it is the worst axis for gain. Same unknown, probably.
-3. Anti-gravity, still unimplemented.
+3. ~~Anti-gravity.~~ Done 2026-11-13; a small, consistent improvement only.
 4. Gilboa flying the sim with the TX16S and saying what feels wrong. The metrics
    are a proxy; the brief is about feel. If the two disagree, feel wins.
 
