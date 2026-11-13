@@ -21,13 +21,21 @@ body {
   font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-/* The logo sits hard right, with the pill pushed left of it. The header is a
-   flex row and `margin-left: auto` on the last item is what keeps the logo
-   there whatever the pill says. */
+/* Breaking Carbon sits left of the title, Race Drones hard right. The header is
+   a flex row and `margin-left: auto` on the partner logo is what keeps it there
+   whatever the pills say. */
+.brand { display: flex; align-items: center; gap: 10px; }
+#partner-logo {
+  height: 36px;
+  width: auto;
+  margin-left: auto;
+  opacity: 0.92;
+}
+.version { font: 500 11px var(--mono); color: var(--dim); letter-spacing: 0; }
+h2 .version { font-size: 12px; vertical-align: middle; }
 #brand-logo {
   height: 30px;
   width: auto;
-  margin-left: auto;
   border-radius: 3px;
   /* The artwork is white on black; on a dark header that reads as a plate
      rather than as a mark, so the black is knocked back. */
@@ -79,7 +87,7 @@ header {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
-  justify-content: space-between;
+  column-gap: 20px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);

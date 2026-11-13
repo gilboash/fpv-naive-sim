@@ -4,6 +4,8 @@
  * at runtime — there is nothing to fetch and nothing to fail.
  */
 declare const __FPVSIM_BUILD__: string;
+/** The web sim's release number, from package.json. */
+declare const __FPVSIM_VERSION__: string;
 
 /**
  * Audio assets Vite hashes into the build. Declared here because `vite/client`

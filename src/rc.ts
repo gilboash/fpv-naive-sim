@@ -3,7 +3,6 @@
  * stylesheet and the brand logo so it looks like the rest of the site.
  */
 import './style.css';
-import brandLogo from './assets/breaking-carbon.jpg';
+import { setupSiteHeader } from './site-header.ts';
 
-const logo = document.getElementById('brand-logo');
-if (logo instanceof HTMLImageElement) logo.src = brandLogo;
+setupSiteHeader();

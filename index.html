@@ -15,12 +15,15 @@
   </head>
   <body>
     <header>
-      <h1>naco.fpvsim <span class="dim">/ FPV trainer</span></h1>
+      <div class="brand">
+        <img id="brand-logo" alt="Breaking Carbon" />
+        <h1>naco.fpvsim <span class="dim">/ FPV trainer</span></h1>
+      </div>
       <div class="pills">
-        <a class="pill-link" href="/web">web sim</a>
+        <a class="pill-link" href="/web">web sim <span data-web-version></span></a>
         <a class="pill-link" href="/rc">NacoSim for your radio</a>
       </div>
-      <img id="brand-logo" alt="Breaking Carbon" />
+      <img id="partner-logo" alt="Race Drones" />
     </header>
 
     <main class="landing">
@@ -36,7 +39,7 @@
 
       <div class="choices">
         <section class="choice">
-          <h2>The web sim</h2>
+          <h2>The web sim <span class="version" data-web-version></span></h2>
           <figure class="visual">
             <a href="/web"><img src="/nacosim/web-sim.jpg" width="1026" height="558" loading="lazy"
               alt="The web sim: a first-person view flying toward a yellow race gate, with battery, height and speed on screen and the radio's sticks in the corner" /></a>

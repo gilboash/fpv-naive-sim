@@ -1730,6 +1730,17 @@ serving and nothing was lost: keep it that way (build before `docker rm`).
 The deployed zip is whatever the Mac built, and it was verified byte-identical to
 `dist/downloads` here; all seven tracks ship (the maps are tracked in git).
 
+## Web releases (2026-11-13)
+
+The web sim has release numbers from 1.0.0: `version` in `package.json`, injected as
+`__FPVSIM_VERSION__` (vite.config.ts), shown by `src/site-header.ts` wherever a page
+has `data-web-version` (the `/web` header, the front page), and sent as `version` in
+session reports beside `build`. **Release rule, as for NacoSim:** whenever what is
+deployed changes, bump the version and add an entry to `CHANGELOG.md` (the radio app
+keeps its own in `edgetx/CHANGELOG.md`). All three pages share one header: Breaking
+Carbon left of the title, Race Drones (`src/assets/race-drones.png`, from the media
+box portal's `static/race_drones.png`) hard right.
+
 ## Conventions carried over from ../genius-invester
 Worth keeping, because they were learned the expensive way there:
 

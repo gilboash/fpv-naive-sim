@@ -45,6 +45,8 @@ export interface SessionReport {
   pilotId: string;
   name: string;
   build: string;
+  /** The web sim release, package.json version. */
+  version: string;
   startedAt: string;
   sentAt: string;
   /** Wall-clock seconds since the page loaded. */
@@ -199,6 +201,7 @@ export class Telemetry {
       pilotId: this.pilotId,
       name: this.name,
       build: __FPVSIM_BUILD__,
+      version: __FPVSIM_VERSION__,
       startedAt: this.startedAt.toISOString(),
       sentAt: new Date().toISOString(),
       uptimeS: Math.round((Date.now() - this.startedAt.getTime()) / 1000),

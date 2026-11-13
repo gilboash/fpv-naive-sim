@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import { packKey, packRc, type MapInfo, type RcPack } from './tools/nacosim-pack.ts';
@@ -158,7 +159,12 @@ export default defineConfig({
       .map((h) => h.trim())
       .filter((h) => h.length > 0),
   },
-  define: { __FPVSIM_BUILD__: JSON.stringify(buildId()) },
+  // The web sim's release number is package.json's version: bump it and add a
+  // CHANGELOG.md entry whenever what is deployed changes.
+  define: {
+    __FPVSIM_BUILD__: JSON.stringify(buildId()),
+    __FPVSIM_VERSION__: JSON.stringify(JSON.parse(readFileSync('package.json', 'utf8')).version),
+  },
   plugins: [nacosimRc()],
   build: {
     target: 'esnext',

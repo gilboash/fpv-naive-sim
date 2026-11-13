@@ -1,5 +1,5 @@
 import './style.css';
-import brandLogo from './assets/breaking-carbon.jpg';
+import { setupSiteHeader } from './site-header.ts';
 import {
   auxActive,
   AUX_ACTIONS,
@@ -1275,7 +1275,7 @@ telemetry.start();
 globalThis.addEventListener('gamepadconnected', refreshDevices);
 globalThis.addEventListener('gamepaddisconnected', refreshDevices);
 
-$<HTMLImageElement>('brand-logo').src = brandLogo;
+setupSiteHeader();
 
 buildChannelRows();
 buildAuxRows();
