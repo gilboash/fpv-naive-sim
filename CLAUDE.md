@@ -1730,6 +1730,22 @@ serving and nothing was lost: keep it that way (build before `docker rm`).
 The deployed zip is whatever the Mac built, and it was verified byte-identical to
 `dist/downloads` here; all seven tracks ship (the maps are tracked in git).
 
+## Famous tracks on the web (2026-11-13, web 1.2.0)
+
+Macabim and the MultiGP 2024 qualifiers #1-#3 are built-in web maps generated from
+the radio's `.map` files by `tools/famous-tracks.ts` (`npm run tracks:famous`, and
+`-- --check` to confirm `src/render/famous-tracks.ts` is current). One source for both
+apps: change the `.map`, regenerate. The generator centres each track on the origin,
+lifts openings that sit exactly 0.2 m off the grass by 10 cm (the track check's floor),
+narrows Macabim's side-by-side double gate to share a post, and snaps flag poles within
+half-width + 0.4 m of a gate onto that gate's post (the web draws such a pole *as* the
+post; the converted positions were 0.2-0.3 m off, and the post checks caught it). Real
+gate sizes, so the track check warns "tight" on several; that is the tracks, not a bug.
+Left out: the micro track (whoop-sized gates) and Macabim's horizontal drop-through gate
+(the .map format has no horizontal gates). `checkTrack`'s 2 m separation rule now
+applies only to checkpoints flown the same way, since out-and-back round one pole is
+two flags at one spot; raceScenery draws such a pole once.
+
 ## Web releases (2026-11-13)
 
 The web sim has release numbers from 1.0.0: `version` in `package.json`, injected as

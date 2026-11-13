@@ -18,11 +18,14 @@ import { join } from 'node:path';
 
 const URL_TO_SHOOT = process.argv[2] ?? 'http://localhost:5180/web';
 const OUT_DIR = process.argv[3] ?? 'public/nacosim';
-const SHOTS = [
-  ['Race vibes', 'web-sim.jpg'],
-  ['Circle', 'web-circle.jpg'],
-  ['180s', 'web-180s.jpg'],
-];
+// SHOTS="Macabim=macabim.jpg;180s=x.jpg" overrides the list, e.g. to look at a new map.
+const SHOTS = process.env.SHOTS
+  ? process.env.SHOTS.split(';').map((p) => p.split('='))
+  : [
+      ['Race vibes', 'web-sim.jpg'],
+      ['Circle', 'web-circle.jpg'],
+      ['180s', 'web-180s.jpg'],
+    ];
 const PORT = 9722 + Math.floor(Math.random() * 400);
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

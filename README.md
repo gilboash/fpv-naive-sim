@@ -74,6 +74,8 @@ What it has:
 - **Racing.** Gates, flags and cubes, lap timing with a result screen, a
   next-gate marker, an on-screen display, motor sound, and a fullscreen view that
   works on a phone.
+- **Famous tracks:** Macabim and the three MultiGP 2024 qualifiers, the same layouts
+  as on the radio (built from its map files by `npm run tracks:famous`).
 - **Your own tracks**, written as plain data and kept in your browser.
 
 The long story of how each part was built and checked, including the known gaps,
@@ -128,7 +130,8 @@ discover:
   established here. Treat it as third-party.
 - `measurements/`: Blackbox logs and jitter runs from real hardware. Data rather
   than software, kept so the numbers in the write-up can be checked.
-- The track layouts in `edgetx/SCRIPTS/NacoSim/maps/` other than Race vibes:
+- The track layouts in `edgetx/SCRIPTS/NacoSim/maps/` other than Race vibes and
+  Freestyle poles, and the web sim's copies of them (`src/render/famous-tracks.ts`):
   gate layouts of tracks designed by others, converted from their Velocidrone
   files for practice. If you made one and would rather it was not here, say so
   and it will be removed.

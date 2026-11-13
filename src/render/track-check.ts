@@ -134,7 +134,12 @@ export function checkTrack(track: Track): TrackCheck {
       const nextUp = next.kind === 'gate' ? next.up : next.height;
       const thisUp = cp.kind === 'gate' ? cp.up : cp.height;
       const gap = Math.hypot(next.north - cp.north, next.east - cp.east, nextUp - thisUp);
-      if (gap < MIN_SEPARATION_M) {
+      // Only checkpoints flown roughly the same way can be mistaken for each
+      // other: the timer looks for one at a time, and a plane is crossed in its
+      // own direction. Out and back round one pole (Macabim) is two flags at one
+      // spot flown in opposite directions, and is a real move, not a mistake.
+      const sameWay = cp.dirN * next.dirN + cp.dirE * next.dirE > 0;
+      if (gap < MIN_SEPARATION_M && sameWay) {
         errors.push(
           `${label} and ${i + 2 > cps.length ? 1 : i + 2} are ${gap.toFixed(1)} m apart — ` +
             'the timer cannot tell them apart',

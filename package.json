@@ -1,7 +1,7 @@
 {
   "name": "fpvsim",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port 5180",
@@ -11,6 +11,7 @@
     "check:flight": "node --experimental-strip-types tools/flight-check.ts",
     "check:browser": "node tools/browser-check.mjs",
     "replay": "node --experimental-strip-types tools/replay.ts",
+    "tracks:famous": "node --experimental-strip-types tools/famous-tracks.ts",
     "identify": "node --experimental-strip-types tools/identify.ts",
     "reference": "node --experimental-strip-types tools/optimal-lap.ts",
     "check:rc": "node tools/rc-check.mjs",

@@ -5,6 +5,18 @@ header of `/web` and on the front page, and sent with each session report. Bump 
 and add an entry here whenever what is deployed changes. The radio app, NacoSim,
 has its own numbers and changelog in `edgetx/CHANGELOG.md`.
 
+## 1.2.0 (2026-11-13)
+
+- **Four famous tracks:** Macabim and the MultiGP 2024 qualifiers #1, #2 and #3, in the
+  Map list after the 180s. They are the same layouts as on the radio, built from its map
+  files, at their real gate sizes, which are smaller than this sim's other gates. The
+  layouts are their designers' work, converted from Velocidrone for practice; sizes,
+  directions and flag sides are estimates. Macabim's drop-through gate is not included.
+  The MultiGP micro track is left out: its gates are sized for tiny whoops.
+- **Your own tracks:** two checkpoints at one spot are allowed when they are flown in
+  opposite directions (out and back round one pole). The timer only confused them when
+  they were flown the same way.
+
 ## 1.1.0 (2026-11-13)
 
 - **Sound: "on, no gong".** The sound button now has three states: on, on without the

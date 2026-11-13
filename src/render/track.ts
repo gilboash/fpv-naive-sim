@@ -12,6 +12,7 @@
 import { MeshBuilder } from './mesh.ts';
 import type { Obstacle } from '../flight/collision.ts';
 import { courseFromSpec, type TrackSpec } from './track-spec.ts';
+import { FAMOUS_TRACK_SPECS } from './famous-tracks.ts';
 import {
   circleCourse,
   CUBE_HALF,
@@ -895,6 +896,12 @@ function raceScenery(m: MeshBuilder, obs: Obstacle[], course: Course): void {
         cp.dirN, cp.dirE, colour, drawn, skipSide,
       );
     } else {
+      // One pole passed twice (out and back, as on Macabim) is two flags at one
+      // spot; draw the pole once, or two pylons sit inside each other.
+      const earlier = cps.slice(0, cps.indexOf(cp)).some(
+        (o) => o.kind === 'flag' && Math.hypot(o.north - cp.north, o.east - cp.east) < 0.5,
+      );
+      if (earlier) return;
       flagPylon(m, obs, cp.east, -cp.north, cp.height, cp.dirN, cp.dirE, cp.side, cp.passWidth);
     }
   });
@@ -1084,11 +1091,18 @@ export function trackFromSpec(spec: TrackSpec): Track {
   };
 }
 
+/**
+ * Famous tracks: Macabim and the MultiGP 2024 qualifiers, built from the
+ * radio's map files (`tools/famous-tracks.ts`), so both apps fly one layout.
+ */
+export const FAMOUS_TRACKS: Track[] = FAMOUS_TRACK_SPECS.map(trackFromSpec);
+
 export const TRACKS: Track[] = [
   raceField,
   thrustLine,
   circleTrack,
   oneEightyTrack,
+  ...FAMOUS_TRACKS,
   freestyle,
   freestyleHard,
 ];
