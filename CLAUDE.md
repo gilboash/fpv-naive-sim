@@ -743,10 +743,11 @@ debug handle; against a production build it degrades to a smoke test and reports
 isolation as a warning rather than a failure, since that is the host's property
 and not the build's.
 
-Still unmeasured: what the `setTimeout` fallback actually costs. Every jitter
-figure in `docs/DEVELOPMENT.md` is the atomics backend and the fallback is described as
-"measurably worse" on no evidence. A 60 s run against the plain static server on
-:8099 would settle it.
+**Measured 2026-11-13** (`tools/jitter-headless.mjs`, table in
+`docs/DEVELOPMENT.md`): the `setTimeout` fallback keeps 1 kHz on average but in
+bursts every ~6 ms (tick sd 2.18 ms against 0.073, mean lateness 2.8 ms against
+0.33), so sticks are effectively read every ~6 ms. Worse by about one radio
+report, not unflyable.
 
 ## Deployed on the Windows desktop (2026-08-29)
 

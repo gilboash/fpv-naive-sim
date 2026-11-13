@@ -57,6 +57,26 @@ reaches its event loop and would never receive a `postMessage`. Without
 isolation it falls back to `setTimeout(0)`, which is worse; the UI names the
 backend in use rather than hiding the difference.
 
+How much worse was unmeasured until 2026-11-13: the same build, the same
+machine, headless Chrome, 60 s each, run with `tools/jitter-headless.mjs`
+(raw results in `measurements/fpvsim-m0-jitter-headless-*-2026-11-13.json`):
+
+| Backend | ticks | tick sd | p50 | p90 | p99 | max | mean lateness | p99 lateness |
+|---|---|---|---|---|---|---|---|---|
+| atomics (isolated) | 60,270 | 0.073 ms | 1.000 | 1.015 | 1.305 | 6.68 ms | 0.33 ms | 0.44 ms |
+| setTimeout (not isolated) | 60,276 | 2.180 ms | 0.000 | 6.000 | 6.100 | 6.20 ms | 2.83 ms | 5.90 ms |
+
+The fallback still delivers 1 kHz *on average* — the tick count is the same —
+but in bursts: it wakes about every 6 ms and runs the ticks it owes back to
+back (an interval of 0 at the median). So the physics stays exact while the
+sticks are effectively read every ~6 ms, with ~2.8 ms of mean lateness against
+0.33. That is about the same order as the radio's own 5 ms report period, so a
+pilot on a non-isolated page loses roughly one radio report of latency and gets
+no new stick information within each burst: noticeably worse, not unflyable.
+Without isolation `performance.now()` is also coarsened to 0.1 ms, which is why
+those figures end in round numbers. Headless is a floor for a machine, not a
+pilot's focused window, and this is one run of each.
+
 Gamepads can only be read on the main thread, so the worker only keeps time:
 each tick is a message that tells the main thread to poll. The poll happens in
 that tick — not in `requestAnimationFrame` — and the path allocates nothing it

@@ -1,0 +1,69 @@
+{
+  "url": "http://127.0.0.1:5191/web.html",
+  "seconds": 60,
+  "isolated": false,
+  "backend": "timeout",
+  "head": [
+    "series",
+    "count",
+    "mean",
+    "sd",
+    "min",
+    "p50",
+    "p90",
+    "p99",
+    "p99.9",
+    "max"
+  ],
+  "series": [
+    [
+      "tick interval",
+      "60,276",
+      "1.000",
+      "2.180",
+      "0.000",
+      "0.000",
+      "6.000",
+      "6.100",
+      "6.100",
+      "6.200"
+    ],
+    [
+      "tick lateness",
+      "60,277",
+      "2.829",
+      "1.689",
+      "0.000",
+      "2.800",
+      "5.200",
+      "5.900",
+      "6.000",
+      "6.000"
+    ],
+    [
+      "device report",
+      "0",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—"
+    ],
+    [
+      "frame interval",
+      "3,616",
+      "16.666",
+      "0.057",
+      "16.500",
+      "16.700",
+      "16.700",
+      "16.800",
+      "16.800",
+      "16.800"
+    ]
+  ],
+  "summary": "\n    \n      1000.1 Hz effective\n      · sd 2.180 ms\n      · p99 6.100 ms\n      · max 6.20 ms\n      · stalls >8 ms: 0Pacing is not good enough for a 1 kHz loop as configured. Check cross-origin isolation (Atomics backend) and CPU contention.\n    \n    \n      seriesnmeansdminp50p90p99p99.9max\n      \n        tick interval60,2761.0002.1800.0000.0006.0006.1006.1006.200\n        tick lateness60,2772.8291.6890.0002.8005.2005.9006.0006.000\n        device report0————————\n        frame interval3,61616.6660.05716.50016.70016.70016.80016.80016.800\n      \n    \n    \n      Device reported new data 0 times in 60 s\n      (0.0 Hz) across 60,277 polls — polling faster\n      than the radio reports costs nothing but buys nothing either.\n      Ticker backend: timeout, cross-origin isolated: false.\n    \n    \n      0–0.5 ms49,7440.5–0.9 ms00.9–1.1 ms01.1–1.5 ms01.5–2 ms02–4 ms44–8 ms10,5288–16 ms016–33 ms0≥33 ms0\n    \n    \n      Copy JSON\n      Download JSON\n    "
+}

@@ -1,0 +1,69 @@
+{
+  "url": "http://127.0.0.1:5190/web",
+  "seconds": 60,
+  "isolated": true,
+  "backend": "atomics",
+  "head": [
+    "series",
+    "count",
+    "mean",
+    "sd",
+    "min",
+    "p50",
+    "p90",
+    "p99",
+    "p99.9",
+    "max"
+  ],
+  "series": [
+    [
+      "tick interval",
+      "60,270",
+      "1.000",
+      "0.073",
+      "0.000",
+      "1.000",
+      "1.015",
+      "1.305",
+      "1.485",
+      "6.675"
+    ],
+    [
+      "tick lateness",
+      "60,271",
+      "0.334",
+      "0.055",
+      "0.000",
+      "0.335",
+      "0.345",
+      "0.440",
+      "0.535",
+      "5.955"
+    ],
+    [
+      "device report",
+      "0",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—",
+      "—"
+    ],
+    [
+      "frame interval",
+      "3,611",
+      "16.689",
+      "1.143",
+      "16.660",
+      "16.665",
+      "16.670",
+      "16.670",
+      "16.670",
+      "83.330"
+    ]
+  ],
+  "summary": "\n    \n      1000.0 Hz effective\n      · sd 0.073 ms\n      · p99 1.305 ms\n      · max 6.67 ms\n      · stalls >8 ms: 0Tick pacing is solid enough for a 1 kHz physics loop.\n    \n    \n      seriesnmeansdminp50p90p99p99.9max\n      \n        tick interval60,2701.0000.0730.0001.0001.0151.3051.4856.675\n        tick lateness60,2710.3340.0550.0000.3350.3450.4400.5355.955\n        device report0————————\n        frame interval3,61116.6891.14316.66016.66516.67016.67016.67083.330\n      \n    \n    \n      Device reported new data 0 times in 60 s\n      (0.0 Hz) across 60,271 polls — polling faster\n      than the radio reports costs nothing but buys nothing either.\n      Ticker backend: atomics, cross-origin isolated: true.\n    \n    \n      0–0.5 ms420.5–0.9 ms1,8040.9–1.1 ms57,0121.1–1.5 ms1,3751.5–2 ms222–4 ms144–8 ms18–16 ms016–33 ms0≥33 ms0\n    \n    \n      Copy JSON\n      Download JSON\n    "
+}
