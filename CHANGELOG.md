@@ -5,6 +5,17 @@ header of `/web` and on the front page, and sent with each session report. Bump 
 and add an entry here whenever what is deployed changes. The radio app, NacoSim,
 has its own numbers and changelog in `edgetx/CHANGELOG.md`.
 
+## 1.3.0 (2026-11-13)
+
+- **Motion blur** (Sim row: Motion blur off / light / medium / strong; off by default).
+  Blur as a camera's exposure makes it, from the quad's speed and turn rate: the ground
+  close under a fast quad smears, distant gates stay sharp, and a fast flip swirls the
+  edges of the picture. Light, medium and strong are 4, 8 and 14 ms of exposure. The
+  streak is capped so a gate never smears away, and the next-gate marker and the OSD
+  are never blurred.
+- **Grass detail:** the ground has a fine texture close up, which gives a better sense
+  of speed and height near the ground, with or without blur.
+
 ## 1.2.0 (2026-11-13)
 
 - **Four famous tracks:** Macabim and the MultiGP 2024 qualifiers #1, #2 and #3, in the

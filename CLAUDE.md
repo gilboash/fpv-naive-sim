@@ -1746,6 +1746,24 @@ Left out: the micro track (whoop-sized gates) and Macabim's horizontal drop-thro
 applies only to checkpoints flown the same way, since out-and-back round one pole is
 two flags at one spot; raceScenery draws such a pole once.
 
+## Motion blur (2026-11-13, web 1.3.0, branch `motion-blur`)
+
+A post pass in `renderer.ts` (POST_FRAG), off by default, levels in the Sim row
+(`BLUR_SHUTTER_MS` in scene-view.ts, stored as `blur` in `fpvsim.scene.v1`). The scene
+draws into a 4x MSAA framebuffer, resolved by blit into colour and depth textures; the
+shader rebuilds each pixel's world point from depth and projects it with the camera
+*where it was when the shutter opened*, computed from `sim.vel` and `sim.omega` (not the
+previous frame), so the streak is one exposure long at any frame rate. Ground proximity
+needs no special case: screen motion is speed / distance. Rotation is weighted 0.35 and
+the streak capped at 8% of frame height. The marker is drawn after the pass. Off means
+no framebuffer and no extra pass, exactly the old path.
+
+Two things learned: the old ground was flat colour squares metres wide, so there was
+nothing for the blur to smear; the fragment shader now adds distance-faded grass noise
+on the y=0 plane. And whole-frame sharpness cannot test "closer blurs more", because
+closer grass is bigger on screen; the browser check reads the shader's streak length
+directly (`motionBlur.debugStreak`): 54 px at 0.5 m against 6 px at 6 m, 30 m/s.
+
 ## Web releases (2026-11-13)
 
 The web sim has release numbers from 1.0.0: `version` in `package.json`, injected as

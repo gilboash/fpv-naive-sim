@@ -871,6 +871,89 @@ const main = async () => {
     );
   }
 
+  // Motion blur. Judged on pixels: sharpness is the summed difference between
+  // neighbouring pixels, and each blurred frame is compared with the same pose
+  // unblurred, so the scene's own content cancels out.
+  const blurPix = await evaluate(`(() => {
+    const { scene, flight } = globalThis.__fpvsim;
+    if (!scene.available) return { ok: false, reason: 'no renderer' };
+    const level = scene.blurLevel;
+    const sim = flight.sim;
+    const grab = () => {
+      scene.render();
+      const c = scene.canvas;
+      const off = document.createElement('canvas');
+      off.width = c.width; off.height = c.height;
+      const ctx = off.getContext('2d');
+      ctx.drawImage(c, 0, 0);
+      return { d: ctx.getImageData(0, 0, c.width, c.height).data, w: c.width, h: c.height };
+    };
+    const sharp = (f) => {
+      let s = 0;
+      for (let y = 1; y < f.h; y += 3) for (let x = 1; x < f.w; x++) {
+        const i = (y * f.w + x) * 4;
+        s += Math.abs(f.d[i + 1] - f.d[i - 3]) + Math.abs(f.d[i + 1] - f.d[i + 1 - f.w * 4]);
+      }
+      return s;
+    };
+    const pose = (alt, speed) => {
+      sim.reset(0);
+      sim.pos.x = -30; sim.pos.y = 0; sim.pos.z = -alt;
+      sim.vel.x = speed;
+      // Pitched 45 degrees nose-down, as a quad is at that speed, so the
+      // camera looks at the ground ahead rather than over it.
+      const a = (-45 * Math.PI) / 360;
+      sim.q.w = Math.cos(a); sim.q.x = 0; sim.q.y = Math.sin(a); sim.q.z = 0;
+      sim.onGround = false;
+    };
+    const ratio = (alt, speed) => {
+      pose(alt, speed); scene.setBlur('off'); const a = sharp(grab());
+      pose(alt, speed); scene.setBlur('medium'); const f = grab(); const b = sharp(f);
+      return { r: b / a, blurred: scene.renderer.lastFrameBlurred };
+    };
+    // Still: blurred and unblurred frames must match.
+    pose(2.5, 0); scene.setBlur('off'); const s0 = grab();
+    pose(2.5, 0); scene.setBlur('medium'); const s1 = grab();
+    let diff = 0;
+    for (let i = 0; i < s0.d.length; i += 4) diff += Math.abs(s0.d[i] - s1.d[i]) + Math.abs(s0.d[i + 1] - s1.d[i + 1]);
+    const still = diff / (s0.d.length / 4);
+    const high = ratio(6, 30);
+    // Streak length straight from the shader, at the same point on screen
+    // (bottom centre, which is ground at both heights). Sharpness cannot
+    // compare heights: closer grass is bigger on screen, so the same streak
+    // takes less detail off it.
+    const streak = (alt) => {
+      pose(alt, 30); scene.setBlur('medium');
+      scene.renderer.motionBlur.debugStreak = true;
+      const f = grab();
+      scene.renderer.motionBlur.debugStreak = false;
+      let s = 0, n = 0;
+      for (let y = Math.floor(f.h * 0.85); y < f.h * 0.95; y++) for (let x = Math.floor(f.w * 0.45); x < f.w * 0.55; x++) {
+        s += f.d[(y * f.w + x) * 4]; n++;
+      }
+      return (s / n) * 0.25;
+    };
+    const lowPx = streak(0.5);
+    const highPx = streak(6);
+    const low = ratio(0.5, 30);
+    // A flip with no translation: rotation blurs at its reduced weight.
+    sim.reset(0); sim.pos.x = -30; sim.pos.z = -2.5; sim.onGround = false;
+    scene.setBlur('off'); const ra = sharp(grab());
+    sim.omega.x = 15; scene.setBlur('medium'); const rb = sharp(grab());
+    scene.setBlur(level);
+    sim.reset(0);
+    return { ok: true, still, high: high.r, low: low.r, lowPx, highPx, blurred: low.blurred, roll: rb / ra,
+      unsupported: scene.renderer.blurUnsupported };
+  })()`);
+  check('motion blur pass runs', blurPix.ok && blurPix.blurred, blurPix.ok ? (blurPix.unsupported || 'blurred') : blurPix.reason);
+  if (blurPix.ok) {
+    check('motion blur: a still quad is not blurred', blurPix.still < 1, `mean difference ${blurPix.still.toFixed(3)} per pixel`);
+    check('motion blur: fast flight blurs', blurPix.high < 0.97, `sharpness ${blurPix.high.toFixed(3)} of unblurred at 6 m, 30 m/s`);
+    check('motion blur: lower blurs more than higher at the same speed', blurPix.lowPx > 3 * blurPix.highPx && blurPix.lowPx > 4,
+      `streak at the bottom of the frame ${blurPix.lowPx.toFixed(1)} px at 0.5 m against ${blurPix.highPx.toFixed(1)} px at 6 m, 30 m/s`);
+    check('motion blur: a roll blurs too', blurPix.roll < 0.97, `sharpness ${blurPix.roll.toFixed(3)} at 860 deg/s roll`);
+  }
+
   // The tune panel: editing a rate must reach the model, not just the DOM.
   const tuneResult = await evaluate(`(() => {
     const { tune, flight } = globalThis.__fpvsim;

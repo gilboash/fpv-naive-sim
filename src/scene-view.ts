@@ -46,7 +46,18 @@ interface StoredScene {
   /** Legacy index, read once and migrated. */
   track?: number;
   resetMode: ResetMode;
+  /** Motion blur level by name; missing means off. */
+  blur?: BlurLevel;
 }
+
+/**
+ * Motion blur levels, as a camera exposure. Off draws exactly as before (no
+ * extra pass). Light is about a bright-day digital FPV camera; strong is
+ * overcast, where the shutter stays open most of a 60 fps frame.
+ */
+export type BlurLevel = 'off' | 'light' | 'medium' | 'strong';
+export const BLUR_SHUTTER_MS: Record<BlurLevel, number> = { off: 0, light: 4, medium: 8, strong: 14 };
+const isBlurLevel = (v: unknown): v is BlurLevel => typeof v === 'string' && v in BLUR_SHUTTER_MS;
 
 /** Where a reset puts you. Stored by these names. */
 export type ResetMode = 'inPlace' | 'start' | 'lastGate';
@@ -137,6 +148,7 @@ export class SceneView {
    */
   private fovDeg = 75;
   private tiltDeg = 25;
+  private blur: BlurLevel = 'off';
 
   constructor(root: HTMLElement, sim: FlightSim) {
     this.sim = sim;
@@ -203,6 +215,24 @@ export class SceneView {
       this.saveSettings();
     });
 
+    const blurSel = el<HTMLSelectElement>('select');
+    blurSel.id = 'motion-blur';
+    for (const v of Object.keys(BLUR_SHUTTER_MS) as BlurLevel[]) {
+      const o = el<HTMLOptionElement>('option');
+      o.value = v;
+      o.textContent = v;
+      blurSel.appendChild(o);
+    }
+    blurSel.value = this.blur;
+    blurSel.onchange = () => {
+      this.setBlur(isBlurLevel(blurSel.value) ? blurSel.value : 'off');
+      this.saveSettings();
+    };
+    const bl = el('label', undefined, 'Motion blur ');
+    bl.title = 'Blur from speed and closeness to the ground, as a camera exposure makes it';
+    bl.appendChild(blurSel);
+    row.appendChild(bl);
+
     // Where a reset puts you. In place by default: sending a pilot back to the
     // start after every crash spends their session on the walk rather than on
     // the thing they were practising.
@@ -263,6 +293,7 @@ export class SceneView {
       // be pushed into it here rather than by the control callbacks.
       this.renderer.camera.fovDeg = this.fovDeg;
       this.renderer.camera.tiltDeg = this.tiltDeg;
+      this.setBlur(this.blur);
       this.loadTrack(this.track);
     } catch (e) {
       this.failure = e instanceof Error ? e.message : String(e);
@@ -284,6 +315,7 @@ export class SceneView {
       if (st.version !== 1) return;
       if (Number.isFinite(st.fovDeg)) this.fovDeg = Math.max(50, Math.min(130, st.fovDeg));
       if (Number.isFinite(st.tiltDeg)) this.tiltDeg = Math.max(0, Math.min(60, st.tiltDeg));
+      if (isBlurLevel(st.blur)) this.blur = st.blur;
       if (st.resetMode === 'start' || st.resetMode === 'inPlace' || st.resetMode === 'lastGate') this.resetMode = st.resetMode;
       const wanted = st.trackName ? RENAMED[st.trackName] ?? st.trackName : undefined;
       const byName = wanted ? this.tracks().find((t) => t.name === wanted) : undefined;
@@ -311,11 +343,22 @@ export class SceneView {
         tiltDeg: this.tiltDeg,
         trackName: this.track.name,
         resetMode: this.resetMode,
+        blur: this.blur,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
     } catch {
       /* private mode, quota — not worth failing over */
     }
+  }
+
+  /** Motion blur level; the renderer gets the matching shutter time. */
+  setBlur(level: BlurLevel): void {
+    this.blur = level;
+    if (this.renderer) this.renderer.motionBlur.shutterMs = BLUR_SHUTTER_MS[level];
+  }
+
+  get blurLevel(): BlurLevel {
+    return this.blur;
   }
 
   get available(): boolean {
