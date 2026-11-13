@@ -303,7 +303,10 @@ section('Control: a raw stick axis, through the mapping, to where the quad goes'
     sim.arm(sticks());
     sim.pos.z = -120;
     sim.onGround = false;
-    run(sim, sticks({ throttle: 0.35, pitch: cmd }), 0.7);
+    // A short push, so the quad tilts rather than flips. It was 0.7 s at full
+    // stick, which is 534 degrees, a flip and a half: where it then went was
+    // down to drag and chance, and it turned over when rotor drag was raised.
+    run(sim, sticks({ throttle: 0.35, pitch: cmd }), 0.12);
     const noseDown = sim.telemetry.attitude.pitch < 0;
     run(sim, sticks({ throttle: 0.6 }), 1.4);
     return { cmd, noseDown, north: sim.pos.x };

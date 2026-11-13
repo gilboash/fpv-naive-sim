@@ -237,7 +237,7 @@ the bottom of the measured range (3.0 A model, 6.4 A median measured on a
 lighter quad) and overspeeds full throttle to 38 000 rpm against a logged
 28 300. Matching by cd0 alone needs 0.19, four times any real aerofoil, so some
 of the measured torque must be motor and ESC loss misattributed to the prop.
-Deliberately not fudged. Anti-gravity implemented 2026-11-13 (Betaflight 4.5's,
+Deliberately not fudged. **Rotor drag raised 5x, 2026-11-13** (`hForce` 0.008 -> 0.04 in rotor.ts) after Gilboa called the sim "a bit floaty": a hovering quad lost only 0.10 /s of its sideways speed, where real quadrotors measure ~0.39 /s (Faessler et al., RA-L 2018); now 0.36. Top speed at full throttle 52 -> 47 m/s. Rate replay unchanged to 0.1 deg/s, so it changes how the quad moves, not how it rotates. Anti-gravity implemented 2026-11-13 (Betaflight 4.5's,
 in pid.ts): replayed over three flights it lowers roll RMS 2-4% and pitch 1-2%,
 yaw unchanged, so it is not the cause of the soft response. Yaw keeps 9-18 ms of
 lag that roll and pitch have lost.

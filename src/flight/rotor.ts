@@ -73,7 +73,14 @@ export function defaultProp(): PropSpec {
     cdAlpha: 1.2,
     stallAngle: 0.24,
     elements: 10,
-    hForce: 0.008,
+    // Rotor drag: blade flapping plus induced drag, linear in in-plane speed
+    // and in rotor speed. 0.008 gave a hovering quad a velocity decay of
+    // 0.10 /s, i.e. it slid like ice, and Gilboa called the sim floaty. Real
+    // quadrotors measure ~0.39 /s (Faessler, Franchi, Scaramuzza, "Differential
+    // flatness of quadrotor dynamics subject to rotor drag", RA-L 2018:
+    // dx 0.389, dy 0.394). 0.04 gives 0.36 /s at hover on the Kronos, and full
+    // throttle still reaches 47 m/s at 75 degrees, against 52 before.
+    hForce: 0.04,
     profileLoss: 1.0,
   };
 }
