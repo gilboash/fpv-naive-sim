@@ -1746,9 +1746,9 @@ Left out: the micro track (whoop-sized gates) and Macabim's horizontal drop-thro
 applies only to checkpoints flown the same way, since out-and-back round one pole is
 two flags at one spot; raceScenery draws such a pole once.
 
-## Motion blur (2026-11-13, web 1.3.0, branch `motion-blur`)
+## Motion blur (2026-11-13, web 1.3.0)
 
-A post pass in `renderer.ts` (POST_FRAG), off by default, levels in the Sim row
+A post pass in `renderer.ts` (POST_FRAG), **medium by default** (Gilboa's call), levels in Settings -> Video
 (`BLUR_SHUTTER_MS` in scene-view.ts, stored as `blur` in `fpvsim.scene.v1`). The scene
 draws into a 4x MSAA framebuffer, resolved by blit into colour and depth textures; the
 shader rebuilds each pixel's world point from depth and projects it with the camera

@@ -7,7 +7,8 @@ has its own numbers and changelog in `edgetx/CHANGELOG.md`.
 
 ## 1.3.0 (2026-11-13)
 
-- **Motion blur** (Sim row: Motion blur off / light / medium / strong; off by default).
+- **Motion blur**, on at medium by default; Settings → Video sets it to off, light,
+  medium or strong.
   Blur as a camera's exposure makes it, from the quad's speed and turn rate: the ground
   close under a fast quad smears, distant gates stay sharp, and a fast flip swirls the
   edges of the picture. Light, medium and strong are 4, 8 and 14 ms of exposure. The

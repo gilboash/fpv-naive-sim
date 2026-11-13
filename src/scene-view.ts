@@ -46,7 +46,7 @@ interface StoredScene {
   /** Legacy index, read once and migrated. */
   track?: number;
   resetMode: ResetMode;
-  /** Motion blur level by name; missing means off. */
+  /** Motion blur level by name; missing means the default, medium. */
   blur?: BlurLevel;
 }
 
@@ -148,7 +148,8 @@ export class SceneView {
    */
   private fovDeg = 75;
   private tiltDeg = 25;
-  private blur: BlurLevel = 'off';
+  // Medium by default (Gilboa, 2026-11-13: "looks great"); off is in Settings -> Video.
+  private blur: BlurLevel = 'medium';
 
   constructor(root: HTMLElement, sim: FlightSim) {
     this.sim = sim;
@@ -231,7 +232,8 @@ export class SceneView {
     const bl = el('label', undefined, 'Motion blur ');
     bl.title = 'Blur from speed and closeness to the ground, as a camera exposure makes it';
     bl.appendChild(blurSel);
-    row.appendChild(bl);
+    // In Settings -> Video when the page has it; in the view's own row otherwise.
+    (document.getElementById('video-controls') ?? row).appendChild(bl);
 
     // Where a reset puts you. In place by default: sending a pilot back to the
     // start after every crash spends their session on the walk rather than on
