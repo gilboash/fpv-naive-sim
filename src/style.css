@@ -691,6 +691,19 @@ body.fullscreen-locked {
   gap: 1px;
 }
 
+.osd-brand {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.82);
+}
+.fpv-stage:fullscreen .osd-brand { right: 24px; top: 20px; font-size: 20px; }
+/* clear of the phone fallback's close button, which also sits top right */
+.fpv-stage.pseudo-fullscreen .osd-brand { right: 64px; top: max(20px, env(safe-area-inset-top)); }
+
 .osd-clock {
   font-size: 30px;
   font-weight: 700;

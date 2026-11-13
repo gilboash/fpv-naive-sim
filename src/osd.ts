@@ -53,6 +53,10 @@ export class Osd {
     botLeft.append(this.battery, this.alt, this.speed);
     root.appendChild(botLeft);
 
+    // The name on the picture, top right, as on the radio version: a clip or a
+    // screenshot of the sim says what it is. Static, so it is set once.
+    root.appendChild(el('div', 'osd-brand', 'NacoSim'));
+
     this.countdown = el('div', 'osd-count', '');
     root.appendChild(this.countdown);
 
