@@ -1,3 +1,4 @@
+import { shortcutAllowed } from './hotkeys.ts';
 import './style.css';
 import { setupSiteHeader } from './site-header.ts';
 import {
@@ -190,10 +191,21 @@ const CRASH_PAUSE = 1.2;
 const tabs = new Tabs();
 
 /**
+ * The tick's clock: the worker's performance.now(), whose zero is when the
+ * worker started, not when the page did (2.2 s apart, measured). The stick and
+ * switch detectors are updated with this clock, so they must be started on it
+ * too; starting them on the page's clock stretched the 2.5 s "flick the switch
+ * now" window by that offset.
+ */
+let tickNow = 0;
+const detectClock = (): number => (tickNow > 0 ? tickNow : performance.now());
+
+/**
  * The whole input path, in one place, with nothing awaited. The physics step
  * is here, immediately after the poll.
  */
 function onTick(fired: number, scheduled: number): void {
+  tickNow = fired;
   poller.poll(fired);
   calibrator.update();
 
@@ -459,7 +471,7 @@ let bindMessage = '';
 function startBind(action: AuxAction): void {
   bindingAux = action;
   bindMessage = `Flick the ${AUX_INFO[action].label.toLowerCase()} switch now…`;
-  switchDetector.start(performance.now());
+  switchDetector.start(detectClock());
 }
 
 function buildAuxRows(): void {
@@ -623,7 +635,7 @@ function startDetect(ch: Channel): void {
   }
   detectingChannel = ch;
   detectMessage = `Move ${CHANNEL_INFO[ch].positive}…`;
-  detector.start(performance.now());
+  detector.start(detectClock());
 }
 
 // ---------------------------------------------------------------- render
@@ -867,7 +879,7 @@ function startRun(): void {
   }
   poller.resetCounters();
   run = new JitterRun(durationS, hz);
-  run.start(performance.now());
+  run.start(detectClock());
   $<HTMLButtonElement>('jitter-start').disabled = true;
   $('jitter-results').innerHTML = '';
 }
@@ -1195,8 +1207,7 @@ if (import.meta.env.DEV) {
   // video.
   globalThis.addEventListener('keydown', (ev: Event) => {
     const e = ev as KeyboardEvent;
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-    if (e.key === 'm' || e.key === 'M') audio.setEnabled(!audio.enabled);
+    if ((e.key === 'm' || e.key === 'M') && shortcutAllowed(e)) audio.setEnabled(!audio.enabled);
   });
 
   // The context can only start on a gesture, so the first one is also when the

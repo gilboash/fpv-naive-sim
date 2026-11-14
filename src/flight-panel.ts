@@ -9,6 +9,7 @@
  * wrong the scene would only hide it.
  */
 
+import { shortcutAllowed } from './hotkeys.ts';
 import type { Commands } from './mapping.ts';
 import { FlightSim } from './flight/sim.ts';
 import { kronos } from './flight/airframe.ts';
@@ -275,7 +276,8 @@ export class FlightPanel {
 
     globalThis.addEventListener('keydown', (ev: Event) => {
       const e = ev as KeyboardEvent;
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      const k = e.key.toLowerCase();
+      if ((k !== 'a' && k !== 'd' && k !== 'r') || !shortcutAllowed(e)) return;
       if (e.key === 'a' || e.key === 'A') this.tryArm();
       else if (e.key === 'd' || e.key === 'D') this.disarm();
       else if (e.key === 'r' || e.key === 'R') this.reset();

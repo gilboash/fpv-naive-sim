@@ -1793,6 +1793,22 @@ a skylight drops clean, the next roof cell does not. Cost: the freestyle maps we
 ~315 to ~670 obstacles and 9 to 26 us/step (2.6% of the tick). Contact is a linear scan;
 a broad phase is the fix if a map ever needs much more.
 
+## Reset and the two clocks (2026-11-14)
+
+Gilboa: "the reset doesnt seem to work... after I crash without a race on, I'm stuck".
+Two bugs, both reproduced with a fake radio (poller.poll stubbed) before fixing:
+- **The single-letter shortcuts ignored a focused `<select>`.** The Map and Motion blur
+  dropdowns keep focus after use, so R was dead until something else was clicked.
+  `src/hotkeys.ts` (`shortcutAllowed`): only text-entry fields swallow the letters; on a
+  select the shortcut acts and `preventDefault` stops type-ahead (R would jump the map
+  list to Race vibes).
+- **The tick worker's `performance.now()` has its own zero** (the worker's start, 2.2 s
+  after the page's here). Detectors are updated with tick time (`fired`) but were started
+  with the page's clock, so the 2.5 s switch-bind window ran ~4.7 s. `detectClock()` in
+  main.ts starts them, and the jitter run, on the tick clock. **Never mix `fired` with the
+  main thread's `performance.now()`.**
+Browser checks cover all three (bind window, reset by switch, R with a select focused).
+
 ## Web releases (2026-11-13)
 
 The web sim has release numbers from 1.0.0: `version` in `package.json`, injected as

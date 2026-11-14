@@ -19,6 +19,12 @@ has its own numbers and changelog in `edgetx/CHANGELOG.md`.
   - industrial chimneys in seven sizes across the two maps, from a 1.3 m bore to a
     48 m stack with aviation bands: dive in at the top and fly out through the opening
     at the foot.
+- **Fixed: R did nothing after picking a map** (or a motion blur level): the dropdown
+  kept keyboard focus and the shortcuts ignored it, so after a crash the only way back
+  was To start line. R, A, D and M now work with a dropdown focused.
+- **Fixed: binding a switch** took longer than the 2.5 s it asks for (about 4.7 s here),
+  because its timer mixed two clocks. The same fix applies to stick detection and the
+  jitter test.
 
 ## 1.3.0 (2026-11-13)
 

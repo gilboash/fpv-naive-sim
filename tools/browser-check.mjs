@@ -954,6 +954,60 @@ const main = async () => {
     check('motion blur: a roll blurs too', blurPix.roll < 0.97, `sharpness ${blurPix.roll.toFixed(3)} at 860 deg/s roll`);
   }
 
+  // Reset after a crash with no race: by a bound switch, and by R even while a
+  // dropdown has focus (it keeps focus after a map is picked, and R used to be
+  // ignored there). The switch binding's window must be its 2.5 s on the tick's
+  // clock, not stretched by the worker/page clock offset.
+  const resetCheck = await evaluate(`(async () => {
+    const { flight, poller, mapping, tabs } = globalThis.__fpvsim;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const saved = { ...mapping.aux.reset };
+    const realPoll = poller.poll.bind(poller);
+    const fake = new Float64Array(8);
+    fake[2] = -1; fake[5] = -1;
+    poller.poll = () => { poller.connected = true; poller.axisCount = 8; poller.buttonCount = 0; poller.axes.set(fake); return true; };
+    const out = {};
+    try {
+      await sleep(80);
+      tabs.show('settings');
+      const row = [...document.querySelectorAll('#aux-rows .channel')].find((r) => /reset/i.test(r.querySelector('.name').textContent));
+      mapping.aux.reset.source = 'none';
+      row.querySelector('button').click();
+      const t0 = performance.now();
+      await sleep(300);
+      fake[5] = 1;
+      while (mapping.aux.reset.source === 'none' && performance.now() - t0 < 8000) await sleep(25);
+      out.bindMs = performance.now() - t0;
+      out.bound = mapping.aux.reset.source + ' ' + mapping.aux.reset.index;
+      fake[5] = -1;
+      tabs.show('fly');
+      const crash = async () => {
+        flight.sim.reset(0);
+        flight.sim.pos.z = -3; flight.sim.vel.z = 20; flight.sim.onGround = false;
+        await sleep(500);
+        return flight.sim.crashed;
+      };
+      out.crash1 = await crash();
+      await sleep(60); fake[5] = 1; await sleep(80); fake[5] = -1; await sleep(60);
+      out.bySwitch = !flight.sim.crashed;
+      out.crash2 = await crash();
+      const sel = document.querySelector('.fpv-stage').parentElement.querySelector('select');
+      sel.focus();
+      sel.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true, cancelable: true }));
+      await sleep(60);
+      out.byRFocused = !flight.sim.crashed;
+    } finally {
+      Object.assign(mapping.aux.reset, saved);
+      poller.poll = realPoll;
+      flight.sim.reset(0);
+    }
+    return out;
+  })()`);
+  check('reset switch binds in its 2.5 s window', resetCheck.bound === 'axis 5' && resetCheck.bindMs < 3200,
+    `${resetCheck.bound} after ${Math.round(resetCheck.bindMs)} ms`);
+  check('a bound reset switch recovers a crash with no race on', resetCheck.crash1 && resetCheck.bySwitch, JSON.stringify(resetCheck));
+  check('R recovers a crash even while a dropdown has focus', resetCheck.crash2 && resetCheck.byRFocused, JSON.stringify(resetCheck));
+
   // The tune panel: editing a rate must reach the model, not just the DOM.
   const tuneResult = await evaluate(`(() => {
     const { tune, flight } = globalThis.__fpvsim;
