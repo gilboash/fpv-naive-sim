@@ -1,6 +1,6 @@
 /**
- * The FPV view. WebGL2, one shader, two draw calls, and an optional motion
- * blur pass after them (see POST_FRAG).
+ * The FPV view. WebGL2: a procedural sky (SKY_FRAG), the scene in one draw,
+ * and an optional motion blur pass after them (see POST_FRAG).
  *
  * Written directly rather than on a scene-graph library because the scene the
  * brief asks for is static geometry and a camera, and this way the frame cost
@@ -180,7 +180,119 @@ interface PostTargets {
   depth: WebGLTexture;
 }
 
-const SKY_TOP: [number, number, number] = [0.24, 0.42, 0.72];
+/**
+ * The sky, per pixel: a full-screen triangle whose fragments look up their own
+ * view ray. Constant (nothing moves), and world-fixed, so it turns with the
+ * camera the way a real one does.
+ *
+ *  - Blue that deepens toward the zenith and pales into haze at the horizon,
+ *    ending exactly on the fog colour so distant scenery melts into it.
+ *  - The sun where the scene's light comes from (SUN_DIR, also uLightDir), so
+ *    shading and sun agree: a disc, a tight glow and a broad warm one.
+ *  - Clouds on a flat layer 1.2 km up: a ray-plane hit and some octaves of
+ *    value noise, thinned toward the horizon where a real layer turns to haze.
+ *    At that height a quad's travel gives no visible parallax, which is right.
+ */
+const SKY_VERT = POST_VERT;
+
+/** Shared by the bake: value noise for the cloud layer. */
+const SKY_NOISE = `
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 6; i++) {
+    v += a * vnoise(p);
+    p = mat2(1.6, 1.2, -1.2, 1.6) * p;
+    a *= 0.5;
+  }
+  return v;
+}`;
+
+/**
+ * Baked once, at startup, into a cube map: one face per draw. The sky is
+ * constant, so working out six octaves of cloud noise for every pixel of every
+ * frame would be waste — and in the headless checks' software renderer it was
+ * enough to starve the audio thread. Each frame is then one texture lookup.
+ */
+const SKY_BAKE_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform int uFace;
+uniform vec3 uSunDir;
+uniform vec3 uHorizon;
+out vec4 outColor;
+${SKY_NOISE}
+void main() {
+  // Texel (s, t) of each cube face to its direction, per the GL cube map rules.
+  float s = vUv.x * 2.0 - 1.0;
+  float t = vUv.y * 2.0 - 1.0;
+  vec3 dir;
+  if (uFace == 0) dir = vec3(1.0, -t, -s);
+  else if (uFace == 1) dir = vec3(-1.0, -t, s);
+  else if (uFace == 2) dir = vec3(s, 1.0, t);
+  else if (uFace == 3) dir = vec3(s, -1.0, -t);
+  else if (uFace == 4) dir = vec3(s, -t, 1.0);
+  else dir = vec3(-s, -t, -1.0);
+  dir = normalize(dir);
+  float e = dir.y;
+  float up = max(e, 0.0);
+
+  vec3 zenith = vec3(0.16, 0.34, 0.68);
+  vec3 sky = mix(uHorizon, zenith, pow(up, 0.42));
+  // A slightly brighter, whiter band just above the horizon.
+  sky = mix(sky, vec3(0.82, 0.87, 0.92), exp(-up * 28.0) * 0.35);
+
+  float mu = max(dot(dir, uSunDir), 0.0);
+  vec3 warm = vec3(1.0, 0.93, 0.78);
+  sky += warm * (pow(mu, 8.0) * 0.16 + pow(mu, 90.0) * 0.30);
+
+  if (e > 0.004) {
+    vec2 p = (dir.xz * (1200.0 / e)) / 1500.0;
+    float n = fbm(p + vec2(3.1, 7.7));
+    float cover = smoothstep(0.50, 0.78, n);
+    // Thicker in the middle: darker, greyer undersides.
+    float thick = smoothstep(0.62, 0.95, n);
+    vec3 cloud = mix(vec3(0.97, 0.97, 0.98), vec3(0.66, 0.70, 0.77), thick * 0.8);
+    // Edges toward the sun catch the light.
+    cloud += warm * pow(mu, 6.0) * 0.18 * (1.0 - thick);
+    // Into the haze toward the horizon.
+    sky = mix(sky, cloud, cover * smoothstep(0.015, 0.22, e) * 0.92);
+  }
+  // Below the horizon there is only haze (and the ground covers most of it).
+  if (e < 0.0) sky = uHorizon;
+  outColor = vec4(min(sky, vec3(1.0)), 1.0);
+}`;
+
+const SKY_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform mat4 uInvViewProj;
+uniform vec3 uCamPos;
+uniform vec3 uSunDir;
+uniform samplerCube uSky;
+out vec4 outColor;
+void main() {
+  vec4 far = uInvViewProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 dir = normalize(far.xyz / far.w - uCamPos);
+  vec3 sky = texture(uSky, dir).rgb;
+  // The sun disc per pixel, so its edge stays sharp at any texture size. Over
+  // the clouds: a real one burns through a thin layer.
+  if (dir.y > 0.0) sky += vec3(1.0, 0.93, 0.78) * 2.0 * smoothstep(0.99955, 0.99975, dot(dir, uSunDir));
+  outColor = vec4(min(sky, vec3(1.0)), 1.0);
+}`;
+
+/** Toward the sun, in render space (x east, y up, z south). About 55 degrees up. */
+const SUN_DIR: [number, number, number] = [0.42, 0.82, 0.39];
+
 const SKY_HORIZON: [number, number, number] = [0.68, 0.78, 0.86];
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -232,7 +344,14 @@ export class Renderer {
   private uUnlit: WebGLUniformLocation;
   private uTint: WebGLUniformLocation;
   private scene: Batch | null = null;
-  private sky: Batch;
+  private skyProg: {
+    prog: WebGLProgram;
+    uInvViewProj: WebGLUniformLocation;
+    uCamPos: WebGLUniformLocation;
+    uSunDir: WebGLUniformLocation;
+    uSky: WebGLUniformLocation;
+  };
+  private skyCube: WebGLTexture;
   /** Index count of the active checkpoint marker; 0 when there is none. */
   get markerTriangleCount(): number {
     return this.marker?.count ?? 0;
@@ -308,7 +427,28 @@ export class Renderer {
     gl.enable(gl.DEPTH_TEST);
     gl.clearColor(SKY_HORIZON[0], SKY_HORIZON[1], SKY_HORIZON[2], 1);
 
-    this.sky = this.upload(buildSky());
+    this.emptyVao = gl.createVertexArray();
+    const sky = gl.createProgram();
+    if (!sky) throw new Error('could not create sky program');
+    gl.attachShader(sky, compile(gl, gl.VERTEX_SHADER, SKY_VERT));
+    gl.attachShader(sky, compile(gl, gl.FRAGMENT_SHADER, SKY_FRAG));
+    gl.linkProgram(sky);
+    if (!gl.getProgramParameter(sky, gl.LINK_STATUS)) {
+      throw new Error(`sky link: ${gl.getProgramInfoLog(sky) ?? 'unknown'}`);
+    }
+    const skyNeed = (n: string): WebGLUniformLocation => {
+      const loc = gl.getUniformLocation(sky, n);
+      if (!loc) throw new Error(`sky uniform ${n} missing`);
+      return loc;
+    };
+    this.skyProg = {
+      prog: sky,
+      uInvViewProj: skyNeed('uInvViewProj'),
+      uCamPos: skyNeed('uCamPos'),
+      uSunDir: skyNeed('uSunDir'),
+      uSky: skyNeed('uSky'),
+    };
+    this.skyCube = this.bakeSky();
   }
 
   /**
@@ -484,18 +624,32 @@ export class Renderer {
     gl.useProgram(this.program);
     gl.uniformMatrix4fv(this.uViewProj, false, this.viewProj);
     gl.uniform3f(this.uCamPos, ex, ey, ez);
-    gl.uniform3f(this.uLightDir, 0.42, 0.82, 0.39);
+    gl.uniform3f(this.uLightDir, SUN_DIR[0], SUN_DIR[1], SUN_DIR[2]);
     gl.uniform3f(this.uFogColor, SKY_HORIZON[0], SKY_HORIZON[1], SKY_HORIZON[2]);
     gl.uniform1f(this.uFogDensity, 0.0035);
     gl.uniform3f(this.uTint, 1, 1, 1);
 
-    // Sky first, unlit and without depth writes, so everything draws over it.
-    gl.uniform1f(this.uUnlit, 1);
+    // Sky first, with no depth test or writes, so everything draws over it.
+    // The depth buffer keeps its clear value there, which the blur reads as
+    // infinitely far: the sky smears only when the camera turns.
+    invert(this.invViewProj, this.viewProj);
+    const sk = this.skyProg;
+    gl.useProgram(sk.prog);
+    gl.uniformMatrix4fv(sk.uInvViewProj, false, this.invViewProj);
+    gl.uniform3f(sk.uCamPos, ex, ey, ez);
+    gl.uniform3f(sk.uSunDir, SUN_DIR[0], SUN_DIR[1], SUN_DIR[2]);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.skyCube);
+    gl.uniform1i(sk.uSky, 0);
     gl.depthMask(false);
+    gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.CULL_FACE);
-    gl.bindVertexArray(this.sky.vao);
-    gl.drawElements(gl.TRIANGLES, this.sky.count, gl.UNSIGNED_INT, 0);
+    gl.bindVertexArray(this.emptyVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+    gl.enable(gl.DEPTH_TEST);
     gl.depthMask(true);
+    gl.useProgram(this.program);
 
     if (this.scene) {
       gl.uniform1f(this.uUnlit, 0);
@@ -530,6 +684,51 @@ export class Renderer {
 
     const dt = performance.now() - t0;
     this.frameCostMs += (dt - this.frameCostMs) * 0.05;
+  }
+
+  /** Draw the constant sky into a cube map, once. 1024 a face, or the most the GPU allows. */
+  private bakeSky(): WebGLTexture {
+    const gl = this.gl;
+    const size = Math.min(1024, gl.getParameter(gl.MAX_CUBE_MAP_TEXTURE_SIZE) as number);
+    const prog = gl.createProgram();
+    if (!prog) throw new Error('could not create sky bake program');
+    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, SKY_VERT));
+    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, SKY_BAKE_FRAG));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      throw new Error(`sky bake link: ${gl.getProgramInfoLog(prog) ?? 'unknown'}`);
+    }
+    const cube = gl.createTexture();
+    if (!cube) throw new Error('could not create sky texture');
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, cube);
+    for (let f = 0; f < 6; f++) {
+      gl.texImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + f, 0, gl.RGBA8, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.useProgram(prog);
+    gl.uniform3f(gl.getUniformLocation(prog, 'uSunDir'), SUN_DIR[0], SUN_DIR[1], SUN_DIR[2]);
+    gl.uniform3f(gl.getUniformLocation(prog, 'uHorizon'), SKY_HORIZON[0], SKY_HORIZON[1], SKY_HORIZON[2]);
+    const uFace = gl.getUniformLocation(prog, 'uFace');
+    gl.viewport(0, 0, size, size);
+    gl.disable(gl.DEPTH_TEST);
+    gl.bindVertexArray(this.emptyVao);
+    for (let f = 0; f < 6; f++) {
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + f, cube, 0);
+      gl.uniform1i(uFace, f);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.bindVertexArray(null);
+    gl.enable(gl.DEPTH_TEST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fbo);
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+    gl.deleteProgram(prog);
+    return cube;
   }
 
   /** View matrix from a camera basis given in NED, converted at the boundary as everywhere here. */
@@ -674,7 +873,6 @@ export class Renderer {
       if (!loc) throw new Error(`blur uniform ${n} missing`);
       return loc;
     };
-    this.emptyVao = gl.createVertexArray();
     return {
       prog,
       uColor: need('uColor'),
@@ -854,56 +1052,6 @@ function buildFlagMarker(flag: Flag): MeshData {
       tip[2] - dz * 0.6 + rz * 0.45 * s,
     ];
     bar(m, back, tip, 0.07, MARK);
-  }
-  return m.build();
-}
-
-/**
- * Sky dome: a real hemisphere, cheaper and simpler than a cubemap.
- *
- * The first version was a cylinder with a flat lid, and the lid's edge was
- * plainly visible as a hard-edged shape overhead the moment the camera tilted
- * up. A dome has no seam to see.
- */
-function buildSky(): MeshData {
-  const m = new MeshBuilder();
-  const R = 700;
-  const lon = 28;
-  const lat = 12;
-  const colourAt = (elev: number): [number, number, number] => {
-    // Blend by elevation, biased so the gradient happens low where the eye is.
-    const t = Math.min(1, Math.max(0, Math.sin(elev))) ** 0.6;
-    return [
-      SKY_HORIZON[0] + (SKY_TOP[0] - SKY_HORIZON[0]) * t,
-      SKY_HORIZON[1] + (SKY_TOP[1] - SKY_HORIZON[1]) * t,
-      SKY_HORIZON[2] + (SKY_TOP[2] - SKY_HORIZON[2]) * t,
-    ];
-  };
-  // Start slightly below the horizon so there is no gap under a tilted camera.
-  const elev0 = -0.12;
-  for (let j = 0; j < lat; j++) {
-    const e0 = elev0 + ((Math.PI / 2 - elev0) * j) / lat;
-    const e1 = elev0 + ((Math.PI / 2 - elev0) * (j + 1)) / lat;
-    const y0 = Math.sin(e0) * R;
-    const y1 = Math.sin(e1) * R;
-    const r0 = Math.cos(e0) * R;
-    const r1 = Math.cos(e1) * R;
-    const c0 = colourAt(e0);
-    const c1 = colourAt(e1);
-    for (let i = 0; i < lon; i++) {
-      const a0 = (i / lon) * Math.PI * 2;
-      const a1 = ((i + 1) / lon) * Math.PI * 2;
-      m.quadColored(
-        [Math.cos(a0) * r0, y0, Math.sin(a0) * r0],
-        [Math.cos(a1) * r0, y0, Math.sin(a1) * r0],
-        [Math.cos(a1) * r1, y1, Math.sin(a1) * r1],
-        [Math.cos(a0) * r1, y1, Math.sin(a0) * r1],
-        c0,
-        c0,
-        c1,
-        c1,
-      );
-    }
   }
   return m.build();
 }

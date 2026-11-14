@@ -5,6 +5,12 @@ header of `/web` and on the front page, and sent with each session report. Bump 
 and add an entry here whenever what is deployed changes. The radio app, NacoSim,
 has its own numbers and changelog in `edgetx/CHANGELOG.md`.
 
+## 1.4.0 (2026-11-14)
+
+- **A real sky:** deep blue overhead fading to haze at the horizon, the sun where the
+  light on the scene comes from, and scattered clouds. It is constant: drawn once when
+  the page opens, so it costs nothing per frame.
+
 ## 1.3.0 (2026-11-13)
 
 - **Motion blur**, on at medium by default; Settings → Video sets it to off, light,

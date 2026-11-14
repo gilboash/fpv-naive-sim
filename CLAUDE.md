@@ -1764,6 +1764,22 @@ on the y=0 plane. And whole-frame sharpness cannot test "closer blurs more", bec
 closer grass is bigger on screen; the browser check reads the shader's streak length
 directly (`motionBlur.debugStreak`): 54 px at 0.5 m against 6 px at 6 m, 30 m/s.
 
+## The sky (2026-11-14, web 1.4.0)
+
+Procedural, constant, **baked once into a 1024 cube map at startup** (`SKY_BAKE_FRAG` in
+renderer.ts: zenith-to-haze gradient ending exactly on the fog colour, sun glow, fbm
+clouds on a plane 1.2 km up); each frame is a full-screen triangle doing one cube lookup,
+plus the sun disc computed per pixel so its edge stays sharp. The sun is `SUN_DIR`, the
+same vector as `uLightDir`, so the shading agrees with it. It replaced the vertex-coloured
+dome (`buildSky`, gone). Baked because the sky is constant and six octaves of noise per
+pixel per frame is waste, worst on a phone.
+
+**A trap from that day:** the two blade-pass sound checks failed (a frozen 376 Hz) and I
+blamed the sky's shader cost. Wrong: they failed identically on the previous, deployed
+commit, and a bare `AudioContext` in headless Chrome advanced 5 ms in 800 ms. The Mac's
+audio was stalled, not the code. Before blaming a change for a sound failure, check that
+headless audio runs at all (`currentTime` must advance in real time).
+
 ## Web releases (2026-11-13)
 
 The web sim has release numbers from 1.0.0: `version` in `package.json`, injected as
