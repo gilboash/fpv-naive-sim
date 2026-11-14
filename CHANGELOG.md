@@ -10,6 +10,15 @@ has its own numbers and changelog in `edgetx/CHANGELOG.md`.
 - **A real sky:** deep blue overhead fading to haze at the horizon, the sun where the
   light on the scene comes from, and scattered clouds. It is constant: drawn once when
   the page opens, so it costs nothing per frame.
+- **Hangars and industrial chimneys on Freestyle and Freestyle hard**, out beyond the
+  existing furniture:
+  - three kinds of hangar: a pitched-roof hangar with big front doors, a small back
+    door and beams across the inside; a round Quonset hut with skylights and a back
+    door; and a flat-roofed hangar with doors on several sides, columns inside and
+    skylights in the roof grid. Every roof has holes you can fly up or drop through.
+  - industrial chimneys in seven sizes across the two maps, from a 1.3 m bore to a
+    48 m stack with aviation bands: dive in at the top and fly out through the opening
+    at the foot.
 
 ## 1.3.0 (2026-11-13)
 

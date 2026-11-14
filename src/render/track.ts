@@ -13,6 +13,7 @@ import { MeshBuilder } from './mesh.ts';
 import type { Obstacle } from '../flight/collision.ts';
 import { courseFromSpec, type TrackSpec } from './track-spec.ts';
 import { FAMOUS_TRACK_SPECS } from './famous-tracks.ts';
+import { flatHangar, gableHangar, industrialChimney, quonsetHangar } from './structures.ts';
 import {
   circleCourse,
   CUBE_HALF,
@@ -703,6 +704,26 @@ export const freestyle: Track = {
         );
       });
     });
+
+    // Out beyond the loop: three hangars, each a different way in and out, and
+    // three industrial chimneys to dive, small to huge. See structures.ts.
+    gableHangar(m, obs, {
+      x: 0, z: -88, width: 26, length: 40, along: 'z', flip: true,
+      eave: 8, ridge: 12, frontDoor: [20, 7], backDoor: [6, 5],
+      holes: [[0, 2, 2], [1, 1, 4], [0, 1, 6], [1, 2, 7], [1, 3, 2]],
+    });
+    quonsetHangar(m, obs, {
+      x: -82, z: -10, radius: 9, length: 32, along: 'z',
+      holes: [[7, 1], [8, 1], [7, 4], [8, 4], [4, 6], [11, 3]], backDoor: [5, 4.5],
+    });
+    flatHangar(m, obs, {
+      x: 86, z: -56, sx: 34, sz: 30, height: 7,
+      doors: [{ side: 'w', width: 14, height: 5.5 }, { side: 's', width: 10, height: 5 }],
+      grid: [6, 6], holes: [[1, 1], [4, 1], [2, 3], [4, 4], [1, 4]],
+    });
+    industrialChimney(m, obs, { x: 72, z: 46, bore: 1.8, height: 16, openings: [270], openW: 2.8, openH: 3.4 });
+    industrialChimney(m, obs, { x: -62, z: -72, bore: 2.6, height: 28, openings: [135], openW: 3.6, openH: 4.2, bands: true });
+    industrialChimney(m, obs, { x: -78, z: 62, bore: 3.6, height: 42, openings: [90, 270], openW: 5, openH: 5.5, bands: true });
   },
 };
 
@@ -847,6 +868,32 @@ export const freestyleHard: Track = {
     // One arch over the start, so the first thing a pilot does is go through
     // something.
     arch(m, obs, 0, 46, 8, 1.3, 0.5, 'x', [0.8, 0.78, 0.72]);
+
+    // Hangars on three sides, and four chimneys from a tight 1.3 m bore to a
+    // 48 m stack you can see from anywhere on the map. See structures.ts.
+    gableHangar(m, obs, {
+      x: 88, z: 0, width: 24, length: 44, along: 'x',
+      eave: 9, ridge: 13, frontDoor: [18, 7.5], backDoor: [5, 4.5], beamEvery: 2,
+      holes: [[0, 1, 1], [1, 2, 3], [0, 3, 5], [1, 1, 6], [0, 2, 8], [1, 0, 8]],
+    });
+    quonsetHangar(m, obs, {
+      x: -88, z: -10, radius: 10, length: 36, along: 'x', flip: true,
+      holes: [[7, 2], [8, 2], [7, 3], [8, 3], [3, 5], [12, 6], [7, 7], [8, 7]], backDoor: [4.5, 4],
+      colour: [0.6, 0.45, 0.36],
+    });
+    flatHangar(m, obs, {
+      x: 0, z: -104, sx: 40, sz: 28, height: 8,
+      doors: [
+        { side: 's', width: 16, height: 6 },
+        { side: 'n', width: 8, height: 5 },
+        { side: 'e', width: 8, height: 5 },
+      ],
+      grid: [8, 6], holes: [[1, 1], [3, 2], [6, 1], [5, 4], [2, 4], [7, 3]], columnsEvery: 2,
+    });
+    industrialChimney(m, obs, { x: -62, z: 72, bore: 3.2, height: 48, openings: [45, 225], openW: 4.4, openH: 5, bands: true });
+    industrialChimney(m, obs, { x: 62, z: 72, bore: 2.4, height: 32, openings: [270], openW: 3.4, openH: 4, bands: true });
+    industrialChimney(m, obs, { x: 56, z: -72, bore: 1.6, height: 20, openings: [0], openW: 2.6, openH: 3.2 });
+    industrialChimney(m, obs, { x: -56, z: -78, bore: 1.3, height: 36, openings: [90], openW: 2.2, openH: 3 });
   },
 };
 

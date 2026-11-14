@@ -1780,6 +1780,19 @@ commit, and a bare `AudioContext` in headless Chrome advanced 5 ms in 800 ms. Th
 audio was stalled, not the code. Before blaming a change for a sound failure, check that
 headless audio runs at all (`currentTime` must advance in real time).
 
+## Hangars and chimneys (2026-11-14, web 1.4.0)
+
+`src/render/structures.ts`: `industrialChimney`, `quonsetHangar`, `gableHangar`,
+`flatHangar`, placed on Freestyle and Freestyle hard outside the old furniture (±80-100 m).
+A chimney's flue openings needed collision support: **`Ring.gaps`** (upright shafts
+only) suppresses contact within a bearing range below a height, so you can dive the bore
+and leave sideways at the foot. Roof holes are just missing panels (each panel is a box).
+`quadColored` gives every face an up normal, so curved surfaces are shaded by hand
+(`facing`). Tests: out through an opening touches nothing, a quarter-turn round is wall;
+a skylight drops clean, the next roof cell does not. Cost: the freestyle maps went from
+~315 to ~670 obstacles and 9 to 26 us/step (2.6% of the tick). Contact is a linear scan;
+a broad phase is the fix if a map ever needs much more.
+
 ## Web releases (2026-11-13)
 
 The web sim has release numbers from 1.0.0: `version` in `package.json`, injected as

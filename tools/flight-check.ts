@@ -1710,7 +1710,7 @@ section('Freestyle hard: the round chimney is a shaft, not a floor');
   const shafts = obs.filter((o) => o.kind === 'ring' && o.axis === 'up');
   ok(
     'the map has upright chimneys',
-    shafts.length === 3,
+    shafts.length >= 3,
     `${shafts.length} vertical shafts among ${obs.length} obstacles`,
   );
 
@@ -1751,6 +1751,62 @@ section('Freestyle hard: the round chimney is a shaft, not a floor');
     struck,
     'the shaft is a wall from outside and open from above',
   );
+}
+
+section('Freestyle buildings: in the top of a chimney and out of its foot, down through a skylight');
+{
+  const m = new MeshBuilder();
+  const obs: Obstacle[] = [];
+  TRACKS.find((t) => t.name === 'Freestyle hard')!.build(m, obs);
+  type GapRing = { north: number; east: number; up: number; radius: number; thickness: number; halfLength: number; gaps: { bearing: number; halfAngle: number; top: number }[] };
+  const foot = obs.find((o) => o.kind === 'ring' && o.axis === 'up' && (o.gaps?.length ?? 0) > 0) as unknown as GapRing | undefined;
+  ok('chimneys have openings at the foot', foot !== undefined, foot ? `${foot.gaps.length} opening(s), bore ${foot.radius} m` : 'none found');
+  if (foot) {
+    // Fly level out of the bottom of the bore along a bearing; count impacts.
+    const flyOut = (bearing: number): number => {
+      const sim = new FlightSim({ airframe: kronos() });
+      sim.obstacles = obs;
+      sim.pos.x = foot.north;
+      sim.pos.y = foot.east;
+      sim.pos.z = -1.6;
+      sim.vel.x = Math.cos(bearing) * 8;
+      sim.vel.y = Math.sin(bearing) * 8;
+      sim.onGround = false;
+      let hits = 0;
+      for (let i = 0; i < 1500; i++) {
+        sim.step(sticks({ throttle: 0, roll: 0, pitch: 0, yaw: 0 }));
+        // Hold the height: this asks about the wall, not about falling.
+        sim.pos.z = -1.6;
+        sim.vel.z = 0;
+        if (sim.obstacleImpact > 0) hits++;
+        if (Math.hypot(sim.pos.x - foot.north, sim.pos.y - foot.east) > foot.radius + foot.thickness + 1) break;
+      }
+      return hits;
+    };
+    const g = foot.gaps[0]!;
+    ok('flying out through the opening touches nothing', flyOut(g.bearing) === 0, `bearing ${((g.bearing * 180) / Math.PI).toFixed(0)} deg`);
+    ok('while the wall beside it is solid', flyOut(g.bearing + Math.PI / 2) > 0, 'a quarter turn round from the opening');
+  }
+
+  // The flat hangar's roof: a skylight cell and a solid one.
+  const drop = (north: number, east: number): number => {
+    const sim = new FlightSim({ airframe: kronos() });
+    sim.obstacles = obs;
+    sim.pos.x = north;
+    sim.pos.y = east;
+    sim.pos.z = -12;
+    sim.onGround = false;
+    let hits = 0;
+    for (let i = 0; i < 3000 && -sim.pos.z > 3; i++) {
+      sim.step(sticks({ throttle: 0, roll: 0, pitch: 0, yaw: 0 }));
+      if (sim.obstacleImpact > 0) hits++;
+    }
+    return hits;
+  };
+  // Freestyle hard's flat hangar: centre (x 0, z -104), 40 x 28, an 8 x 6 roof grid.
+  // Cell [1,1] is open: x -15..-10, z -113.3..-108.7. Cell [0,0] is roof.
+  ok('a skylight is open all the way down', drop(111, -12.5) === 0, 'dropped through roof cell [1,1]');
+  ok('and the roof next to it is not', drop(115.7, -17.5) > 0, 'dropped onto roof cell [0,0]');
 }
 
 section('Track specs: a track written as data behaves like one written as code');

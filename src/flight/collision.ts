@@ -60,6 +60,14 @@ export interface Ring {
    * were not enough.
    */
   axis: 'north' | 'east' | 'up';
+  /**
+   * Openings in an upright shaft's wall, from the ground up to `top` metres:
+   * the flue opening at the foot of an industrial chimney, so a dive in at the
+   * top can leave sideways at the bottom. `bearing` is the opening's centre as
+   * a compass bearing from the axis (radians, 0 north, pi/2 east), and
+   * `halfAngle` its half-width as seen from the axis. Upright shafts only.
+   */
+  gaps?: readonly { bearing: number; halfAngle: number; top: number }[];
 }
 
 export type Obstacle = Cylinder | Box | Ring;
@@ -222,6 +230,23 @@ export function clearance(
   return { north: n, east: e };
 }
 
+/** Is a point in an upright shaft's wall actually in one of its openings? */
+function inGap(
+  gaps: readonly { bearing: number; halfAngle: number; top: number }[],
+  dNorth: number,
+  dEast: number,
+  up: number,
+): boolean {
+  const b = Math.atan2(dEast, dNorth);
+  for (const g of gaps) {
+    if (up > g.top) continue;
+    let d = b - g.bearing;
+    d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+    if (Math.abs(d) < g.halfAngle) return true;
+  }
+  return false;
+}
+
 export function contactPoint(
   out: ContactResult,
   p: ContactParams,
@@ -263,6 +288,7 @@ export function contactPoint(
       const bCross = o.axis === 'up' ? world.y - o.east : up - o.up;
       const r = Math.hypot(aCross, bCross);
       if (r < o.radius || r > o.radius + o.thickness) continue;
+      if (o.gaps && o.axis === 'up' && inGap(o.gaps, aCross, bCross, up)) continue;
       // Inside the wall. Push to whichever face is nearer — out through the
       // bore if the quad clipped the lip, outward if it hit the shell.
       const inward = r - o.radius;
