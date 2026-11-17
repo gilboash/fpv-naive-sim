@@ -278,6 +278,12 @@ export class ReplayRun {
   finishedTick = -1;
   /** The input the model is being fed. */
   readonly input: StickInput = { throttle: 0, roll: 0, pitch: 0, yaw: 0 };
+  /**
+   * Called in the tick at the points the live page reads its sound cues
+   * (src/sound-cues.ts): after the physics step and after the race. For the
+   * video's sound track; only meaningful on a run that never seeks back.
+   */
+  cues: { afterSim(sim: FlightSim): void; afterRace(race: Race): void } | null = null;
   private ci = 0;
   private ei = 0;
   private keyframes: Keyframe[] = [];
@@ -313,10 +319,12 @@ export class ReplayRun {
       this.ci++;
     }
     this.sim.step(this.input);
+    this.cues?.afterSim(this.sim);
     this.apply(k, 1);
     const wasFinished = this.race.state === 'finished';
     this.race.setDt(this.sim.dt);
     this.race.step(this.sim.pos.x, this.sim.pos.y, -this.sim.pos.z, this.sim.dt);
+    this.cues?.afterRace(this.race);
     this.tick = k + 1;
     if (!wasFinished && this.race.state === 'finished' && this.finishedTick < 0) this.finishedTick = this.tick;
     if (this.tick % KEYFRAME_TICKS === 0 && this.keyframes.length === this.tick / KEYFRAME_TICKS) this.keep();

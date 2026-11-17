@@ -2359,9 +2359,11 @@ const main = async () => {
       // The race is aborted before the end, which clears the hole shot, so look
       // for it on the way through.
       out.replayHole = null;
+      out.holeTick = null;
       for (let k = 0; k <= replays.run.tape.ticks && out.replayHole === null; k += 100) {
         replays.run.runTo(k);
         out.replayHole = replays.run.race.holeShot;
+        if (out.replayHole !== null) out.holeTick = k;
       }
       replays.seekTo(replays.run.tape.ticks);
       for (let i = 0; i < 400 && !replays.verified; i++) await sleep(25);
@@ -2381,6 +2383,31 @@ const main = async () => {
         v.src = URL.createObjectURL(blob);
         await new Promise((r) => { v.onloadedmetadata = r; v.onerror = r; setTimeout(r, 5000); });
         out.video = { w: v.videoWidth, h: v.videoHeight, d: v.duration };
+        // The sound track: decode it and listen for the gate chime (2349 Hz,
+        // gliding 6% down) at the hole shot, against the second before it.
+        out.sound = replays.lastSound;
+        try {
+          const ac = new OfflineAudioContext(1, 48000, 48000);
+          const buf = await ac.decodeAudioData(await blob.arrayBuffer());
+          const d = buf.getChannelData(0);
+          let sum = 0, peak = 0;
+          for (let i = 0; i < d.length; i++) { sum += d[i] * d[i]; peak = Math.max(peak, Math.abs(d[i])); }
+          const band = (t0) => {
+            // Energy between 2150 and 2400 Hz over 0.3 s from t0, by DFT bins.
+            const n = Math.round(0.3 * buf.sampleRate), s0 = Math.round(t0 * buf.sampleRate);
+            let e = 0;
+            for (let hz = 2150; hz <= 2400; hz += 10) {
+              let re = 0, im = 0;
+              for (let i = 0; i < n; i++) { const x = d[s0 + i] || 0, w = (2 * Math.PI * hz * i) / buf.sampleRate; re += x * Math.cos(w); im += x * Math.sin(w); }
+              e += re * re + im * im;
+            }
+            return e;
+          };
+          const tc = out.holeTick / 1000 - 0.1;
+          out.audio = { d: buf.duration, rms: Math.sqrt(sum / d.length), peak, chime: band(tc), before: band(tc - 1) };
+        } catch (e) {
+          out.audio = { error: String(e) };
+        }
       }
 
       // Stop, and the switch.
@@ -2420,7 +2447,7 @@ const main = async () => {
   );
   check(
     'nothing of it is put in browser storage, only the on/off setting',
-    replay.stored.every((x) => /^fpvsim\.replays\.v1=\{"record":(true|false)\}$/.test(x)),
+    replay.stored.every((x) => /^fpvsim\.replays\.v1=\{"record":(true|false)(,"sound":(true|false))?\}$/.test(x)),
     replay.stored.join('; ') || 'nothing stored (the setting is at its default)',
   );
   check(
@@ -2437,7 +2464,18 @@ const main = async () => {
     'Make video gives an MP4 the browser can play, as long as the flight',
     replay.video && replay.video.w === 1280 && replay.video.h === 720 && Math.abs(replay.video.d - replay.secs) < 0.2,
     `${replay.job.trim()}; ${replay.video ? `${replay.video.w}x${replay.video.h}, ${replay.video.d.toFixed(2)} s` : 'no video'}, encoded in ${replay.videoSecs.toFixed(0)} s`,
+  );  const au = replay.audio ?? {};
+  check(
+    'the video has a sound track as long as the picture, neither silent nor clipped',
+    (replay.sound === 'aac' || replay.sound === 'opus') && !au.error && Math.abs(au.d - replay.video.d) < 0.15 && au.rms > 0.005 && au.peak < 1,
+    au.error ?? `${replay.sound}, ${au.d?.toFixed(2)} s, rms ${au.rms?.toFixed(4)}, peak ${au.peak?.toFixed(3)}`,
   );
+  check(
+    'and the gate chime sounds at the hole shot, where the live flight played it',
+    au.chime > au.before * 5,
+    `2.15-2.4 kHz energy at the hole shot ${au.chime?.toExponential(2)}, a second before ${au.before?.toExponential(2)}`,
+  );
+
   check(
     'Stop recording ends the flight at once, and with recording off nothing records',
     replay.stopped && replay.offRecording === false,

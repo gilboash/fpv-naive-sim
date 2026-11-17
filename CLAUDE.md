@@ -1837,6 +1837,15 @@ Things that must stay true:
   disarmed outside a race, 9 s after a finish, map change, Stop, 10 min (rolls into the
   next); dropped under 1 s armed; last 10 kept.
 - Encoding in headless swiftshader runs ~3x slower than real time; a real GPU is faster.
+- **Videos have sound** (`src/replay/sound.ts`): the live graph (`SoundGraph` in audio.ts,
+  split out of `FlightAudio` for this) run on an `OfflineAudioContext`, driven every 10 ms
+  from a second re-fly, rendered in 1 s blocks with `suspend()`. Cues come from
+  `src/sound-cues.ts` (crash edge, gong cooldown, chimes), which main.ts uses too, hooked
+  into `ReplayRun.cues` at the same points in the tick; so a chime is on its own tick
+  rather than the next 30 Hz frame. Normalised to -1 dB peak (the live mix peaks ~-10).
+  AAC, Opus fallback, none if neither; fed one video frame's worth per frame so the file
+  is interleaved. The browser check decodes the track and finds the gate chime at the
+  hole shot (50x the energy of a second before).
 
 ## Web releases (2026-11-13)
 

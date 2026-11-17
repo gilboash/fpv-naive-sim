@@ -12,6 +12,9 @@ has its own numbers and changelog in `edgetx/CHANGELOG.md`.
   a flight in the tab (play, pause, 0.25x to 4x, seek), and **Make video** re-flies it
   into an MP4 to download (1280x720, 50 fps, with the OSD and sticks on it). The re-fly
   is exact: it ends on the live flight's state to the last bit, and the tab says so.
+- **Videos have sound**: the sim's motor sound, gate, flag and lap chimes, crashes and
+  the gong, made again from the re-fly, so every chime lands where it did in the live
+  flight. **Sound in videos** turns it off; the gong follows the Sound setting.
 - A flight starts when you arm or start a race, and ends 3 s after you disarm, 9 s
   after a race finishes, when you change map, when you press **Stop recording** (on
   the Replays tab, or **Stop rec** beside the view while recording), or at 10 minutes.

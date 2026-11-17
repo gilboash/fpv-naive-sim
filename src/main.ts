@@ -47,6 +47,7 @@ import {
 import { TunePanel } from './tune-panel.ts';
 import { Telemetry } from './telemetry.ts';
 import { FlightAudio } from './audio.ts';
+import { SoundCues } from './sound-cues.ts';
 import { ReplayPanel } from './replay-panel.ts';
 import TickerWorker from './ticker.worker.ts?worker';
 import {
@@ -180,24 +181,23 @@ flight.onArmed = () => {
   hasArmed = true;
 };
 
-/** Below this a scrape is not a strike, m/s. */
-const STRIKE_MIN_SPEED = 1.5;
 /**
- * And one strike at a time, seconds.
- *
- * Longer than it looks like it needs to be, for two reasons: contact against a
- * post persists for well over a second — measured at 1 368 ticks for a single
- * gate strike, which without a cooldown is 1 368 gongs — and the sample rings
- * for 4.7 s, so two of them half a second apart is mud rather than emphasis.
+ * Crash, strike and checkpoint sounds, read off the tick (src/sound-cues.ts;
+ * the replay video uses the same rules). The crash also feeds the usage count.
  */
-const STRIKE_COOLDOWN_S = 1.5;
-let strikeCooldown = 0;
+const cues = new SoundCues({
+  noteCrash: (speed) => {
+    telemetry.noteCrash(scene.track.name);
+    // Records the impact only. The sound is made from the render loop, so no
+    // audio node is ever allocated inside the 1 kHz tick.
+    audio.noteCrash(speed);
+  },
+  noteStrike: (speed) => audio.noteStrike(speed),
+  noteCheckpoint: (kind) => audio.noteCheckpoint(kind),
+});
 
 /** Edge detectors for the usage counters and the checkpoint sounds; see onTick. */
-let wasCrashed = false;
 let raceWasFinished = false;
-let lastCrossings = 0;
-let lastLaps = 0;
 
 /** Seconds left before a mid-race crash respawns itself; <0 when idle. */
 let crashRecover = -1;
@@ -205,6 +205,7 @@ const CRASH_PAUSE = 1.2;
 
 const tabs = new Tabs();
 replays.visible = () => tabs.visible('replays');
+replays.gong = () => audio.gongOn;
 
 /**
  * The tick's clock: the worker's performance.now(), whose zero is when the
@@ -295,25 +296,9 @@ function onTick(fired: number, scheduled: number): void {
   // while armed — time on the page is not time flying, and the difference is
   // the whole point of measuring it.
   if (flight.sim.armed) telemetry.noteArmed(scene.track.name, flight.sim.dt);
-  if (flight.sim.crashed !== wasCrashed) {
-    if (flight.sim.crashed) {
-      telemetry.noteCrash(scene.track.name);
-      // Records the impact only. The sound is made from the render loop, so no
-      // audio node is ever allocated inside the 1 kHz tick.
-      audio.noteCrash(flight.sim.crashSpeed);
-    }
-    wasCrashed = flight.sim.crashed;
-  }
-
   // Hitting a gate, a flag pole or a cube gets the gong, on top of whatever
-  // else is sounding. The cooldown is what keeps it a strike rather than a
-  // drum roll: contact persists for many ticks while the quad slides down a
-  // post, and every one of those ticks reports an impact.
-  if (strikeCooldown > 0) strikeCooldown -= flight.sim.dt;
-  if (flight.sim.obstacleImpact > STRIKE_MIN_SPEED && strikeCooldown <= 0) {
-    audio.noteStrike(flight.sim.obstacleImpact);
-    strikeCooldown = STRIKE_COOLDOWN_S;
-  }
+  // else is sounding; a crash gets its bang and is counted.
+  cues.afterSim(flight.sim);
 
   // Automatic crash recovery, while a race is on.
   //
@@ -348,19 +333,8 @@ function onTick(fired: number, scheduled: number): void {
   racePanel.step(flight.sim.dt);
   replays.recorder.endTick(flight.sim, racePanel.race);
 
-  // Checkpoint sounds. The race counts crossings; this notices the count moved
-  // and queues a noise for the render loop to make, so the tick allocates
-  // nothing. A completed lap wins over the gate that completed it — they land
-  // on the same crossing, and two sounds at once is noise rather than feedback.
-  if (racePanel.race.crossings !== lastCrossings) {
-    lastCrossings = racePanel.race.crossings;
-    if (racePanel.race.lapsCompleted !== lastLaps) {
-      lastLaps = racePanel.race.lapsCompleted;
-      audio.noteCheckpoint('lap');
-    } else {
-      audio.noteCheckpoint(racePanel.race.lastCrossing);
-    }
-  }
+  // Checkpoint sounds, queued for the render loop so the tick allocates nothing.
+  cues.afterRace(racePanel.race);
 
   // A finished race, recorded once on the edge. Reading it every tick would
   // report the same race sixty thousand times while the results sit on screen.

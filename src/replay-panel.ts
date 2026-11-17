@@ -9,7 +9,7 @@
 
 import { TapeRecorder, ReplayRun, type FlightTape } from './replay/tape.ts';
 import { ReplayView } from './replay/replay-view.ts';
-import { makeVideo, videoUnsupported } from './replay/video.ts';
+import { lastSound, makeVideo, videoUnsupported } from './replay/video.ts';
 import { fmt } from './race-panel.ts';
 
 const STORAGE_KEY = 'fpvsim.replays.v1';
@@ -38,8 +38,11 @@ export class ReplayPanel {
   readonly flyControl: HTMLElement;
   /** Whether the tab is on screen; set by the owner. Playback pauses when it is not. */
   visible: () => boolean = () => true;
+  /** Whether the page's Sound setting has the gong on; set by the owner. */
+  gong: () => boolean = () => true;
 
   private enabledBox: HTMLInputElement;
+  private soundBox: HTMLInputElement;
   private status: HTMLElement;
   private stopBtn: HTMLButtonElement;
   private flyStatus: HTMLElement;
@@ -66,7 +69,8 @@ export class ReplayPanel {
 
   constructor(host: HTMLElement) {
     this.recorder = new TapeRecorder();
-    this.recorder.enabled = this.loadEnabled();
+    const stored = this.loadSettings();
+    this.recorder.enabled = stored.record;
     this.recorder.onFinished = (t) => this.add(t);
 
     const top = el('div', 'row');
@@ -82,7 +86,15 @@ export class ReplayPanel {
     this.stopBtn.type = 'button';
     this.stopBtn.id = 'replay-stop';
     this.stopBtn.onclick = () => this.recorder.stop();
-    top.append(lab, this.stopBtn, this.status);
+    const soundLab = el('label', 'replay-toggle');
+    this.soundBox = el<HTMLInputElement>('input');
+    this.soundBox.type = 'checkbox';
+    this.soundBox.id = 'replay-sound';
+    this.soundBox.checked = stored.sound;
+    this.soundBox.onchange = () => this.saveSettings();
+    soundLab.title = 'Motor sound, gate chimes and crashes in the videos you make. The gong follows the Sound setting.';
+    soundLab.append(this.soundBox, document.createTextNode(' Sound in videos'));
+    top.append(lab, soundLab, this.stopBtn, this.status);
     host.appendChild(top);
 
     host.appendChild(
@@ -148,24 +160,28 @@ export class ReplayPanel {
     requestAnimationFrame((t) => this.frame(t));
   }
 
-  private loadEnabled(): boolean {
+  private loadSettings(): { record: boolean; sound: boolean } {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return true;
-      const v = JSON.parse(raw) as { record?: unknown };
-      return v.record !== false;
+      if (!raw) return { record: true, sound: true };
+      const v = JSON.parse(raw) as { record?: unknown; sound?: unknown };
+      return { record: v.record !== false, sound: v.sound !== false };
     } catch {
-      return true;
+      return { record: true, sound: true };
+    }
+  }
+
+  private saveSettings(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ record: this.enabledBox.checked, sound: this.soundBox.checked }));
+    } catch {
+      /* private mode */
     }
   }
 
   private setEnabled(on: boolean): void {
     this.recorder.setEnabled(on);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ record: on }));
-    } catch {
-      /* private mode */
-    }
+    this.saveSettings();
     this.renderStatus();
   }
 
@@ -356,10 +372,14 @@ export class ReplayPanel {
         t,
         view,
         (p) => {
-          bar.value = p.frame / p.frames;
-          label.textContent = `Making the video… ${Math.round((p.frame / p.frames) * 100)}%`;
+          // Sound is the first fifth of the bar: it renders much faster than
+          // the pictures, which wait on the GPU for every frame.
+          const f = p.frame / p.frames;
+          bar.value = p.stage === 'sound' ? f * 0.2 : 0.2 + f * 0.8;
+          label.textContent = `${p.stage === 'sound' ? 'Making the sound' : 'Making the video'}… ${Math.round(bar.value * 100)}%`;
         },
         abort.signal,
+        { sound: this.soundBox.checked, gong: this.gong() },
       );
       const url = URL.createObjectURL(blob);
       this.downloads.push(url);
@@ -370,8 +390,10 @@ export class ReplayPanel {
       a.download = name;
       a.id = 'replay-download';
       const secs = ((performance.now() - t0) / 1000).toFixed(0);
-      this.job.append(a, el('span', 'dim', ` ${(blob.size / 1e6).toFixed(1)} MB, made in ${secs} s`));
+      const sound = lastSound === 'unsupported' ? ', no sound (this browser cannot encode audio)' : lastSound === 'none' ? ', no sound' : '';
+      this.job.append(a, el('span', 'dim', ` ${(blob.size / 1e6).toFixed(1)} MB, made in ${secs} s${sound}`));
       this.lastVideo = blob;
+      this.lastSound = lastSound;
     } catch (e) {
       const cancelled = e instanceof DOMException && e.name === 'AbortError';
       this.job.textContent = cancelled ? 'Cancelled.' : `Could not make the video: ${e instanceof Error ? e.message : String(e)}`;
@@ -387,4 +409,6 @@ export class ReplayPanel {
 
   /** The last video made, for the browser check. */
   lastVideo: Blob | null = null;
+  /** And its sound track's codec ('none' when made without), for the check. */
+  lastSound = 'none';
 }

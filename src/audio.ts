@@ -64,14 +64,7 @@ export class FlightAudio {
   onChange: (() => void) | null = null;
 
   private ctx: AudioContext | null = null;
-  private master: GainNode | null = null;
-  private motorBus: BiquadFilterNode | null = null;
-  private oscs: OscillatorNode[] = [];
-  private oscGains: GainNode[] = [];
-  private noise: AudioBufferSourceNode | null = null;
-  private airFilter: BiquadFilterNode | null = null;
-  private airGain: GainNode | null = null;
-  private wave: PeriodicWave | null = null;
+  private graph: SoundGraph | null = null;
 
   /** Blade-pass multiplier and an rpm scale, both from the airframe. */
   private blades = 3;
@@ -83,9 +76,6 @@ export class FlightAudio {
   private pendingStrike = 0;
   /** The gong, decoded once. Null until it has been fetched and decoded. */
   private gong: AudioBuffer | null = null;
-
-  /** Live voices, so a check can see that a crash actually made a sound. */
-  private voices = 0;
 
   constructor() {
     let enabled = true;
@@ -121,7 +111,7 @@ export class FlightAudio {
    * thing that says it sounds like anything at all.
    */
   get output(): AudioNode | null {
-    return this.master;
+    return this.graph?.master ?? null;
   }
 
   /** 'running', 'suspended', or 'closed' when there is no context. */
@@ -135,7 +125,7 @@ export class FlightAudio {
   }
 
   get liveVoices(): number {
-    return this.voices;
+    return this.graph?.voices ?? 0;
   }
 
   /**
@@ -177,16 +167,14 @@ export class FlightAudio {
 
   setVolume(v: number): void {
     this.volume = clamp(v, 0, 1);
-    if (this.master && this.ctx) {
-      this.master.gain.setTargetAtTime(this.masterGain, this.ctx.currentTime, RAMP);
-    }
+    if (this.graph && this.ctx) this.graph.master.gain.setTargetAtTime(this.masterGain, this.ctx.currentTime, RAMP);
     this.save();
     this.onChange?.();
   }
 
   /** Perceptual rather than linear: a slider at half should sound half. */
   private get masterGain(): number {
-    return this.volume * this.volume * 0.9;
+    return masterGainFor(this.volume);
   }
 
   private save(): void {
@@ -245,9 +233,157 @@ export class FlightAudio {
       return;
     }
     this.ctx = ctx;
+    this.graph = new SoundGraph(ctx, ctx.destination, this.masterGain);
+    if (this.gongOn) this.loadGong(ctx);
+    if (ctx.state === 'suspended') void ctx.resume();
+    this.onChange?.();
+  }
 
+  private teardown(): void {
+    const ctx = this.ctx;
+    // Stop the sources explicitly before closing. close() would take them with
+    // it, but a source left running while its context goes away is the kind of
+    // thing that leaks in one browser and not the others.
+    this.graph?.stop();
+    this.ctx = null;
+    this.graph = null;
+    this.pendingCrash = 0;
+    this.pendingStrike = 0;
+    this.gong = null;
+    if (!ctx) return;
+    // close() releases the audio thread entirely. Suspending would leave the
+    // graph alive and the promise of "exactly like now when off" unkept.
+    void ctx.close().catch(() => {});
+  }
+
+  /**
+   * Drive the graph from one step of telemetry. Called at 30 Hz; every
+   * parameter is a smoothed target rather than a step, so the ear cannot hear
+   * the update rate.
+   */
+  update(sim: FlightSim): void {
+    if (!this.enabled) return;
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+
+    const graph = this.graph;
+    if (!graph) return;
+    const t = ctx.currentTime;
+    graph.drive(t, sim.telemetry.motorRpm, sim.telemetry.speed, this.blades, this.refRpm);
+
+    if (this.pendingCrash > 0) {
+      graph.bang(t, this.pendingCrash);
+      this.pendingCrash = 0;
+    }
+    if (this.pendingChime) {
+      graph.chime(t, this.pendingChime);
+      this.pendingChime = null;
+    }
+    if (this.pendingStrike > 0) {
+      if (this.gong && this.gongOn) graph.strike(t, this.pendingStrike, this.gong);
+      this.pendingStrike = 0;
+    }
+  }
+
+  /**
+   * Fetch and decode the gong once the context exists.
+   *
+   * Deliberately after the graph is up rather than at page load: with sound off
+   * there is no context, and a page that downloads a sound it will never play
+   * is exactly the kind of cost "off means off" is supposed to rule out.
+   */
+  private loadGong(ctx: AudioContext): void {
+    if (this.gong) return;
+    void fetch(gongUrl)
+      .then((r) => r.arrayBuffer())
+      .then((b) => ctx.decodeAudioData(b))
+      .then((buf) => {
+        this.gong = buf;
+      })
+      .catch(() => {
+        // No gong is a missing sound, not a broken page.
+      });
+  }
+
+  /**
+   * What the graph is doing right now, for the browser check.
+   *
+   * Reads the *computed* AudioParam values rather than the targets, so it sees
+   * what is actually being heard — a check against the value we asked for would
+   * pass even if nothing were connected.
+   */
+  debug(): { freqs: number[]; gains: number[]; busHz: number; air: number; voices: number } {
+    const g = this.graph;
+    return {
+      freqs: g ? g.oscs.map((o) => o.frequency.value) : [],
+      gains: g ? g.oscGains.map((x) => x.gain.value) : [],
+      busHz: g?.motorBus.frequency.value ?? 0,
+      air: g?.airGain.gain.value ?? 0,
+      voices: g?.voices ?? 0,
+    };
+  }
+
+  /**
+   * Blade count and rpm scale come from the airframe, so a different quad
+   * sounds different for the reason it should. The scale is 60% of the unloaded
+   * rpm, which is about where a 5" sits at full throttle with a prop on it —
+   * measured at 28 000 against an unloaded 52 000 on the NACRONOS.
+   */
+  setAirframe(sim: FlightSim): void {
+    const v = airframeVoice(sim);
+    this.blades = v.blades;
+    this.refRpm = v.refRpm;
+  }
+}
+
+
+/** Blade count and the rpm that counts as full, for SoundGraph.drive. See setAirframe. */
+export function airframeVoice(sim: FlightSim): { blades: number; refRpm: number } {
+  const af = sim.airframe;
+  return {
+    blades: Math.max(1, af.prop.blades),
+    refRpm: Math.max(1000, af.motor.kv * af.battery.cells * af.battery.cellFull * 0.6),
+  };
+}
+
+/** Fetch and decode the gong into a context. Null when it cannot be had. */
+export async function decodeGong(ctx: BaseAudioContext): Promise<AudioBuffer | null> {
+  try {
+    const r = await fetch(gongUrl);
+    return await ctx.decodeAudioData(await r.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+/** The master level for a volume setting: perceptual, so half the slider sounds half. */
+export function masterGainFor(volume: number): number {
+  return volume * volume * 0.9;
+}
+
+/**
+ * The sound itself: motors, air, chimes, impacts and the gong, on any audio
+ * context. The live page runs it on an AudioContext driven at 30 Hz from the
+ * render loop; a replay video runs the same graph on an OfflineAudioContext
+ * driven from the re-fly (src/replay/sound.ts), so the video sounds like the
+ * flight did. Every method takes the time to act at, in the context's clock.
+ */
+export class SoundGraph {
+  readonly ctx: BaseAudioContext;
+  readonly master: GainNode;
+  readonly motorBus: BiquadFilterNode;
+  readonly oscs: OscillatorNode[] = [];
+  readonly oscGains: GainNode[] = [];
+  readonly noise: AudioBufferSourceNode;
+  readonly airFilter: BiquadFilterNode;
+  readonly airGain: GainNode;
+  /** Live voices, so a check can see that a crash actually made a sound. */
+  voices = 0;
+
+  constructor(ctx: BaseAudioContext, out: AudioNode, gain: number) {
+    this.ctx = ctx;
     const master = ctx.createGain();
-    master.gain.value = this.masterGain;
+    master.gain.value = gain;
     // A limiter, not an effect: four oscillators plus noise plus a crash burst
     // can sum past full scale, and clipping sounds like a bug in the model.
     const limiter = ctx.createDynamicsCompressor();
@@ -255,14 +391,14 @@ export class FlightAudio {
     limiter.ratio.value = 12;
     limiter.attack.value = 0.003;
     limiter.release.value = 0.12;
-    master.connect(limiter).connect(ctx.destination);
+    master.connect(limiter).connect(out);
     this.master = master;
 
     // A few harmonics rather than a pure tone. A motor is not a sine and a
     // sawtooth is far too buzzy; this is between the two and cheap.
     const real = new Float32Array([0, 0, 0, 0, 0, 0, 0]);
     const imag = new Float32Array([0, 1, 0.45, 0.28, 0.16, 0.09, 0.05]);
-    this.wave = ctx.createPeriodicWave(real, imag, { disableNormalization: false });
+    const wave = ctx.createPeriodicWave(real, imag, { disableNormalization: false });
 
     const bus = ctx.createBiquadFilter();
     bus.type = 'lowpass';
@@ -273,7 +409,7 @@ export class FlightAudio {
 
     for (let i = 0; i < 4; i++) {
       const osc = ctx.createOscillator();
-      osc.setPeriodicWave(this.wave);
+      osc.setPeriodicWave(wave);
       osc.frequency.value = 200;
       // A few cents apart, so four motors at identical rpm still beat slightly
       // rather than summing into one sterile tone.
@@ -302,64 +438,35 @@ export class FlightAudio {
     this.noise = noise;
     this.airFilter = air;
     this.airGain = airGain;
-
-    if (this.gongOn) this.loadGong(ctx);
-    if (ctx.state === 'suspended') void ctx.resume();
-    this.onChange?.();
   }
 
-  private teardown(): void {
-    const ctx = this.ctx;
-    // Stop the sources explicitly before closing. close() would take them with
-    // it, but a source left running while its context goes away is the kind of
-    // thing that leaks in one browser and not the others.
+  /** Stop the sources explicitly, before their context goes away. */
+  stop(): void {
+    // close() would take them with it, but a source left running while its
+    // context goes away is the kind of thing that leaks in one browser and not
+    // the others.
     try {
       for (const o of this.oscs) o.stop();
-      this.noise?.stop();
+      this.noise.stop();
     } catch {
       /* already stopped */
     }
-    this.ctx = null;
-    this.master = null;
-    this.motorBus = null;
-    this.oscs = [];
-    this.oscGains = [];
-    this.noise = null;
-    this.airFilter = null;
-    this.airGain = null;
-    this.wave = null;
     this.voices = 0;
-    this.pendingCrash = 0;
-    this.pendingStrike = 0;
-    this.gong = null;
-    if (!ctx) return;
-    // close() releases the audio thread entirely. Suspending would leave the
-    // graph alive and the promise of "exactly like now when off" unkept.
-    void ctx.close().catch(() => {});
   }
 
   /**
-   * Drive the graph from one step of telemetry. Called at 30 Hz; every
-   * parameter is a smoothed target rather than a step, so the ear cannot hear
-   * the update rate.
+   * Set the motors and the air for time `t`. Every parameter is a smoothed
+   * target rather than a step, so the ear cannot hear the update rate.
    */
-  update(sim: FlightSim): void {
-    if (!this.enabled) return;
-    const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
-
-    const t = ctx.currentTime;
-    const tel = sim.telemetry;
-    const rpms = tel.motorRpm;
-
+  drive(t: number, rpms: ArrayLike<number>, speed: number, blades: number, refRpm: number): void {
     let meanNorm = 0;
     for (let i = 0; i < this.oscs.length; i++) {
       const rpm = rpms[i] ?? 0;
-      const norm = clamp(rpm / this.refRpm, 0, 1.2);
+      const norm = clamp(rpm / refRpm, 0, 1.2);
       meanNorm += norm;
       // Blade pass, which is the tone a prop actually makes: once per blade
       // past a point, not once per revolution.
-      const hz = clamp((rpm / 60) * this.blades, 20, 6000);
+      const hz = clamp((rpm / 60) * blades, 20, 6000);
       this.oscs[i]!.frequency.setTargetAtTime(hz, t, RAMP);
       // Loudness grows faster than rpm and never quite reaches full, so there
       // is headroom for the crash.
@@ -369,30 +476,13 @@ export class FlightAudio {
 
     // The bus opens up under load, which is most of what "working hard" sounds
     // like — the harmonics come through rather than the fundamental alone.
-    this.motorBus?.frequency.setTargetAtTime(600 + meanNorm * 5200, t, RAMP);
+    this.motorBus.frequency.setTargetAtTime(600 + meanNorm * 5200, t, RAMP);
 
     // Air noise from both the disc and the airframe's own speed, so a fast
     // pass sounds fast even at a steady throttle.
-    const speedNorm = clamp(tel.speed / 30, 0, 1.4);
-    this.airGain?.gain.setTargetAtTime(
-      clamp(meanNorm * 0.10 + speedNorm * 0.07, 0, 0.22),
-      t,
-      RAMP,
-    );
-    this.airFilter?.frequency.setTargetAtTime(700 + meanNorm * 2600 + speedNorm * 900, t, RAMP);
-
-    if (this.pendingCrash > 0) {
-      this.bang(this.pendingCrash);
-      this.pendingCrash = 0;
-    }
-    if (this.pendingChime) {
-      this.chime(this.pendingChime);
-      this.pendingChime = null;
-    }
-    if (this.pendingStrike > 0) {
-      this.strike(this.pendingStrike);
-      this.pendingStrike = 0;
-    }
+    const speedNorm = clamp(speed / 30, 0, 1.4);
+    this.airGain.gain.setTargetAtTime(clamp(meanNorm * 0.1 + speedNorm * 0.07, 0, 0.22), t, RAMP);
+    this.airFilter.frequency.setTargetAtTime(700 + meanNorm * 2600 + speedNorm * 900, t, RAMP);
   }
 
   /**
@@ -403,42 +493,20 @@ export class FlightAudio {
    * this one. Decoded once and reused; the file is 39 KB of mono AAC, stripped
    * of the video track it arrived in.
    */
-  private strike(speed: number): void {
-    const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master || !this.gong || !this.gongOn) return;
+  strike(t: number, speed: number, gong: AudioBuffer): void {
+    const { ctx, master } = this;
     const src = ctx.createBufferSource();
-    src.buffer = this.gong;
+    src.buffer = gong;
     const g = ctx.createGain();
     // Louder for a harder hit, but never silent: the quietest touch that gets
     // here already counted as a strike.
     g.gain.value = 0.35 + Math.min(0.5, speed / 14) * 0.45;
     src.connect(g).connect(master);
-    src.start();
+    src.start(t);
     this.voices++;
     src.onended = () => {
       this.voices = Math.max(0, this.voices - 1);
     };
-  }
-
-  /**
-   * Fetch and decode the gong once the context exists.
-   *
-   * Deliberately after the graph is up rather than at page load: with sound off
-   * there is no context, and a page that downloads a sound it will never play
-   * is exactly the kind of cost "off means off" is supposed to rule out.
-   */
-  private loadGong(ctx: AudioContext): void {
-    if (this.gong) return;
-    void fetch(gongUrl)
-      .then((r) => r.arrayBuffer())
-      .then((b) => ctx.decodeAudioData(b))
-      .then((buf) => {
-        this.gong = buf;
-      })
-      .catch(() => {
-        // No gong is a missing sound, not a broken page.
-      });
   }
 
   /**
@@ -450,11 +518,8 @@ export class FlightAudio {
    * than none. A lap is three notes rising, which is the one that can afford
    * to be longer because nothing is being aimed at in that instant.
    */
-  private chime(kind: 'gate' | 'flag' | 'lap'): void {
-    const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return;
-    const t = ctx.currentTime;
+  chime(t: number, kind: 'gate' | 'flag' | 'lap'): void {
+    const { ctx, master } = this;
     // Pitched well clear of the rotors. At full throttle blade pass is already
     // about 1.4 kHz with harmonics above it, and the first version sat a chime
     // at 1 244 Hz — straight into the loudest thing on the mix, where it was
@@ -502,11 +567,8 @@ export class FlightAudio {
    * of ticks, so a permanent voice would be four filters idling for the sake of
    * something that happens once a minute.
    */
-  private bang(speed: number): void {
-    const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return;
-    const t = ctx.currentTime;
+  bang(t: number, speed: number): void {
+    const { ctx, master } = this;
     const hardness = clamp(speed / 12, 0.25, 1);
 
     const burst = ctx.createBufferSource();
@@ -545,38 +607,10 @@ export class FlightAudio {
     thud.onended = done;
   }
 
-  /**
-   * What the graph is doing right now, for the browser check.
-   *
-   * Reads the *computed* AudioParam values rather than the targets, so it sees
-   * what is actually being heard — a check against the value we asked for would
-   * pass even if nothing were connected.
-   */
-  debug(): { freqs: number[]; gains: number[]; busHz: number; air: number; voices: number } {
-    return {
-      freqs: this.oscs.map((o) => o.frequency.value),
-      gains: this.oscGains.map((g) => g.gain.value),
-      busHz: this.motorBus?.frequency.value ?? 0,
-      air: this.airGain?.gain.value ?? 0,
-      voices: this.voices,
-    };
-  }
-
-  /**
-   * Blade count and rpm scale come from the airframe, so a different quad
-   * sounds different for the reason it should. The scale is 60% of the unloaded
-   * rpm, which is about where a 5" sits at full throttle with a prop on it —
-   * measured at 28 000 against an unloaded 52 000 on the NACRONOS.
-   */
-  setAirframe(sim: FlightSim): void {
-    const af = sim.airframe;
-    this.blades = Math.max(1, af.prop.blades);
-    this.refRpm = Math.max(1000, af.motor.kv * af.battery.cells * af.battery.cellFull * 0.6);
-  }
 }
 
 /** One second or two of white noise, reused by looping. */
-function whiteNoise(ctx: AudioContext, seconds: number): AudioBuffer {
+function whiteNoise(ctx: BaseAudioContext, seconds: number): AudioBuffer {
   const n = Math.max(1, Math.floor(ctx.sampleRate * seconds));
   const buf = ctx.createBuffer(1, n, ctx.sampleRate);
   const d = buf.getChannelData(0);
