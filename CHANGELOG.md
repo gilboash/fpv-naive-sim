@@ -5,6 +5,20 @@ header of `/web` and on the front page, and sent with each session report. Bump 
 and add an entry here whenever what is deployed changes. The radio app, NacoSim,
 has its own numbers and changelog in `edgetx/CHANGELOG.md`.
 
+## 1.5.0 (2026-11-17)
+
+- **Flight replays, and videos of them.** A new **Replays** tab keeps your last 10
+  flights. Only your stick movements are recorded, never the screen. **Watch** re-flies
+  a flight in the tab (play, pause, 0.25x to 4x, seek), and **Make video** re-flies it
+  into an MP4 to download (1280x720, 50 fps, with the OSD and sticks on it). The re-fly
+  is exact: it ends on the live flight's state to the last bit, and the tab says so.
+- A flight starts when you arm or start a race, and ends 3 s after you disarm, 9 s
+  after a race finishes, when you change map, when you press **Stop recording** (on
+  the Replays tab, or **Stop rec** beside the view while recording), or at 10 minutes.
+  Under a second armed is not kept. **Record flights** turns it off.
+- Flights stay in the tab: nothing is stored in the browser or sent anywhere, and
+  closing or reloading the page discards them.
+
 ## 1.4.0 (2026-11-14)
 
 - **A real sky:** deep blue overhead fading to haze at the horizon, the sun where the

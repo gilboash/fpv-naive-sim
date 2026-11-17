@@ -893,3 +893,22 @@ button.confirm {
 
 /* the demo video on rc.html */
 .demo video { display: block; width: 100%; height: auto; background: #000; border: 1px solid var(--line); border-radius: 6px; }
+
+/* Replays tab */
+.replay-toggle { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.replay-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin: 8px 0 14px; }
+.replay-table th, .replay-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.replay-table th { color: #96a1b0; font-weight: 600; font-size: 13px; }
+.replay-table tr.current td { background: rgba(244, 180, 0, 0.08); }
+.replay-actions { white-space: nowrap; display: flex; gap: 6px; flex-wrap: wrap; }
+.replay-list { overflow-x: auto; }
+.replay-screen { width: 100%; max-width: 1280px; aspect-ratio: 16 / 9; background: #0d1117; border-radius: 6px; overflow: hidden; }
+.replay-canvas { width: 100%; height: 100%; display: block; }
+.replay-seek { flex: 1 1 200px; min-width: 120px; }
+.replay-time { font-variant-numeric: tabular-nums; min-width: 92px; }
+.replay-check.bad { color: #ff8a8a; }
+.replay-job { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+.replay-job progress { flex: 1 1 200px; }
+.replay-fly { display: inline-flex; align-items: center; gap: 6px; }
+.replay-rec { color: #ff6b6b; font-weight: 700; font-variant-numeric: tabular-nums; }
+a.button-link { display: inline-block; padding: 6px 12px; border-radius: 6px; background: #1f6f3f; color: #fff; text-decoration: none; font-weight: 600; }

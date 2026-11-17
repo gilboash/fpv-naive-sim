@@ -11,7 +11,7 @@
 
 import { shortcutAllowed } from './hotkeys.ts';
 import type { Commands } from './mapping.ts';
-import { FlightSim } from './flight/sim.ts';
+import { FlightSim, type StickInput } from './flight/sim.ts';
 import { kronos } from './flight/airframe.ts';
 import { QuadView } from './render/quad-view.ts';
 import { FlightRecorder } from './flight/recorder.ts';
@@ -77,6 +77,8 @@ export class FlightPanel {
    * on which listener happens to run last.
    */
   onReset: (() => void) | null = null;
+  /** Called immediately before each physics step with the exact input it gets (the flight replay recorder). */
+  beforeSimStep: ((input: StickInput) => void) | null = null;
   /** Fired on a successful arm, so first-run guidance can retire itself. */
   onArmed: (() => void) | null = null;
 
@@ -454,6 +456,7 @@ export class FlightPanel {
     this.lastInput.pitch = cmd.pitch;
     this.lastInput.yaw = cmd.yaw;
 
+    this.beforeSimStep?.(this.lastInput);
     const t0 = performance.now();
     this.sim.step(this.lastInput);
     this.recorder.sample(this.sim);

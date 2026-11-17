@@ -2299,6 +2299,151 @@ const main = async () => {
     Object.keys(beacon.first ?? {}).join(', '),
   );
 
+  // Flight replays: a flight is its stick commands, re-flown on demand. Flown
+  // here through the real tick with a fake radio (a race start, the hole shot,
+  // an abort and a disarm), then watched in the Replays tab, where the re-fly
+  // must end on the live flight's state to the bit, then made into an MP4.
+  const replay = await evaluate(`(async () => {
+    const { flight, poller, mapping, scene, tabs, racePanel, replays } = globalThis.__fpvsim;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const savedPoll = poller.poll;
+    const savedCh = JSON.parse(JSON.stringify(mapping.channels));
+    const out = {};
+    try {
+      tabs.show('fly');
+      scene.loadTrack(scene.tracks().find((t) => t.name === 'Race vibes'));
+      for (const [ch, ax] of [['throttle', 1], ['roll', 2], ['pitch', 3], ['yaw', 0]]) Object.assign(mapping.channels[ch], { axis: ax, invert: false, min: -1, max: 1, center: 0, deadband: 0 });
+      const fake = new Float64Array(8);
+      fake[1] = -1;
+      poller.poll = () => { poller.connected = true; poller.axisCount = 8; poller.buttonCount = 0; poller.axes.set(fake); return true; };
+      const before = replays.flights.length;
+      await sleep(100);
+      const startBtn = [...document.querySelectorAll('#race-panel button')].find((b) => /start race/i.test(b.textContent));
+      startBtn.click();
+      await sleep(200);
+      globalThis.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+      const sim = flight.sim;
+      const t0 = performance.now();
+      out.recWhileFlying = false;
+      while (performance.now() - t0 < 7500) {
+        const t = (performance.now() - t0) / 1000;
+        const q = sim.q;
+        const roll = Math.atan2(2 * (q.w * q.x + q.y * q.z), 1 - 2 * (q.x * q.x + q.y * q.y));
+        const pitch = Math.asin(Math.max(-1, Math.min(1, 2 * (q.w * q.y - q.z * q.x))));
+        const wantRoll = Math.max(-0.3, Math.min(0.3, -0.08 * sim.pos.y - 0.15 * sim.vel.y));
+        const wantPitch = t < 2.9 ? 0 : -0.3;
+        const c = (v) => Math.max(-1, Math.min(1, v));
+        fake[1] = Math.max(0, Math.min(1, 0.17 + 0.05 * (2.05 + sim.pos.z) + 0.03 * sim.vel.z)) * 2 - 1;
+        fake[2] = c(0.8 * (wantRoll - roll) - 0.05 * sim.omega.x);
+        fake[3] = c(-0.8 * (wantPitch - pitch) + 0.05 * sim.omega.y);
+        if (replays.recorder.recording) out.recWhileFlying = true;
+        await sleep(5);
+      }
+      out.flyRec = replays.flyControl.textContent;
+      out.liveHole = racePanel.race.holeShot;
+      startBtn.click();
+      fake.fill(0);
+      fake[1] = -1;
+      globalThis.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }));
+      await sleep(3600);
+      out.added = replays.flights.length - before;
+      const tape = replays.flights[0];
+      out.endReason = tape?.endReason;
+      out.secs = tape ? tape.ticks / 1000 : 0;
+      out.bytes = tape ? tape.cmd.byteLength : 0;
+      out.stored = Object.keys(localStorage).filter((k) => /replay/.test(k)).map((k) => k + '=' + localStorage.getItem(k));
+
+      tabs.show('replays');
+      document.querySelector('.replay-table button').click();
+      await sleep(200);
+      // The race is aborted before the end, which clears the hole shot, so look
+      // for it on the way through.
+      out.replayHole = null;
+      for (let k = 0; k <= replays.run.tape.ticks && out.replayHole === null; k += 100) {
+        replays.run.runTo(k);
+        out.replayHole = replays.run.race.holeShot;
+      }
+      replays.seekTo(replays.run.tape.ticks);
+      for (let i = 0; i < 400 && !replays.verified; i++) await sleep(25);
+      out.check = document.querySelector('.replay-check').textContent;
+      out.verify = replays.run.verify();
+
+      const tv = performance.now();
+      [...document.querySelectorAll('.replay-table button')].find((b) => b.textContent === 'Make video').click();
+      for (let i = 0; i < 1800 && !document.getElementById('replay-download'); i++) await sleep(100);
+      out.videoSecs = (performance.now() - tv) / 1000;
+      out.job = document.querySelector('.replay-job').textContent;
+      const blob = replays.lastVideo;
+      out.videoBytes = blob ? blob.size : 0;
+      if (blob) {
+        const v = document.createElement('video');
+        v.muted = true;
+        v.src = URL.createObjectURL(blob);
+        await new Promise((r) => { v.onloadedmetadata = r; v.onerror = r; setTimeout(r, 5000); });
+        out.video = { w: v.videoWidth, h: v.videoHeight, d: v.duration };
+      }
+
+      // Stop, and the switch.
+      tabs.show('fly');
+      flight.reset();
+      globalThis.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+      await sleep(1500);
+      const n0 = replays.flights.length;
+      document.getElementById('replay-stop').click();
+      await sleep(100);
+      out.stopped = replays.flights.length === n0 + 1 && replays.flights[0].endReason === 'stopped' && !replays.recorder.recording;
+      globalThis.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }));
+      await sleep(50);
+      const box = document.getElementById('record-flights');
+      box.click();
+      globalThis.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+      await sleep(400);
+      out.offRecording = replays.recorder.recording;
+      globalThis.dispatchEvent(new KeyboardEvent('keydown', { key: 'd' }));
+      box.click();
+    } finally {
+      poller.poll = savedPoll;
+      Object.assign(mapping.channels, savedCh);
+      tabs.show('fly');
+    }
+    return out;
+  })()`);
+  check(
+    'a flight is recorded while flying, and shown on the flying tab',
+    replay.recWhileFlying && /REC/.test(replay.flyRec),
+    `"${replay.flyRec}" during the flight`,
+  );
+  check(
+    'it ends 3 s after the disarm and joins the Replays list',
+    replay.added === 1 && replay.endReason === 'disarmed',
+    `${replay.added} added, ended by ${replay.endReason}, ${replay.secs.toFixed(1)} s, ${(replay.bytes / 1024).toFixed(0)} KB of sticks`,
+  );
+  check(
+    'nothing of it is put in browser storage, only the on/off setting',
+    replay.stored.every((x) => /^fpvsim\.replays\.v1=\{"record":(true|false)\}$/.test(x)),
+    replay.stored.join('; ') || 'nothing stored (the setting is at its default)',
+  );
+  check(
+    're-flown in the Replays tab, the hole shot is the same to the bit',
+    replay.liveHole !== null && replay.replayHole === replay.liveHole,
+    `live ${replay.liveHole}, re-flown ${replay.replayHole}`,
+  );
+  check(
+    'and the end of the re-fly matches the live flight to the bit',
+    replay.verify === null && /exactly/.test(replay.check),
+    replay.verify ?? replay.check,
+  );
+  check(
+    'Make video gives an MP4 the browser can play, as long as the flight',
+    replay.video && replay.video.w === 1280 && replay.video.h === 720 && Math.abs(replay.video.d - replay.secs) < 0.2,
+    `${replay.job.trim()}; ${replay.video ? `${replay.video.w}x${replay.video.h}, ${replay.video.d.toFixed(2)} s` : 'no video'}, encoded in ${replay.videoSecs.toFixed(0)} s`,
+  );
+  check(
+    'Stop recording ends the flight at once, and with recording off nothing records',
+    replay.stopped && replay.offRecording === false,
+    `stopped ${replay.stopped}, recording with the box off: ${replay.offRecording}`,
+  );
+
   // Destructive, so it runs last: it wipes stored settings and switches tab,
   // and an earlier version of it sitting mid-suite broke two later checks.
   // Reset everything. Two presses, and it must clear every key the app owns —

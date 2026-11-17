@@ -395,9 +395,16 @@ export class Renderer {
   private targets: PostTargets | null = null;
   private emptyVao: WebGLVertexArrayObject | null = null;
 
-  constructor(canvas: HTMLCanvasElement) {
+  /**
+   * Draw at this size instead of the canvas's size on the page. For the replay
+   * renderer, whose canvas is never on the page.
+   */
+  fixedSize: { w: number; h: number } | null = null;
+
+  /** `keepFrame` keeps the last frame readable after drawing (for copying it into a video). */
+  constructor(canvas: HTMLCanvasElement, opts: { keepFrame?: boolean } = {}) {
     this.canvas = canvas;
-    const gl = canvas.getContext('webgl2', { antialias: true, depth: true });
+    const gl = canvas.getContext('webgl2', { antialias: true, depth: true, preserveDrawingBuffer: opts.keepFrame === true });
     if (!gl) throw new Error('WebGL2 is not available');
     this.gl = gl;
 
@@ -571,8 +578,8 @@ export class Renderer {
     const canvas = this.canvas;
 
     const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
-    const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
-    const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    const w = this.fixedSize?.w ?? Math.max(1, Math.round(canvas.clientWidth * dpr));
+    const h = this.fixedSize?.h ?? Math.max(1, Math.round(canvas.clientHeight * dpr));
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;

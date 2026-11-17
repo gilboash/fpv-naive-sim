@@ -137,6 +137,12 @@ export class FlightSim {
   armed = false;
   onGround = true;
   /**
+   * Counts every change made to the model from outside step(): reset, arm,
+   * disarm, a new tune. A flight replay (src/replay/) snapshots the state
+   * whenever it moves, so a re-flown flight gets the same resets at the same tick.
+   */
+  epoch = 0;
+  /**
    * Set when a contact was hard enough to have broken something. The model
    * keeps simulating — a crashed quad still tumbles and slides — but it
    * disarms, and only reset() clears this.
@@ -295,6 +301,7 @@ export class FlightSim {
       this.rates.rate[i] = rates.rate[i]!;
       this.rates.expo[i] = rates.expo[i]!;
     }
+    this.epoch++;
     this.controller = new RateController(pids, this.dt);
     for (const f of this.gyroFilter) f.setCutoff(pids.gyroLowpassHz, this.dt);
     const rcHz = pids.feedforwardSmoothHz ?? 125;
@@ -305,6 +312,7 @@ export class FlightSim {
 
   /** Put it back on the ground, level, facing north, with a full pack. */
   reset(yawDeg = 0): void {
+    this.epoch++;
     this.crashed = false;
     this.crashSpeed = 0;
     this.armedAtCrash = false;
@@ -372,11 +380,13 @@ export class FlightSim {
     if (this.crashed) return false;
     if (input.throttle > 0.05) return false;
     this.armed = true;
+    this.epoch++;
     this.controller.reset();
     return true;
   }
 
   disarm(): void {
+    this.epoch++;
     this.armed = false;
     for (const m of this.motors) m.command = 0;
   }

@@ -120,6 +120,12 @@ export class Race {
   /** What the last crossing was, so a flag can sound different from a gate. */
   lastCrossing: 'gate' | 'flag' = 'gate';
 
+  /**
+   * Counts changes made from outside step() (start, reset, a voided lap, a new
+   * lap count), so a flight replay can snapshot the race when one happens.
+   */
+  epoch = 0;
+
   /** Countdown remaining, seconds, while state is 'countdown'. */
   countdown = 0;
 
@@ -146,6 +152,7 @@ export class Race {
   }
 
   reset(): void {
+    this.epoch++;
     this.state = 'idle';
     this.time = 0;
     this.next = 0;
@@ -166,6 +173,7 @@ export class Race {
    * at a bad moment is a shortcut, and the timing measures nothing.
    */
   invalidateLap(): void {
+    this.epoch++;
     if (this.state === 'running') {
       this.lapInvalid = true;
       this.lapRespawns++;

@@ -1809,6 +1809,35 @@ Two bugs, both reproduced with a fake radio (poller.poll stubbed) before fixing:
   main thread's `performance.now()`.**
 Browser checks cover all three (bind window, reset by switch, R with a select focused).
 
+## Flight replays (2026-11-17, web 1.5.0)
+
+`src/replay/` + `src/replay-panel.ts`, the **Replays** tab. A flight is its stick commands
+(only the ticks where they changed: ~200 Hz radio, ~5 KB/s) plus a snapshot of the model
+and the race whenever something outside the sticks changed them, detected by `epoch`
+counters on `FlightSim` (reset, arm, disarm, applyTune) and `Race` (start, reset,
+invalidateLap, laps). Re-flying (`ReplayRun`) restores each snapshot at the same tick and
+phase and feeds the same commands; with a fixed step and no randomness it ends on the
+live state to the bit (`verify()`, shown in the tab; flight-check and browser-check both
+assert it, hole shot included). Video: re-fly, draw (`ReplayView`: own renderer, OSD and
+sticks drawn in 2D since the live OSD is HTML), WebCodecs H.264 (VP9 fallback), mp4-muxer
+(the one runtime dependency). 50 fps because 20 ticks a frame is exact.
+
+Things that must stay true:
+- **The tick order is the contract.** Recorder hooks: `beforeStep` inside
+  `FlightPanel.step` right before `sim.step` (after the failsafe, which can disarm),
+  `afterStep` in onTick after crash recovery and before `racePanel.step`, `endTick` after
+  it. `ReplayRun.step` runs the same order. Anything new that mutates the sim or race from
+  outside step() must bump `epoch`, or the re-fly diverges silently (the verify line says so).
+- `state.ts` copies every own field generically; a `Map`, `Set` or `#private` field in
+  the model or race would be missed. The "restored snapshot flies on identically" check
+  catches that.
+- Flights are memory only, per tab (Gilboa's requirement): never localStorage, never the
+  server, never telemetry. Only `fpvsim.replays.v1 {record}` is stored.
+- What a flight is was agreed with Gilboa: starts on arm or race start; ends 3 s
+  disarmed outside a race, 9 s after a finish, map change, Stop, 10 min (rolls into the
+  next); dropped under 1 s armed; last 10 kept.
+- Encoding in headless swiftshader runs ~3x slower than real time; a real GPU is faster.
+
 ## Web releases (2026-11-13)
 
 The web sim has release numbers from 1.0.0: `version` in `package.json`, injected as

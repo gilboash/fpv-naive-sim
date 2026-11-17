@@ -47,6 +47,7 @@ import {
 import { TunePanel } from './tune-panel.ts';
 import { Telemetry } from './telemetry.ts';
 import { FlightAudio } from './audio.ts';
+import { ReplayPanel } from './replay-panel.ts';
 import TickerWorker from './ticker.worker.ts?worker';
 import {
   CTRL_FUTEX,
@@ -138,6 +139,20 @@ racePanel.onArmAtStart = () => {
   scene.placeAtStart();
   flight.reset();
 };
+// Flight replays: the recorder rides the tick (see onTick and FlightPanel.step).
+const replays = new ReplayPanel($('replay-panel'));
+flight.beforeSimStep = (input) => replays.recorder.beforeStep(flight.sim, racePanel.race, input);
+replays.recorder.context = () => ({
+  trackName: scene.track.name,
+  track: scene.track,
+  view: {
+    fovDeg: scene.renderer?.camera.fovDeg ?? 75,
+    tiltDeg: scene.renderer?.camera.tiltDeg ?? 25,
+    shutterMs: scene.renderer?.motionBlur.shutterMs ?? 0,
+    stickMode: mapping.mode,
+  },
+});
+scene.addControl(replays.flyControl);
 const telemetry = new Telemetry();
 telemetry.tuneSnapshot = () => tune.snapshot();
 // Sound. Blade count and rpm scale come from the airframe, so a different quad
@@ -189,6 +204,7 @@ let crashRecover = -1;
 const CRASH_PAUSE = 1.2;
 
 const tabs = new Tabs();
+replays.visible = () => tabs.visible('replays');
 
 /**
  * The tick's clock: the worker's performance.now(), whose zero is when the
@@ -325,7 +341,12 @@ function onTick(fired: number, scheduled: number): void {
   // Race timing runs in the tick too. Read off the 30 Hz render loop instead
   // and every split would be quantised to 33 ms, which is most of the gap
   // between a good lap and a bad one.
+  // The replay recorder snapshots anything that changed the model since the
+  // step (a crash respawn, just above) here, before the race reads it, and
+  // closes the tick after: the same order the re-fly runs in.
+  replays.recorder.afterStep(flight.sim, racePanel.race);
   racePanel.step(flight.sim.dt);
+  replays.recorder.endTick(flight.sim, racePanel.race);
 
   // Checkpoint sounds. The race counts crossings; this notices the count moved
   // and queues a noise for the render loop to make, so the tick allocates
@@ -730,6 +751,7 @@ function render(tNow: number): void {
 
   flight.render();
   racePanel.render();
+  replays.renderStatus();
   // Sound follows the flight rather than the tab: the quad keeps flying while
   // you are in Settings, so it keeps making noise there. Costs one property
   // check per frame when it is off.
@@ -1031,7 +1053,7 @@ $('jitter-start').onclick = startRun;
 // model without a radio attached. Stripped from a production build by the
 // import.meta.env.DEV guard, so it cannot become a load-bearing API.
 if (import.meta.env.DEV) {
-  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl, racePanel, telemetry, audio };
+  (globalThis as unknown as Record<string, unknown>).__fpvsim = { flight, poller, mapping, scene, tune, tabs, auxControl, racePanel, telemetry, audio, replays };
 }
 
 // -------------------------------------------------------------- your tracks

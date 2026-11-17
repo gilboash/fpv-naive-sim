@@ -57,7 +57,10 @@ export class RacePanel {
     this.lapsInput.value = String(raceVibesCourse.defaultLaps);
     this.lapsInput.oninput = () => {
       const v = Number(this.lapsInput.value);
-      if (Number.isFinite(v) && v >= 1) this.race.laps = Math.round(v);
+      if (Number.isFinite(v) && v >= 1) {
+        this.race.laps = Math.round(v);
+        this.race.epoch++;
+      }
     };
     lapWrap.appendChild(this.lapsInput);
     row.appendChild(lapWrap);

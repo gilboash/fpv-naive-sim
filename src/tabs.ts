@@ -1,5 +1,5 @@
 /**
- * Three tabs: fly, set up, read instruments.
+ * Four tabs: fly, watch replays, set up, read instruments.
  *
  * Plain buttons toggling `hidden`, no router and no framework, matching the
  * rest of the project. Two things this has to get right:
@@ -15,8 +15,8 @@
 
 const STORAGE_KEY = 'fpvsim.tab.v1';
 
-export type TabId = 'fly' | 'settings' | 'instruments';
-const TABS: TabId[] = ['fly', 'settings', 'instruments'];
+export type TabId = 'fly' | 'replays' | 'settings' | 'instruments';
+const TABS: TabId[] = ['fly', 'replays', 'settings', 'instruments'];
 
 export class Tabs {
   private active: TabId = 'fly';

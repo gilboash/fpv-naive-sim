@@ -36,6 +36,8 @@ import { buildGateMarker } from '../src/render/renderer.ts';
 import { MeshBuilder } from '../src/render/mesh.ts';
 import type { Obstacle } from '../src/flight/collision.ts';
 import { fromEuler, rotateBodyToWorld, DEG as DEG_TO_RAD } from '../src/flight/math.ts';
+import { TapeRecorder, ReplayRun, type FlightTape } from '../src/replay/tape.ts';
+import { snapshot, restore, firstDifference } from '../src/replay/state.ts';
 
 // mapping.ts persists to localStorage, which does not exist under Node. The
 // tests only need the pure mapping maths, so a stub is enough.
@@ -2696,6 +2698,192 @@ section('Performance: the step has to fit inside the 1 kHz tick');
     worstUs < 100,
     `worst is ${worstMap} at ${worstUs.toFixed(2)} us over ${worstCount} obstacles — ${((worstUs / 1000) * 100).toFixed(1)}% of the tick`,
   );
+}
+
+
+// ------------------------------------------------------------------ replays
+
+section('Flight replays: record the sticks, re-fly them');
+{
+  // A live flight driven tick by tick in the same order as main.ts's onTick:
+  // recorder before the step, the step, crash recovery, recorder, race, end.
+  const track = raceField;
+  const obs: Obstacle[] = [];
+  track.build(new MeshBuilder(), obs);
+  const course = track.course!;
+  const sim = new FlightSim({ airframe: kronos() });
+  sim.obstacles = obs;
+  const race = new Race(course);
+  const rec = new TapeRecorder();
+  const tapes: FlightTape[] = [];
+  rec.onFinished = (t) => tapes.push(t);
+  rec.context = () => ({ trackName: track.name, track, view: { fovDeg: 75, tiltDeg: 25, shutterMs: 8, stickMode: 2 } });
+
+  const placeAt = (yaw: number, n: number, e: number): void => {
+    sim.reset(yaw);
+    sim.pos.x = n;
+    sim.pos.y = e;
+  };
+  const input = sticks();
+  let recover = -1;
+  const trail: number[] = [];
+  const liveTick = (): void => {
+    rec.beforeStep(sim, race, input);
+    sim.step(input);
+    const racing = race.state === 'running';
+    if (racing && sim.crashed) {
+      if (recover < 0) recover = 1.2;
+      else if ((recover -= sim.dt) <= 0) {
+        recover = -1;
+        const yaw = sim.yawAtCrash;
+        placeAt(yaw, sim.pos.x, sim.pos.y + 1.5);
+        race.invalidateLap();
+        sim.arm({ ...input, throttle: 0 });
+      }
+    } else if (!sim.crashed) recover = -1;
+    rec.afterStep(sim, race);
+    race.setDt(sim.dt);
+    race.step(sim.pos.x, sim.pos.y, -sim.pos.z, sim.dt);
+    rec.endTick(sim, race);
+    trail.push(sim.pos.x, sim.pos.y, sim.pos.z);
+  };
+  const euler = (): { roll: number; pitch: number } => {
+    const q = sim.q;
+    return {
+      roll: Math.atan2(2 * (q.w * q.x + q.y * q.z), 1 - 2 * (q.x * q.x + q.y * q.y)),
+      pitch: Math.asin(Math.max(-1, Math.min(1, 2 * (q.w * q.y - q.z * q.x)))),
+    };
+  };
+  // A scripted pilot: hold 4 m, lean forward, weave. Closed loop live; the tape is open loop.
+  const pilot = (t: number, dive: boolean): void => {
+    const e = euler();
+    const wantRoll = Math.max(-0.3, Math.min(0.3, -0.08 * sim.pos.y - 0.15 * sim.vel.y)); // hold the course line
+    const wantPitch = dive ? -1.2 : t < 3.2 ? 0 : -0.3; // hover through the countdown, then go
+    input.roll = Math.max(-1, Math.min(1, 0.8 * (wantRoll - e.roll) - 0.05 * sim.omega.x));
+    input.pitch = Math.max(-1, Math.min(1, -0.8 * (wantPitch - e.pitch) + 0.05 * sim.omega.y));
+    input.yaw = 0;
+    input.throttle = dive ? 0.05 : Math.max(0, Math.min(1, 0.17 + 0.05 * (2.05 - -sim.pos.z) + 0.03 * sim.vel.z));
+  };
+
+  const s0 = track.start;
+  placeAt(s0.yawDeg, s0.north, s0.east);
+  race.start(3); // between ticks, as the Start button does
+  let crashedOnce = false;
+  let liveHole: number | null = null;
+  for (let i = 0; i < 26000; i++) {
+    const t = i / 1000;
+    if (i === 500) sim.arm(input); // the arm key, between ticks
+    if (i === 8000) {
+      const r = defaultRates();
+      r.rcRate[0] = 1.3;
+      sim.applyTune(r, { ...defaultPids() }); // a tune change mid-flight
+    }
+    if (i < 500) Object.assign(input, sticks());
+    else if (i < 20000) {
+      if (i % 5 === 0) pilot(t, i >= 12000 && !crashedOnce); // a radio reports at ~200 Hz
+    }
+    else Object.assign(input, sticks());
+    if (sim.crashed) crashedOnce = true;
+    if (i === 20000) {
+      liveHole = race.holeShot;
+      race.reset(); // Abort, then the disarm key: a running race keeps a flight going
+      sim.disarm();
+    }
+    liveTick();
+  }
+  ok('a flight ends 3 s after the disarm', tapes.length === 1 && tapes[0]!.endReason === 'disarmed',
+    `${tapes.length} flight(s), ended by ${tapes[0]?.endReason}`);
+  const tape = tapes[0]!;
+  ok('the flight had a crash, a respawn and a tune change in it', tape.crashes >= 1 && tape.events.length >= 5,
+    `${tape.crashes} crash(es), ${tape.events.length} snapshots`);
+  const bytes = tape.cmd.byteLength + tape.events.length * JSON.stringify(tape.events[0]).length;
+  ok('the tape is small', bytes / (tape.ticks / 1000) < 60000,
+    `${(bytes / 1024).toFixed(0)} KB for ${(tape.ticks / 1000).toFixed(1)} s (${tape.cmdCount} stick records)`);
+
+  // Re-fly on a freshly built map, as the page does.
+  const obs2: Obstacle[] = [];
+  track.build(new MeshBuilder(), obs2);
+  const run = new ReplayRun(tape, obs2);
+  let worst = 0;
+  const startTick = 0; // the race start, before the first tick, began the tape
+  let replayHole: number | null = null;
+  for (let k = 0; k < tape.ticks; k++) {
+    run.step();
+    if (run.tick === 20000) replayHole = run.race.holeShot;
+    const j = (startTick + k) * 3;
+    worst = Math.max(worst, Math.abs(run.sim.pos.x - trail[j]!) + Math.abs(run.sim.pos.y - trail[j + 1]!) + Math.abs(run.sim.pos.z - trail[j + 2]!));
+  }
+  ok('re-flown, every tick is where the live flight was, to the bit', worst === 0, `worst difference ${worst} m over ${tape.ticks} ticks`);
+  const diff = run.verify();
+  ok('and the end state is identical, model and race', diff === null, diff ?? 'identical');
+  ok('the race came out the same: the hole shot to the microsecond', liveHole !== null && run.race.crossings === race.crossings && replayHole === liveHole,
+    `hole shot live ${liveHole?.toFixed(6)} s, re-flown ${replayHole?.toFixed(6)} s; ${run.race.crossings} crossings`);
+
+  // Seeking: back to a keyframe and forward again lands on the same state.
+  run.runTo(15000);
+  const at15 = snapshot(run.sim);
+  run.runTo(3000);
+  run.runTo(15000);
+  ok('seeking back and forward lands on the same state', firstDifference(snapshot(run.sim), at15) === null,
+    firstDifference(snapshot(run.sim), at15) ?? 'identical at 15 s');
+  run.runTo(tape.ticks);
+  ok('and still ends identical', run.verify() === null, run.verify() ?? 'identical');
+
+  // A snapshot restored into a different sim flies on identically (the copier misses nothing).
+  const a = new FlightSim({ airframe: kronos() });
+  a.obstacles = obs;
+  a.applyTune(defaultRates(), { ...defaultPids(), p: [60, 62, 50] } as never);
+  a.reset(10);
+  a.arm(sticks());
+  for (let i = 0; i < 1500; i++) a.step(sticks({ throttle: 0.4, roll: 0.2 }));
+  const b = new FlightSim();
+  b.obstacles = obs;
+  restore(b, snapshot(a));
+  for (let i = 0; i < 3000; i++) {
+    const c = sticks({ throttle: 0.3 + 0.1 * Math.sin(i / 300), roll: 0.3 * Math.sin(i / 200), pitch: -0.2, yaw: 0.1 });
+    a.step(c);
+    b.step(c);
+  }
+  ok('a restored snapshot flies on bit-identically, even into a different airframe', firstDifference(snapshot(a), snapshot(b)) === null,
+    firstDifference(snapshot(a), snapshot(b)) ?? 'identical after 3 s');
+
+  // The rules for what a flight is.
+  const r2 = new TapeRecorder();
+  const got: FlightTape[] = [];
+  r2.onFinished = (t) => got.push(t);
+  const s2 = new FlightSim({ airframe: kronos() });
+  s2.obstacles = obs;
+  const race2 = new Race(course);
+  const tick2 = (inp: StickInput): void => {
+    r2.beforeStep(s2, race2, inp);
+    s2.step(inp);
+    r2.afterStep(s2, race2);
+    race2.step(s2.pos.x, s2.pos.y, -s2.pos.z, s2.dt);
+    r2.endTick(s2, race2);
+  };
+  s2.arm(sticks());
+  for (let i = 0; i < 500; i++) tick2(sticks());
+  s2.disarm();
+  for (let i = 0; i < 3500; i++) tick2(sticks());
+  ok('a flight armed for under a second is dropped', got.length === 0 && !r2.recording, `${got.length} kept`);
+  s2.arm(sticks());
+  for (let i = 0; i < 2000; i++) tick2(sticks({ throttle: 0.2 }));
+  r2.stop();
+  tick2(sticks({ throttle: 0.2 }));
+  for (let i = 0; i < 2000; i++) tick2(sticks({ throttle: 0.2 }));
+  ok('Stop ends the flight, and recording waits for a disarm before starting again',
+    got.length === 1 && got[0]!.endReason === 'stopped' && !r2.recording, `${got.length} kept, recording ${r2.recording}`);
+  s2.disarm();
+  tick2(sticks());
+  s2.reset();
+  s2.arm(sticks());
+  for (let i = 0; i < 1500; i++) tick2(sticks({ throttle: 0.2 }));
+  s2.obstacles = [...obs];
+  tick2(sticks());
+  ok('changing map ends the flight', got.length === 2 && got[1]!.endReason === 'map changed', `${got.map((t) => t.endReason).join(', ')}`);
+  r2.setEnabled(false);
+  for (let i = 0; i < 1500; i++) tick2(sticks({ throttle: 0.2 }));
+  ok('with recording off nothing is kept', got.length === 2 && !r2.recording, `${got.length} kept`);
 }
 
 // ------------------------------------------------------------------ report
