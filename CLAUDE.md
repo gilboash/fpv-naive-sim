@@ -1846,6 +1846,10 @@ Things that must stay true:
   AAC, Opus fallback, none if neither; fed one video frame's worth per frame so the file
   is interleaved. The browser check decodes the track and finds the gate chime at the
   hole shot (50x the energy of a second before).
+- **Watching has sound** (1.5.1) through the live `FlightAudio`: `setReplay(sim)` makes
+  it follow the replay and ignore live cues; the player feeds `audio.replayCues` through
+  a `SoundCues` on `run.cues`, only while playing and never during a seek jump forward
+  (`JUMP_TICKS`), so skipped events stay silent.
 
 ## Web releases (2026-11-13)
 

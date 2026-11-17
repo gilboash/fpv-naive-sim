@@ -5,6 +5,13 @@ header of `/web` and on the front page, and sent with each session report. Bump 
 and add an entry here whenever what is deployed changes. The radio app, NacoSim,
 has its own numbers and changelog in `edgetx/CHANGELOG.md`.
 
+## 1.5.1 (2026-11-18)
+
+- **Watching a replay has sound too**, through the page's own sound, so the Sound
+  setting and volume apply. Pausing, seeking or leaving the tab hands the sound back
+  to the live quad; a jump forward with the seek bar skips the chimes and crashes it
+  passes over rather than playing them all at once.
+
 ## 1.5.0 (2026-11-17)
 
 - **Flight replays, and videos of them.** A new **Replays** tab keeps your last 10

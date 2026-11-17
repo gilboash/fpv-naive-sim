@@ -2356,6 +2356,26 @@ const main = async () => {
       tabs.show('replays');
       document.querySelector('.replay-table button').click();
       await sleep(200);
+      // While it plays, the page's sound follows the replay's motors; paused,
+      // it goes back to the live quad (here disarmed on the ground).
+      {
+        const { audio } = globalThis.__fpvsim;
+        audio.setEnabled(true);
+        await sleep(700);
+        const run = replays.run;
+        const blades = run.sim.airframe.prop.blades;
+        out.preview = {
+          following: audio.following,
+          state: audio.state,
+          heard: Math.max(...audio.debug().freqs),
+          expect: Math.max(...run.sim.telemetry.motorRpm) / 60 * blades,
+        };
+        const playBtn = document.querySelector('.replay-player button');
+        playBtn.click();
+        await sleep(50);
+        out.preview.pausedFollowing = audio.following;
+        playBtn.click();
+      }
       // The race is aborted before the end, which clears the hole shot, so look
       // for it on the way through.
       out.replayHole = null;
@@ -2449,6 +2469,12 @@ const main = async () => {
     'nothing of it is put in browser storage, only the on/off setting',
     replay.stored.every((x) => /^fpvsim\.replays\.v1=\{"record":(true|false)(,"sound":(true|false))?\}$/.test(x)),
     replay.stored.join('; ') || 'nothing stored (the setting is at its default)',
+  );
+  const pv = replay.preview ?? {};
+  check(
+    'watching a replay plays its sound through the page, and pausing hands it back to the live quad',
+    pv.following === 'replay' && pv.pausedFollowing === 'live' && (pv.state !== 'running' || Math.abs(pv.heard - pv.expect) < Math.max(40, pv.expect * 0.15)),
+    `following ${pv.following} while playing, ${pv.pausedFollowing} paused; audio ${pv.state}, blade pass ${pv.heard?.toFixed(0)} Hz against the replay's ${pv.expect?.toFixed(0)} Hz`,
   );
   check(
     're-flown in the Replays tab, the hole shot is the same to the bit',

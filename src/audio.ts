@@ -23,6 +23,7 @@
  */
 
 import type { FlightSim } from './flight/sim.ts';
+import type { CueSink } from './sound-cues.ts';
 import gongUrl from './assets/gong.m4a';
 
 const STORAGE_KEY = 'fpvsim.audio.v1';
@@ -76,6 +77,19 @@ export class FlightAudio {
   private pendingStrike = 0;
   /** The gong, decoded once. Null until it has been fetched and decoded. */
   private gong: AudioBuffer | null = null;
+
+  /**
+   * A replay being watched (the Replays tab), which the sound follows instead
+   * of the live quad while it plays. Null: the live quad.
+   */
+  private replaySim: FlightSim | null = null;
+
+  /** Where a replay's cues go: the same queues as the live ones. */
+  readonly replayCues: CueSink = {
+    noteCrash: (speed) => this.queueCrash(speed),
+    noteStrike: (speed) => this.queueStrike(speed),
+    noteCheckpoint: (kind) => this.queueCheckpoint(kind),
+  };
 
   constructor() {
     let enabled = true;
@@ -188,6 +202,26 @@ export class FlightAudio {
 
   /** Called from the tick. Records the impact; makes no sound and no garbage. */
   noteCrash(speed: number): void {
+    if (!this.replaySim) this.queueCrash(speed);
+  }
+
+  /**
+   * Follow a replay instead of the live quad, or the live quad again (null).
+   * While a replay is followed the live cues are ignored, so the two never mix.
+   */
+  setReplay(sim: FlightSim | null): void {
+    this.replaySim = sim;
+    this.pendingCrash = 0;
+    this.pendingStrike = 0;
+    this.pendingChime = null;
+  }
+
+  /** The sim the sound is following now. For the checks. */
+  get following(): 'live' | 'replay' {
+    return this.replaySim ? 'replay' : 'live';
+  }
+
+  private queueCrash(speed: number): void {
     if (speed > this.pendingCrash) this.pendingCrash = speed;
   }
 
@@ -200,6 +234,10 @@ export class FlightAudio {
    * common outcome, and it deserves to be audible.
    */
   noteStrike(speed: number): void {
+    if (!this.replaySim) this.queueStrike(speed);
+  }
+
+  private queueStrike(speed: number): void {
     if (!this.gongOn) return;
     if (speed > this.pendingStrike) this.pendingStrike = speed;
   }
@@ -214,6 +252,10 @@ export class FlightAudio {
    * ear.
    */
   noteCheckpoint(kind: 'gate' | 'flag' | 'lap'): void {
+    if (!this.replaySim) this.queueCheckpoint(kind);
+  }
+
+  private queueCheckpoint(kind: 'gate' | 'flag' | 'lap'): void {
     this.pendingChime = kind;
   }
 
@@ -269,7 +311,8 @@ export class FlightAudio {
     const graph = this.graph;
     if (!graph) return;
     const t = ctx.currentTime;
-    graph.drive(t, sim.telemetry.motorRpm, sim.telemetry.speed, this.blades, this.refRpm);
+    const src = this.replaySim ?? sim;
+    graph.drive(t, src.telemetry.motorRpm, src.telemetry.speed, this.blades, this.refRpm);
 
     if (this.pendingCrash > 0) {
       graph.bang(t, this.pendingCrash);

@@ -11,6 +11,8 @@ import { TapeRecorder, ReplayRun, type FlightTape } from './replay/tape.ts';
 import { ReplayView } from './replay/replay-view.ts';
 import { lastSound, makeVideo, videoUnsupported } from './replay/video.ts';
 import { fmt } from './race-panel.ts';
+import { SoundCues, type CueSink } from './sound-cues.ts';
+import type { FlightSim } from './flight/sim.ts';
 
 const STORAGE_KEY = 'fpvsim.replays.v1';
 /** Flights kept; the oldest goes when an eleventh arrives. */
@@ -29,6 +31,9 @@ const clock = (s: number): string => {
   return `${m}:${String(r).padStart(2, '0')}`;
 };
 
+/** A seek forward further than this, in ticks, is a jump, not playing on. */
+const JUMP_TICKS = 300;
+
 const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'flight';
 
 export class ReplayPanel {
@@ -38,6 +43,11 @@ export class ReplayPanel {
   readonly flyControl: HTMLElement;
   /** Whether the tab is on screen; set by the owner. Playback pauses when it is not. */
   visible: () => boolean = () => true;
+  /**
+   * The page's sound, which plays a replay while it is being watched; set by
+   * the owner. Its own setting decides whether anything is heard.
+   */
+  audio: { setReplay(sim: FlightSim | null): void; replayCues: CueSink } | null = null;
   /** Whether the page's Sound setting has the gong on; set by the owner. */
   gong: () => boolean = () => true;
 
@@ -66,6 +76,8 @@ export class ReplayPanel {
   private verified = false;
   private encoding: AbortController | null = null;
   private downloads: string[] = [];
+  /** Catching up to a seek forward, silently. */
+  private jumping = false;
 
   constructor(host: HTMLElement) {
     this.recorder = new TapeRecorder();
@@ -281,8 +293,8 @@ export class ReplayPanel {
   }
 
   private close(): void {
-    this.run = null;
     this.setPlaying(false);
+    this.run = null;
     this.player.hidden = true;
   }
 
@@ -290,6 +302,20 @@ export class ReplayPanel {
     this.playing = on && this.run !== null;
     if (this.run && this.playing && this.run.done) this.seekTo(0);
     this.playBtn.textContent = this.playing ? 'Pause' : 'Play';
+    this.listen();
+  }
+
+  /**
+   * Sound for the replay while it plays, through the page's own sound (so the
+   * Sound setting and volume apply), and back to the live quad when it stops.
+   * Cues are taken only from ticks played through, never from a seek: a jump
+   * forward would otherwise sound every chime and crash it skipped at once.
+   */
+  private listen(): void {
+    const run = this.run;
+    const on = this.playing && run !== null && !this.jumping;
+    if (run) run.cues = on && this.audio ? new SoundCues(this.audio.replayCues) : null;
+    this.audio?.setReplay(this.playing && run ? run.sim : null);
   }
 
   private togglePlay(): void {
@@ -303,6 +329,8 @@ export class ReplayPanel {
     // re-flies towards the target a slice at a time, so a long jump never
     // freezes the page.
     if (this.target < this.run.tick) this.run.runTo(this.target);
+    else if (this.target - this.run.tick > JUMP_TICKS) this.jumping = true;
+    this.listen();
     this.draw();
   }
 
@@ -324,6 +352,10 @@ export class ReplayPanel {
         run.runTo(stop);
       }
       this.draw();
+    }
+    if (this.jumping && run.tick >= this.target) {
+      this.jumping = false;
+      this.listen();
     }
     if (run.done) {
       if (this.playing) this.setPlaying(false);

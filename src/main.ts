@@ -206,6 +206,7 @@ const CRASH_PAUSE = 1.2;
 const tabs = new Tabs();
 replays.visible = () => tabs.visible('replays');
 replays.gong = () => audio.gongOn;
+replays.audio = audio;
 
 /**
  * The tick's clock: the worker's performance.now(), whose zero is when the
